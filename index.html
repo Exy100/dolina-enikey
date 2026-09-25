@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Долина Эникей — урок «Условия»</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Rubik:wght@400;500;600&family=Unbounded:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="splash" id="splash">
+  <div class="splash-inner">
+    <p class="splash-kicker">урок «условия»</p>
+    <h2>Долина Эникей</h2>
+    <p class="lead">Здесь герой слушается только твоего кода.</p>
+    <button type="button" class="splash-btn" id="splashBtn"><span class="p">&gt;</span><span class="desk">Нажми любую клавишу</span><span class="touch">Коснись, чтобы начать</span><span class="cur" aria-hidden="true"></span></button>
+  </div>
+</div>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Долина Эникей</h1>
+      <p>Урок «Условия»</p>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Задания урока"></nav>
+  </header>
+
+  <main>
+    <section class="code-pane" aria-label="Задание и код">
+      <article class="task">
+        <p class="num-line" id="taskNum"></p>
+        <h2 id="taskTitle"></h2>
+        <p class="goal" id="taskGoal"></p>
+        <p class="new"><b>Новое:</b> <span id="taskNew"></span></p>
+        <div class="chips" id="chips" aria-label="Команды для этого задания"></div>
+      </article>
+
+      <div class="editor">
+        <div class="ed-bar"><span class="file">герой.py</span><button type="button" id="resetBtn">Вернуть исходный код</button></div>
+        <div class="ed-scroll" id="edScroll">
+          <div class="ed-inner">
+            <div class="gutter" id="gutter" aria-hidden="true"></div>
+            <div class="ed-code">
+              <div class="band" id="band" hidden></div>
+              <pre id="hl" aria-hidden="true"></pre>
+              <textarea id="code" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" aria-label="Код программы"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button type="button" class="btn primary" id="runBtn">Запуск</button>
+        <button type="button" class="btn secondary" id="stepBtn">Шаг</button>
+        <button type="button" class="btn ghost" id="stopBtn" disabled>Стоп</button>
+        <label class="speed">Скорость <input type="range" id="speed" min="0.5" max="3" step="0.5" value="1"><output id="speedVal">1,0×</output></label>
+      </div>
+
+      <div class="out" id="out" role="log" aria-live="polite"></div>
+
+      <div class="hints">
+        <div class="hints-row"><button type="button" class="btn secondary" id="hintBtn">Подсказка 1 из 2</button></div>
+        <div id="hintBox" class="hints"></div>
+      </div>
+    </section>
+
+    <section class="world" aria-label="Игровой мир">
+      <div id="stage">
+        <div class="bubble" id="bubble" aria-hidden="true"></div>
+      </div>
+      <div class="hud tl">
+        <div class="hud-box">
+          <span class="map-label" id="mapLabel">Карта 1 из 3</span>
+          <div class="dots">
+            <button type="button" class="dot" aria-label="Показать карту 1">1</button>
+            <button type="button" class="dot" aria-label="Показать карту 2">2</button>
+            <button type="button" class="dot" aria-label="Показать карту 3">3</button>
+          </div>
+        </div>
+      </div>
+      <div class="hud tr">
+        <button type="button" class="hud-btn" id="topBtn" aria-pressed="false">Вид сверху</button>
+        <button type="button" class="hud-btn" id="newMapsBtn">Новые карты</button>
+      </div>
+      <div class="hud bl"><div class="hud-box coins" id="coins" hidden></div></div>
+      <div class="result" id="result" hidden>
+        <div class="res-card" role="dialog" aria-labelledby="resTitle">
+          <div class="res-stars" id="resStars"></div>
+          <h3 id="resTitle"></h3>
+          <ul id="resList"></ul>
+          <div class="res-actions">
+            <button type="button" class="btn primary" id="nextBtn">Дальше</button>
+            <button type="button" class="btn secondary" id="againBtn">Новые карты</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<!-- 3D-библиотека (локальная копия, работает без интернета) -->
+<script src="js/three.min.js"></script>
+<!-- Учебный Python: разбор и пошаговое выполнение кода -->
+<script src="js/minipy.js"></script>
+<!-- Мир: команды героя, карты и задания -->
+<script src="js/world.js"></script>
+<!-- Интерфейс, 3D-сцена и анимации -->
+<script src="js/app.js"></script>
+</body>
+</html>
