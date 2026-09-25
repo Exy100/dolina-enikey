@@ -1,6 +1,6 @@
 /* ===== Долина Эникей: интерфейс и 3D ===== */
 (() => {
-  const { TASKS, K, makeMaps, createState, commands, endError, WinSignal } = HeroWorld;
+  const { TASKS, K, makeMaps, createState, commands, endCheck, WinSignal } = HeroWorld;
   const $ = s => document.querySelector(s);
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -203,7 +203,8 @@
 
     // камера и тени
     cam.target.set((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
-    const span = Math.max(maxX - minX + 3, maxZ - minZ + 3, 6);
+    // по диагонали: карта с поворотами широкая сразу в обе стороны и иначе не влезает в кадр
+    const span = Math.max(Math.hypot(maxX - minX + 3, maxZ - minZ + 3), 6);
     frameDist = span * 0.95 + 2.4;
     fitCamera();
     const sc = sun.shadow.camera;
@@ -424,6 +425,12 @@
         hero.scale.set(1, 1, 1);
         return;
       }
+      case 'full': {
+        say('Рюкзак полон!', 'bad', 1400);
+        await tween(360, t => { hero.rotation.z = Math.sin(t * Math.PI * 3) * 0.12; });
+        hero.rotation.z = 0;
+        return;
+      }
       case 'shrug': {
         say('Зачем прыгать?', 'bad', 1400);
         await tween(360, t => { hero.rotation.z = Math.sin(t * Math.PI * 3) * 0.12; });
@@ -626,7 +633,7 @@
   function showMap(i) {
     mapIdx = i;
     buildLevel(maps[i]);
-    updateCoins(0, maps[i].coins.size);
+    updateCoins(0, maps[i].need || maps[i].coins.size);
     setDots(dotStates);
     $('#mapLabel').textContent = `Карта ${i + 1} из 3`;
   }
@@ -662,7 +669,12 @@
         if (e instanceof WinSignal) return { ok: true };
         return { ok: false, err: e };
       }
-      if (r.done) return { ok: false, err: endError(st) };
+      if (r.done) {
+        const err = endCheck(st);
+        if (err) return { ok: false, err };
+        await animate({ type: 'win' }, st); // карта «стоп»: герой закончил программу на флаге
+        return { ok: true };
+      }
       await animate(r.value, st);
       if (token !== runToken) return { aborted: true };
       if (stepMode && r.value.type === 'line') {
@@ -676,7 +688,7 @@
     const line = err.line || null;
     if (line) markLine(line, 'err'); else markLine(null);
     log(err.message, 'err', line);
-    if (err.kind === 'coins') {
+    if (err.kind === 'coins' && !maps[mapIdx].need) {
       coinMeshes.forEach(c => { if (!c.userData.taken) c.userData.missed = true; });
       log('Пропущенные монеты подпрыгивают на карте: посмотри, мимо каких прошёл герой.', 'tip');
     }
