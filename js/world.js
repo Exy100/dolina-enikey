@@ -32,7 +32,8 @@ const HeroWorld = (() => {
     let cells;
     do {
       cells = [];
-      for (let x = 0; x <= 7; x++) if (r() < 0.5) cells.push(x);
+      // на стартовой клетке монет нет: там стоит герой и закрывает монету собой
+      for (let x = 1; x <= 7; x++) if (r() < 0.5) cells.push(x);
     } while (cells.length < 3 || cells.length > 6);
     cells.forEach(x => L.coins.add(K(x, 0)));
     L.finish = { x: 8, z: 0 };
@@ -74,6 +75,7 @@ const HeroWorld = (() => {
       coins: new Set(level.coins),
       collected: 0,
       total: level.coins.size,
+      idle: 0, // проверок и поворотов подряд без единого шага
     };
   }
   function cellAt(level, x, z) {
@@ -122,17 +124,20 @@ const HeroWorld = (() => {
             throw new WorldError('Ой! Герой шагнул прямо в лаву. Перед шагом проверь: лава_впереди()', line, 'lava');
           }
           yield { type: 'move', from, to };
+          st.idle = 0;
           if (arrive(st, line)) { yield { type: 'win' }; throw new WinSignal(); }
         }
         return null;
       }),
       'налево': fn('налево', 0, function* () {
         st.hero.dir = (st.hero.dir + 1) % 4;
+        st.idle++;
         yield { type: 'turn', dir: st.hero.dir, side: 1 };
         return null;
       }),
       'направо': fn('направо', 0, function* () {
         st.hero.dir = (st.hero.dir + 3) % 4;
+        st.idle++;
         yield { type: 'turn', dir: st.hero.dir, side: -1 };
         return null;
       }),
@@ -160,31 +165,37 @@ const HeroWorld = (() => {
         if (ct === 'wall') { yield { type: 'bump' }; throw new WorldError('За лавой стена, приземлиться некуда.', line, 'wall'); }
         st.hero.x = to.x; st.hero.z = to.z;
         yield { type: 'jump', from, to };
+        st.idle = 0;
         if (ct === 'lava') { yield { type: 'burn' }; throw new WorldError('Герой приземлился в лаву!', line, 'lava'); }
         if (arrive(st, line)) { yield { type: 'win' }; throw new WinSignal(); }
         return null;
       }),
       'стена_впереди': fn('стена_впереди', 0, function* () {
         const a = ahead(st); const v = cellAt(st.level, a.x, a.z) === 'wall';
+        st.idle++;
         yield { type: 'check', text: `стена впереди? ${yesNo(v)}`, value: v };
         return v;
       }),
       'лава_впереди': fn('лава_впереди', 0, function* () {
         const a = ahead(st); const v = cellAt(st.level, a.x, a.z) === 'lava';
+        st.idle++;
         yield { type: 'check', text: `лава впереди? ${yesNo(v)}`, value: v };
         return v;
       }),
       'есть_монета': fn('есть_монета', 0, function* () {
         const v = st.coins.has(K(st.hero.x, st.hero.z));
+        st.idle++;
         yield { type: 'check', text: `монета здесь? ${yesNo(v)}`, value: v };
         return v;
       }),
       'на_финише': fn('на_финише', 0, function* () {
         const f = st.level.finish; const v = st.hero.x === f.x && st.hero.z === f.z;
+        st.idle++;
         yield { type: 'check', text: `я на финише? ${yesNo(v)}`, value: v };
         return v;
       }),
       'монет_собрано': fn('монет_собрано', 0, function* () {
+        st.idle++;
         yield { type: 'check', text: `монет у меня: ${st.collected}`, value: st.collected };
         return st.collected;
       }),
@@ -197,17 +208,18 @@ const HeroWorld = (() => {
     {
       id: 'coins',
       short: 'Монеты',
-      title: 'Монеты через раз',
+      title: 'Монеты вразброс',
       goal: 'Пройди коридор до флага и собери все монеты. Монеты лежат не на каждой клетке, и на каждой карте по-разному.',
       news: 'if внутри цикла: действие выполняется, только когда условие верно.',
       cmds: ['вперёд()', 'взять()', 'есть_монета()'],
-      starter: '# Код ломается на клетке без монеты.\n# Бери монету, только если она есть!\nfor i in range(8):\n    взять()\n    вперёд()\n',
+      starter: '# Запусти и посмотри, где герой ошибётся.\n# Монеты лежат не на каждой клетке.\nfor i in range(8):\n    вперёд()\n    взять()\n',
       hints: [
-        'Перед тем как взять монету, герою нужно проверить, есть ли она на клетке. Для этого есть есть_монета().',
+        'есть_монета() — это вопрос герою: «На этой клетке есть монета?» Он отвечает «да» или «нет». А брать монету можно, только когда ответ «да».',
         'Проверка записывается так:\n    if есть_монета():\n        взять()\nОбрати внимание на двоеточие и отступ.',
-        'for i in range(8):\n    if есть_монета():\n        взять()\n    вперёд()',
+        'for i in range(8):\n    вперёд()\n    if есть_монета():\n        взять()',
       ],
       best: 4,
+      star3: 'first', // «коротко» тут даётся даром: любое верное решение — 4 строки
       gen: (r, used) => genCoins(r, used),
     },
     {
@@ -258,6 +270,13 @@ const HeroWorld = (() => {
     return maps;
   }
 
+  /* Программа закончилась, а герой не на финише */
+  function endError(st) {
+    if (st.idle >= 3)
+      return new WorldError('Программа закончилась, а герой застрял на месте: последние повторы он не сделал ни шага. Проверь отступ у вперёд(): если команда спряталась внутри if, герой шагает, только когда условие верно.', null, 'stuck');
+    return new WorldError('Программа закончилась, а герой не дошёл до флага. Может, в цикле не хватает повторов?', null, 'short');
+  }
+
   /* Прогон кода без анимации (для проверки в тестах) */
   function runSilent(code, level) {
     const st = createState(level);
@@ -270,9 +289,10 @@ const HeroWorld = (() => {
       if (e instanceof WinSignal) return { ok: true, out };
       return { ok: false, err: e.message, line: e.line, kind: e.kind, out };
     }
-    return { ok: false, err: 'Программа закончилась, а герой не дошёл до флага.', kind: 'short', out };
+    const e = endError(st);
+    return { ok: false, err: e.message, kind: e.kind, out };
   }
 
-  return { TASKS, DIRS, K, rng, makeMaps, createState, commands, cellAt, WorldError, WinSignal, runSilent };
+  return { TASKS, DIRS, K, rng, makeMaps, createState, commands, cellAt, endError, WorldError, WinSignal, runSilent };
 })();
 if (typeof module !== 'undefined') module.exports = HeroWorld;

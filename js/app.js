@@ -1,12 +1,12 @@
 /* ===== Долина Эникей: интерфейс и 3D ===== */
 (() => {
-  const { TASKS, K, makeMaps, createState, commands, WinSignal } = HeroWorld;
+  const { TASKS, K, makeMaps, createState, commands, endError, WinSignal } = HeroWorld;
   const $ = s => document.querySelector(s);
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* ---------- Сохранение ---------- */
   const STORE = 'mir-geroya-usloviya-v1';
-  let save = { task: 0, code: {}, stars: {}, hints: {}, seeds: {} };
+  let save = { task: 0, code: {}, stars: {}, hints: {}, seeds: {}, fails: {} };
   try { const raw = localStorage.getItem(STORE); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* без сохранения */ }
   const persist = () => { try { localStorage.setItem(STORE, JSON.stringify(save)); } catch (e) { /* ок */ } };
 
@@ -290,7 +290,14 @@
       if (t >= 1) { tweens.delete(tw); tw.res(); }
     }
     const time = now / 1000;
-    coinMeshes.forEach(c => { if (!c.userData.taken) { c.rotation.y = time * 2 + c.userData.phase; c.position.y = 0.42 + Math.sin(time * 2.4 + c.userData.phase) * 0.05; } });
+    coinMeshes.forEach(c => {
+      if (c.userData.taken) return;
+      c.rotation.y = time * 2 + c.userData.phase;
+      if (c.userData.missed) { // пропущенная монета подпрыгивает, чтобы её было видно
+        c.scale.setScalar(1.4);
+        c.position.y = 0.5 + (reduceMotion ? 0 : Math.abs(Math.sin(time * 4)) * 0.45);
+      } else c.position.y = 0.42 + Math.sin(time * 2.4 + c.userData.phase) * 0.05;
+    });
     M.lava.emissiveIntensity = 0.75 + Math.sin(time * 3) * 0.25;
     if (flag) flag.rotation.y = Math.sin(time * 2.2) * 0.25;
     if (finishRing) finishRing.material.opacity = 0.35 + Math.sin(time * 3) * 0.2;
@@ -655,7 +662,7 @@
         if (e instanceof WinSignal) return { ok: true };
         return { ok: false, err: e };
       }
-      if (r.done) return { ok: false, err: { message: 'Программа закончилась, а герой не дошёл до флага. Может, в цикле не хватает повторов?', line: null, kind: 'short' } };
+      if (r.done) return { ok: false, err: endError(st) };
       await animate(r.value, st);
       if (token !== runToken) return { aborted: true };
       if (stepMode && r.value.type === 'line') {
@@ -665,12 +672,20 @@
     }
   }
 
-  function reportError(err, mIdx) {
+  function reportError(err, mIdx, code = '') {
     const line = err.line || null;
     if (line) markLine(line, 'err'); else markLine(null);
     log(err.message, 'err', line);
-    if (mIdx > 0 && err.kind && err.kind !== 'short')
-      log(`На карте ${mIdx} всё сработало, а на карте ${mIdx + 1} — нет. Код должен работать на любой карте: для этого и нужны условия.`, 'tip');
+    if (err.kind === 'coins') {
+      coinMeshes.forEach(c => { if (!c.userData.taken) c.userData.missed = true; });
+      log('Пропущенные монеты подпрыгивают на карте: посмотри, мимо каких прошёл герой.', 'tip');
+    }
+    if (mIdx > 0 && err.kind && err.kind !== 'short' && err.kind !== 'stuck') {
+      const hasCondition = /^\s*(if|elif|while)\b/m.test(code);
+      log(hasCondition
+        ? `На карте ${mIdx} всё сработало, а на карте ${mIdx + 1} — нет. Условие у тебя уже есть, но здесь оно не помогло. Нажми «Шаг» и посмотри, где герой ошибается.`
+        : `На карте ${mIdx} всё сработало, а на карте ${mIdx + 1} — нет. Код должен работать на любой карте: для этого и нужны условия.`, 'tip');
+    }
   }
 
   async function runAll() {
@@ -695,7 +710,13 @@
       if (r.aborted || token !== runToken) return;
       if (!r.ok) {
         dotStates[m] = 'fail'; setDots(dotStates);
-        reportError(r.err, m);
+        reportError(r.err, m, code);
+        // для звезды «с первого запуска»: запуск нетронутого стартового кода не считается
+        const id = TASKS[taskIdx].id;
+        if (codeLines(code).join('\n') !== codeLines(TASKS[taskIdx].starter).join('\n')) {
+          save.fails[id] = (save.fails[id] || 0) + 1;
+          persist();
+        }
         setRunning(false);
         return;
       }
@@ -729,10 +750,14 @@
     else reportError(r.err, 0);
   }
 
+  // строки кода без пустых и комментариев
+  function codeLines(code) { return code.split('\n').map(l => l.trimEnd()).filter(l => l.trim() && !l.trim().startsWith('#')); }
+
   function finishTask(code) {
     const t = TASKS[taskIdx];
-    const lines = code.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
-    const got = [1, hintsUsed() === 0 ? 1 : 0, lines <= t.best ? 1 : 0];
+    const lines = codeLines(code).length;
+    const first = !save.fails[t.id];
+    const got = [1, hintsUsed() === 0 ? 1 : 0, (t.star3 === 'first' ? first : lines <= t.best) ? 1 : 0];
     const prev = save.stars[t.id] || [0, 0, 0];
     save.stars[t.id] = prev.map((v, i) => (v || got[i] ? 1 : 0));
     persist();
@@ -743,7 +768,9 @@
     $('#resList').innerHTML = `
       <li class="${got[0] ? 'on' : ''}">Код работает на всех трёх картах</li>
       <li class="${got[1] ? 'on' : ''}">Решено без подсказок</li>
-      <li class="${got[2] ? 'on' : ''}">Коротко: ${lines} ${plural(lines, 'строка', 'строки', 'строк')}${got[2] ? '' : `, а можно уложиться в ${t.best}`}</li>`;
+      <li class="${got[2] ? 'on' : ''}">${t.star3 === 'first'
+        ? (got[2] ? 'Сработало с первого запуска' : 'С первого запуска не вышло. Совет: проверяй код кнопкой «Шаг», такие проверки не считаются')
+        : `Коротко: ${lines} ${plural(lines, 'строка', 'строки', 'строк')}${got[2] ? '' : `, а можно уложиться в ${t.best}`}`}</li>`;
     const last = taskIdx === TASKS.length - 1;
     $('#resTitle').textContent = last ? 'Все задания урока пройдены!' : 'Готово! Код работает на любой карте.';
     $('#nextBtn').textContent = last ? 'К первому заданию' : `Задание ${taskIdx + 2}: ${TASKS[taskIdx + 1].short}`;
