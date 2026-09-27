@@ -1,4 +1,4 @@
-// Тест «Коллекции в Python». Страница: test-kollekcii/index.html, движок: js/quiz.js.
+// Тест «Коллекции в Python». Страница: python-collections-test/index.html, движок: js/quiz.js.
 // Типы вопросов:
 //   one   — один верный вариант, answer: 'Б'
 //   many  — несколько верных, answer: 'АБВД'
@@ -8,7 +8,7 @@
 // В тексте `обратные кавычки` превращаются в код, code — отдельный блок кода.
 // После правок: node tests/check-quiz.js
 const QUIZ = {
-  id: 'kollekcii',
+  id: 'python-collections',
   title: 'Коллекции в Python',
   lead: 'Списки, кортежи, словари и множества. Ответь на все вопросы и нажми «Сдать» — только тогда увидишь, где верно, а где нет.',
   shuffle: true,

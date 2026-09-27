@@ -17,10 +17,10 @@
 
 ## Тест «Коллекции в Python»
 
-Отдельная страница `test-kollekcii/` — 25 вопросов про списки, кортежи, словари и множества.
-На сайте: `https://<ваш-логин>.github.io/<имя-репозитория>/test-kollekcii/`.
+Отдельная страница `python-collections-test/` — 25 вопросов про списки, кортежи, словари и множества.
+На сайте: `https://<ваш-логин>.github.io/<имя-репозитория>/python-collections-test/`.
 Правильность видна только после ответа на все вопросы и кнопки «Сдать»; варианты ответов при каждом прохождении перемешиваются.
-Вопросы и ключ ответов — в `test-kollekcii/questions.js`, после правок запустите `node tests/check-quiz.js`.
+Вопросы и ключ ответов — в `python-collections-test/questions.js`, после правок запустите `node tests/check-quiz.js`.
 
 ## Запуск
 
@@ -36,7 +36,7 @@
 | `js/minipy.js` | учебный Python: выполнение по шагам, ошибки на русском |
 | `js/app.js` | интерфейс, 3D-сцена, анимации, звёзды и подсказки |
 | `js/three.min.js` | 3D-библиотека three.js r128 (MIT) |
-| `test-kollekcii/` | тест «Коллекции в Python»: `index.html` и вопросы `questions.js` |
+| `python-collections-test/` | тест «Коллекции в Python»: `index.html` и вопросы `questions.js` |
 | `js/quiz.js`, `css/quiz.css` | движок и оформление тестов |
 
 Как менять и добавлять задания — в `README.txt`.
