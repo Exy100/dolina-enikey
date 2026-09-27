@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Коллекции в Python — тест · Долина Эникей</title>
+<meta name="description" content="Тест для самопроверки: списки, кортежи, словари и множества в Python.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Rubik:wght@400;500;600&family=Unbounded:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../css/quiz.css">
+</head>
+<body>
+<header class="q-top">
+  <a class="q-brand" href="../"><span aria-hidden="true">←</span> Долина Эникей</a>
+  <span class="q-crumb">тест</span>
+</header>
+
+<main class="q-main">
+  <section class="q-hero">
+    <p class="q-kicker">тест · <span id="quizCount"></span></p>
+    <h1 id="quizTitle">Коллекции в Python</h1>
+    <p class="q-lead" id="quizLead"></p>
+    <ul class="q-legend" aria-label="Виды вопросов">
+      <li><span class="lg-box lg-radio" aria-hidden="true"></span>один ответ</li>
+      <li><span class="lg-box lg-check" aria-hidden="true"></span>несколько ответов</li>
+      <li><span class="lg-box lg-match" aria-hidden="true">А</span>сопоставь</li>
+    </ul>
+    <p class="q-save">Ответы запоминаются в этом браузере — можно закрыть страницу и вернуться.</p>
+  </section>
+
+  <section class="q-result" id="result" hidden aria-live="polite"></section>
+
+  <div class="q-list" id="quiz">
+    <noscript><p class="q-card">Чтобы пройти тест, включи JavaScript в браузере.</p></noscript>
+  </div>
+</main>
+
+<div class="q-bar" id="bar">
+  <div class="q-bar-in">
+    <div class="q-prog">
+      <p class="q-prog-txt" id="barTxt" aria-live="polite"></p>
+      <div class="q-track" aria-hidden="true"><div class="q-fill" id="barFill"></div></div>
+    </div>
+    <button type="button" class="q-btn" id="submitBtn">Сдать</button>
+  </div>
+  <p class="q-bar-msg" id="barMsg" hidden></p>
+</div>
+
+<!-- Вопросы теста -->
+<script src="questions.js"></script>
+<!-- Движок: вопросы, ответы, проверка по кнопке «Сдать» -->
+<script src="../js/quiz.js"></script>
+</body>
+</html>
