@@ -38,7 +38,7 @@ button:disabled { cursor: default; opacity: .45; }
 
 /* Шапка */
 .top { display: flex; align-items: center; gap: 20px; padding: 12px 18px; flex-wrap: wrap; }
-.brand { display: flex; align-items: baseline; gap: 12px; margin-right: auto; }
+.brand { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-right: auto; }
 .brand h1 { margin: 0; font: 700 21px/1.1 var(--display); letter-spacing: -.01em; }
 .brand p { margin: 0; color: var(--muted); font-size: 14px; }
 .lesson-pick select { font: 500 14px var(--ui); color: var(--ink); background: var(--panel); border: 1.5px solid var(--line); border-radius: 999px; padding: 6px 12px; max-width: 100%; }
@@ -173,6 +173,37 @@ body.is-running .ed-code textarea { cursor: default; }
 .res-card li.on { color: var(--ink); }
 .res-card li.on::before { content: "✓"; color: var(--mint); font-weight: 700; left: 4px; }
 .res-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.res-level { margin: -2px 0 12px; padding: 8px 12px; border-radius: 12px; background: var(--accent-soft); font-weight: 600; font-size: 14px; }
+
+/* Герой: уровень в шапке и снаряжение */
+.hero-badge { display: inline-flex; align-items: center; gap: 8px; border: 1.5px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 999px; padding: 4px 12px 4px 4px; font-size: 14px; }
+.hero-badge:hover { border-color: var(--accent); }
+.hb-lvl { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font: 700 13px var(--display); }
+.hb-text { white-space: nowrap; }
+.hb-text span { color: var(--muted); }
+.hb-bar { width: 56px; height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.hb-bar i { display: block; height: 100%; width: 0; background: var(--gold-star); border-radius: 3px; transition: width .4s; }
+.gear { position: absolute; top: 60px; right: 14px; z-index: 6; width: min(320px, calc(100% - 28px)); max-height: calc(100% - 80px); overflow: auto;
+  background: var(--panel); border-radius: 20px; padding: 16px 18px; box-shadow: 0 20px 50px rgba(18,20,43,.3); }
+.gear-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.gear h3 { margin: 0; font: 700 16px/1.3 var(--display); }
+.gear-close { border: 0; background: transparent; color: var(--muted); font-size: 24px; line-height: 1; padding: 0 4px; }
+.gear-sub { margin: 6px 0 12px; color: var(--muted); font-size: 14px; }
+.gear-list { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 6px; }
+.gear-item { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px;
+  border: 1.5px solid var(--line); background: var(--panel); color: var(--ink); font-size: 14px; text-align: left; }
+.gear-item[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+.gear-item:disabled { color: var(--muted); border-style: dashed; }
+.gi-state { font-size: 12px; color: var(--muted); }
+.gear-item[aria-pressed="true"] .gi-state { color: var(--accent); font-weight: 600; }
+
+/* Сюжет: реплика персонажа поверх мира */
+.talk { position: absolute; left: 14px; right: 14px; bottom: 14px; z-index: 7; display: flex; justify-content: center; }
+.talk-card { display: flex; gap: 14px; align-items: flex-start; width: min(620px, 100%); background: var(--panel); border-radius: 20px; padding: 16px 18px; box-shadow: 0 20px 50px rgba(18,20,43,.3); }
+.talk-face { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; color: #fff; font: 700 22px var(--display); }
+.talk-name { margin: 0 0 4px; color: var(--muted); font-size: 14px; font-weight: 600; }
+.talk-text { margin: 0 0 12px; font-size: 17px; line-height: 1.45; }
+.talk-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 @media (max-width: 900px) {
   html, body { height: auto; }

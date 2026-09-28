@@ -6,7 +6,7 @@
 
   /* ---------- Сохранение ---------- */
   const STORE = 'mir-geroya-usloviya-v1';
-  let save = { lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {} };
+  let save = { lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} } };
   try { const raw = localStorage.getItem(STORE); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* без сохранения */ }
   // Раньше урок был один («Условия»), и номер задания лежал в save.task. Кто его начинал — вернётся туда же.
   if (!LESSONS.some(l => l.id === save.lesson)) {
@@ -64,11 +64,17 @@
     ring: new THREE.MeshBasicMaterial({ color: 0x7ef0d6, transparent: true, opacity: 0.55 }),
   };
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  Object.assign(M, {
+    gate: new THREE.MeshStandardMaterial({ color: 0xb8742e, roughness: 0.8 }),
+    gateBar: new THREE.MeshStandardMaterial({ color: 0x4a4f6a, metalness: 0.5, roughness: 0.4 }),
+    boss: new THREE.MeshStandardMaterial({ color: 0x1b1e3c, emissive: 0xff2bd6, emissiveIntensity: 0.6, roughness: 0.4 }),
+  });
 
   let levelGroup = new THREE.Group();
   scene.add(levelGroup);
   let coinMeshes = new Map();
-  let flag = null, finishRing = null;
+  let flag = null, finishRing = null, boss = null;
+  let gateMeshes = new Map(); // клетка ворот → створка
 
   /* Герой */
   const hero = new THREE.Group();
@@ -100,13 +106,35 @@
     const arrow = new THREE.Mesh(new THREE.ShapeGeometry(tri), new THREE.MeshBasicMaterial({ color: 0xffc83d, transparent: true, opacity: 0.9 }));
     arrow.rotation.x = -Math.PI / 2; arrow.position.set(0, 0.012, 0.3);
     hero.add(body, head, ant, bulb, arrow);
-    Object.assign(heroParts, { body, head, violet, violetLight });
+    Object.assign(heroParts, { body, head, violet, violetLight, ant, bulb });
   })();
   const heroRig = new THREE.Group(); // для прыжков и сдвигов
   heroRig.add(hero);
   scene.add(heroRig);
   let heroAngle = 0;
   const DIR_ANGLE = [Math.PI / 2, Math.PI, Math.PI * 1.5, 0];
+
+  /* ---------- Прокачка героя: уровень за звёзды во всём курсе, снаряжение видно на герое ---------- */
+  const { LEVELS, ITEMS, SLOTS } = HeroGear;
+  const gearOn = {}; // слот → 3D-модель надетой вещи
+  function totalStars() {
+    return LESSONS.reduce((n, l) => n + l.tasks.reduce((m, t) => m + (save.stars[t.id] || []).reduce((a, b) => a + b, 0), 0), 0);
+  }
+  const heroLevel = () => HeroGear.levelFor(totalStars());
+  const isOpen = it => it.level <= heroLevel();
+  function applyGear() {
+    Object.keys(gearOn).forEach(slot => { hero.remove(gearOn[slot]); delete gearOn[slot]; });
+    let colors = HeroGear.DEFAULT_COLORS;
+    ITEMS.forEach(it => {
+      if (save.gear[it.slot] !== it.id || !isOpen(it)) return;
+      if (it.colors) colors = it.colors;
+      else hero.add(gearOn[it.slot] = HeroGear.build(it.id, THREE));
+    });
+    heroParts.violet.color.setHex(colors[0]);
+    heroParts.violetLight.color.setHex(colors[1]);
+    heroParts.ant.visible = heroParts.bulb.visible = !gearOn.head; // шляпа и корона надеваются вместо антенны
+  }
+  applyGear();
 
   /* Камера */
   const cam = { az: -0.38, el: 0.9, dist: 14, target: new THREE.Vector3(), goal: { az: -0.38, el: 0.9, dist: 14 }, top: false, shake: 0 };
@@ -126,9 +154,13 @@
 
   function buildLevel(level) {
     scene.remove(levelGroup);
-    levelGroup.traverse(o => { if (o.geometry && o.geometry !== boxGeo) o.geometry.dispose(); });
+    levelGroup.traverse(o => {
+      if (o.geometry && o.geometry !== boxGeo) o.geometry.dispose();
+      if (o.material && o.material.isMaterial && o.material.map) o.material.map.dispose(); // у блоков — массив материалов
+    });
     levelGroup = new THREE.Group();
     coinMeshes = new Map();
+    gateMeshes = new Map();
     particles.splice(0).forEach(p => scene.remove(p.m));
     const floorKeys = [...level.floor];
     const cells = floorKeys.map(k => k.split(',').map(Number));
@@ -192,17 +224,84 @@
       levelGroup.add(c);
       coinMeshes.set(k, c);
     });
-    // финиш
+    // ворота: столбы и створка поперёк дороги; при открытии створка уходит под землю
+    level.gates.forEach(k => {
+      const [x, z] = k.split(',').map(Number);
+      const g = new THREE.Group();
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.72, 0.2), M.gate);
+      door.position.y = 0.36;
+      door.castShadow = true;
+      [-0.28, 0, 0.28].forEach(bx => {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.72, 0.24), M.gateBar);
+        bar.position.x = bx;
+        door.add(bar);
+      });
+      g.add(door);
+      // столбы и перекладина сверху: с камеры, которая смотрит вдоль створки, ворота видно по ним
+      [-0.47, 0.47].forEach(px => {
+        const p = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, 0.24), M.gateBar);
+        p.position.set(px, 0.52, 0);
+        p.castShadow = true;
+        g.add(p);
+      });
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.12, 0.26), M.gateBar);
+      beam.position.y = 1.02;
+      beam.castShadow = true;
+      g.add(beam);
+      g.position.set(x, 0, z);
+      // дорога идёт вдоль x — створка встаёт поперёк неё
+      if (level.floor.has(K(x - 1, z)) || level.floor.has(K(x + 1, z))) g.rotation.y = Math.PI / 2;
+      levelGroup.add(g);
+      gateMeshes.set(k, door);
+    });
+    // таблички: столбик и дощечка с числом, повёрнутая к камере
+    level.signs.forEach((v, k) => {
+      const [x, z] = k.split(',').map(Number);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.5, 6), M.trunk);
+      post.position.set(x + 0.3, 0.25, z + 0.3);
+      post.castShadow = true;
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 64;
+      const c = cv.getContext('2d');
+      c.fillStyle = '#f3e2bf'; c.fillRect(0, 0, 64, 64);
+      c.strokeStyle = '#8a5a2b'; c.lineWidth = 6; c.strokeRect(3, 3, 58, 58);
+      c.fillStyle = '#1b1e3c'; c.font = 'bold 44px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(String(v), 32, 35);
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3),
+        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), side: THREE.DoubleSide }));
+      board.position.set(x + 0.3, 0.58, z + 0.3);
+      board.rotation.y = cam.az;
+      levelGroup.add(post, board);
+    });
+    // финиш: флаг; на карте с боссом — Великий Сбой; спрятанный флаг не рисуется
     const f = level.finish;
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 8), M.pole);
-    pole.position.set(f.x + 0.28, 0.65, f.z - 0.28); pole.castShadow = true;
-    const fs = new THREE.Shape(); fs.moveTo(0, 0); fs.lineTo(0.5, -0.16); fs.lineTo(0, -0.32); fs.lineTo(0, 0);
-    flag = new THREE.Mesh(new THREE.ShapeGeometry(fs), M.flag);
-    flag.position.set(f.x + 0.28, 1.28, f.z - 0.28);
-    flag.castShadow = true;
-    finishRing = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.4, 28), M.ring);
-    finishRing.rotation.x = -Math.PI / 2; finishRing.position.set(f.x, 0.015, f.z);
-    levelGroup.add(pole, flag, finishRing);
+    flag = null; finishRing = null; boss = null;
+    if (!level.hidden) {
+      finishRing = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.4, 28), M.ring);
+      finishRing.rotation.x = -Math.PI / 2; finishRing.position.set(f.x, 0.015, f.z);
+      levelGroup.add(finishRing);
+    }
+    if (level.boss) {
+      boss = new THREE.Group();
+      const core = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), M.boss);
+      core.castShadow = true;
+      boss.add(core);
+      for (let i = 0; i < 4; i++) {
+        const bit = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), M.boss);
+        bit.userData.a = (i * Math.PI) / 2;
+        boss.add(bit);
+      }
+      boss.position.set(f.x, 0.85, f.z);
+      levelGroup.add(boss);
+    } else if (!level.hidden) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 8), M.pole);
+      pole.position.set(f.x + 0.28, 0.65, f.z - 0.28); pole.castShadow = true;
+      const fs = new THREE.Shape(); fs.moveTo(0, 0); fs.lineTo(0.5, -0.16); fs.lineTo(0, -0.32); fs.lineTo(0, 0);
+      flag = new THREE.Mesh(new THREE.ShapeGeometry(fs), M.flag);
+      flag.position.set(f.x + 0.28, 1.28, f.z - 0.28);
+      flag.castShadow = true;
+      levelGroup.add(pole, flag);
+    }
     scene.add(levelGroup);
 
     // герой в начало
@@ -240,8 +339,12 @@
 
   /* ---------- Анимации ---------- */
   const tweens = new Set();
+  // Темп анимации: ползунок скорости × ускорение задания (в лабиринтах шагов много — fast: 3)
+  // × ускорение проверки (карты 2 и 3 идут вдвое быстрее: первую ученик смотрит, остальные — проверка)
+  let boost = 1;
+  const tempo = () => speed * boost * ((TASKS[taskIdx] && TASKS[taskIdx].fast) || 1);
   function tween(ms, fn) {
-    const dur = Math.max(16, ms / speed);
+    const dur = Math.max(16, ms / tempo());
     return new Promise(res => tweens.add({ start: performance.now(), dur, fn, res }));
   }
   const wait = ms => tween(ms, () => {});
@@ -279,7 +382,7 @@
     bubble.textContent = text;
     bubble.className = 'bubble show ' + kind;
     clearTimeout(bubbleTimer);
-    bubbleTimer = setTimeout(() => { bubble.className = 'bubble'; }, ms / Math.min(speed, 1.5) + 250);
+    bubbleTimer = setTimeout(() => { bubble.className = 'bubble'; }, ms / Math.min(tempo(), 1.5) + 250);
   }
   const headPos = new THREE.Vector3();
   function positionBubble() {
@@ -308,9 +411,20 @@
         c.position.y = 0.5 + (reduceMotion ? 0 : Math.abs(Math.sin(time * 4)) * 0.45);
       } else c.position.y = 0.42 + Math.sin(time * 2.4 + c.userData.phase) * 0.05;
     });
+    if (gearOn.pet) { const a = time * 1.7; gearOn.pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); }
     M.lava.emissiveIntensity = 0.75 + Math.sin(time * 3) * 0.25;
     if (flag) flag.rotation.y = Math.sin(time * 2.2) * 0.25;
     if (finishRing) finishRing.material.opacity = 0.35 + Math.sin(time * 3) * 0.2;
+    if (boss && boss.visible) { // Великий Сбой дёргается и мерцает
+      boss.rotation.y += dt * 1.5;
+      const j = reduceMotion ? 0 : 0.05;
+      boss.children[0].position.set((Math.random() - 0.5) * j, Math.sin(time * 3) * 0.05, (Math.random() - 0.5) * j);
+      boss.children.slice(1).forEach((b, i) => {
+        const a = b.userData.a + time * 2;
+        b.position.set(Math.cos(a) * 0.45, Math.sin(time * 4 + i) * 0.12, Math.sin(a) * 0.45);
+      });
+      M.boss.emissive.setHex(!reduceMotion && Math.sin(time * 17) > 0.6 ? 0x2bf0ff : 0xff2bd6);
+    }
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
@@ -441,13 +555,30 @@
         return;
       }
       case 'shrug': {
-        say('Зачем прыгать?', 'bad', 1400);
+        say(ev.text || 'Зачем прыгать?', 'bad', 1400);
         await tween(360, t => { hero.rotation.z = Math.sin(t * Math.PI * 3) * 0.12; });
         hero.rotation.z = 0;
         return;
       }
+      case 'open': {
+        say('Открыто!', 'yes', 900);
+        const door = gateMeshes.get(K(ev.x, ev.z));
+        if (door) await tween(450, t => { door.position.y = 0.36 - t * 0.8; });
+        return;
+      }
+      case 'say': {
+        say(`«${ev.text}»`, 'yes', 1600);
+        await wait(700);
+        return;
+      }
       case 'win': {
-        say('Ура, флаг!', 'yes', 1100);
+        if (boss) {
+          say('Сбой повержен!', 'yes', 1400);
+          sparks(boss.position.x, boss.position.z, 0xff2bd6, 30);
+          const b = boss;
+          await tween(600, t => { b.scale.setScalar(1 - t); b.rotation.y += 0.3; });
+          b.visible = false;
+        } else say('Ура, флаг!', 'yes', 1100);
         confetti(st.hero.x, st.hero.z);
         const a0 = heroAngle;
         await tween(800, t => {
@@ -462,8 +593,9 @@
 
   /* ================= Редактор ================= */
   const ta = $('#code'), hl = $('#hl'), gutter = $('#gutter'), band = $('#band');
-  const HERO_CMDS = ['вперёд', 'вперед', 'налево', 'направо', 'взять', 'прыгнуть', 'стена_впереди', 'лава_впереди', 'есть_монета', 'на_финише', 'монет_собрано'];
-  const KWS = ['for', 'in', 'if', 'elif', 'else', 'while', 'and', 'or', 'not', 'True', 'False', 'None', 'pass', 'break', 'continue'];
+  // команды героя по-русски и по-английски (move() — это вперёд())
+  const HERO_CMDS = ['вперёд', ...Object.keys(HeroWorld.EN), ...Object.values(HeroWorld.EN)];
+  const KWS = ['for', 'in', 'if', 'elif', 'else', 'while', 'and', 'or', 'not', 'True', 'False', 'None', 'pass', 'break', 'continue', 'def', 'return'];
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const tokRe = new RegExp(
     '(#.*)|("(?:[^"\\\\\\n]|\\\\.)*"?|\'(?:[^\'\\\\\\n]|\\\\.)*\'?)|\\b(\\d+(?:\\.\\d+)?)\\b|([\\p{L}_][\\p{L}\\p{N}_]*)', 'gu');
@@ -584,8 +716,17 @@
     sel.value = lessonIdx;
   }
 
+  function renderBadge() {
+    const stars = totalStars(), n = HeroGear.levelFor(stars), cur = LEVELS[n - 1], next = LEVELS[n];
+    $('#hbLvl').textContent = n;
+    $('#hbTitle').textContent = cur.title;
+    $('#hbBar').style.width = next ? `${Math.round(((stars - cur.stars) / (next.stars - cur.stars)) * 100)}%` : '100%';
+    $('#heroBtn').setAttribute('aria-label', `${STORY.hero}, уровень ${n}: ${cur.title}. Снаряжение`);
+  }
+
   function renderTabs() {
     renderLessons();
+    renderBadge();
     const nav = $('#tabs');
     nav.innerHTML = '';
     TASKS.forEach((t, i) => {
@@ -636,7 +777,7 @@
     if (!save.seeds[t.id]) save.seeds[t.id] = 1000 + Math.floor(Math.random() * 90000);
     maps = makeMaps(t, save.seeds[t.id]);
     persist();
-    $('#taskNum').textContent = `Задание ${i + 1} из ${TASKS.length}`;
+    $('#taskNum').textContent = `${lessonStory().place || `Урок ${lessonIdx + 1}`} · задание ${i + 1} из ${TASKS.length}`;
     $('#taskTitle').textContent = t.title;
     $('#taskGoal').textContent = t.goal;
     $('#taskNew').textContent = t.news;
@@ -680,6 +821,7 @@
   /* ---------- Запуск ---------- */
   function setRunning(on) {
     running = on;
+    if (!on) boost = 1;
     ta.readOnly = on;
     document.body.classList.toggle('is-running', on);
     $('#runBtn').textContent = on && stepMode ? 'Без остановок' : 'Запуск';
@@ -750,6 +892,7 @@
     setRunning(true);
     dotStates = ['', '', ''];
     for (let m = 0; m < maps.length; m++) {
+      boost = m > 0 ? 2 : 1;
       showMap(m);
       dotStates[m] = 'active'; setDots(dotStates);
       if (maps.length > 1) log(`Карта ${m + 1} из ${maps.length}`, 'map');
@@ -815,7 +958,17 @@
     const first = !save.fails[t.id];
     const got = [1, hintsUsed() === 0 ? 1 : 0, (t.star3 === 'first' ? first : lines <= t.best) ? 1 : 0];
     const prev = save.stars[t.id] || [0, 0, 0];
+    const lvlBefore = heroLevel();
     save.stars[t.id] = prev.map((v, i) => (v || got[i] ? 1 : 0));
+    // новый уровень: открытые вещи сразу надеваются, чтобы их было видно на герое
+    const lvl = heroLevel(), fresh = ITEMS.filter(it => it.level > lvlBefore && it.level <= lvl);
+    fresh.forEach(it => { save.gear[it.slot] = it.id; });
+    if (fresh.length) applyGear();
+    $('#resLevel').hidden = lvl <= lvlBefore;
+    $('#resLevel').textContent = `Новый уровень ${lvl}: ${LEVELS[lvl - 1].title}!`
+      + (fresh.length ? ` Открыто: ${fresh.map(it => it.name.toLowerCase()).join(', ')}.` : '');
+    // урок пройден целиком: на «Дальше» проводник квеста скажет прощальные слова
+    outroPending = !save.seen.outro[LESSONS[lessonIdx].id] && TASKS.every(x => (save.stars[x.id] || [])[0]);
     persist();
     renderTabs();
     const r = $('#result');
@@ -877,25 +1030,114 @@
     ta.value = TASKS[taskIdx].starter; onEdit(); markLine(null);
   });
   $('#nextBtn').addEventListener('click', () => {
-    if (taskIdx < TASKS.length - 1) selectTask(taskIdx + 1);
-    else if (LESSONS[lessonIdx + 1]) selectLesson(lessonIdx + 1);
-    else selectTask(0);
+    const next = () => {
+      if (taskIdx < TASKS.length - 1) selectTask(taskIdx + 1);
+      else if (LESSONS[lessonIdx + 1]) { selectLesson(lessonIdx + 1); greet(); }
+      else selectTask(0);
+    };
+    if (!outroPending) { next(); return; }
+    outroPending = false;
+    save.seen.outro[LESSONS[lessonIdx].id] = true;
+    persist();
+    hideResult();
+    talk(lessonStory().outro, next);
   });
   $('#lessonSel').addEventListener('change', e => {
     if (running) { e.target.value = lessonIdx; return; }
     selectLesson(+e.target.value);
+    greet();
   });
   $('#againBtn').addEventListener('click', () => { hideResult(); $('#newMapsBtn').click(); });
+
+  /* ---------- Снаряжение героя ---------- */
+  function renderGear() {
+    const stars = totalStars(), n = HeroGear.levelFor(stars), next = LEVELS[n];
+    $('#gearTitle').textContent = `${STORY.hero} · уровень ${n}, ${LEVELS[n - 1].title.toLowerCase()}`;
+    $('#gearSub').textContent = next
+      ? `Звёзд: ${stars}. До уровня ${n + 1} — ещё ${next.stars - stars}. За уровни открываются вещи.`
+      : `Звёзд: ${stars}. Это высший уровень!`;
+    const list = $('#gearList');
+    list.innerHTML = '';
+    ITEMS.forEach(it => {
+      const on = save.gear[it.slot] === it.id, open = isOpen(it);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'gear-item';
+      b.disabled = !open;
+      b.setAttribute('aria-pressed', String(on && open));
+      const name = document.createElement('span');
+      name.textContent = it.name;
+      const state = document.createElement('span');
+      state.className = 'gi-state';
+      state.textContent = !open ? `уровень ${it.level}` : on ? 'надето' : SLOTS[it.slot];
+      b.append(name, state);
+      b.addEventListener('click', () => { save.gear[it.slot] = on ? null : it.id; persist(); applyGear(); renderGear(); });
+      const li = document.createElement('li');
+      li.append(b);
+      list.append(li);
+    });
+  }
+  $('#heroBtn').addEventListener('click', () => {
+    const p = $('#gearPanel');
+    p.hidden = !p.hidden;
+    if (!p.hidden) renderGear();
+  });
+  $('#gearClose').addEventListener('click', () => { $('#gearPanel').hidden = true; });
+  $('#storyBtn').addEventListener('click', () => {
+    $('#gearPanel').hidden = true;
+    const s = lessonStory();
+    talk([...STORY.prologue, ...(s.intro || []), ...(save.seen.outro[LESSONS[lessonIdx].id] ? s.outro || [] : [])]);
+  });
+
+  /* ---------- Сюжет: реплики персонажей (js/story.js) ---------- */
+  let talkQueue = [], talkDone = null, outroPending = false;
+  function lessonStory() { return STORY.lessons[LESSONS[lessonIdx].id] || {}; }
+  function talk(lines, done) {
+    if (!lines || !lines.length) { if (done) done(); return; }
+    talkQueue = lines.slice();
+    talkDone = done || null;
+    showLine();
+  }
+  function showLine() {
+    const [who, text] = talkQueue.shift();
+    const p = STORY.people[who];
+    const face = $('#talkFace');
+    face.textContent = p.letter;
+    face.style.background = p.color;
+    $('#talkName').textContent = p.role ? `${p.name}, ${p.role}` : p.name;
+    $('#talkText').textContent = text;
+    $('#talkNext').textContent = talkQueue.length ? 'Дальше' : 'Понятно';
+    $('#talk').hidden = false;
+    $('#talkNext').focus({ preventScroll: true });
+  }
+  function endTalk() {
+    $('#talk').hidden = true;
+    talkQueue = [];
+    const done = talkDone;
+    talkDone = null;
+    if (done) done(); else ta.focus({ preventScroll: true });
+  }
+  $('#talkNext').addEventListener('click', () => (talkQueue.length ? showLine() : endTalk()));
+  $('#talkSkip').addEventListener('click', endTalk);
+  // При входе в урок: пролог — один раз за всю игру, вступление урока — один раз для каждого урока
+  function greet() {
+    const id = LESSONS[lessonIdx].id, lines = [];
+    if (!save.seen.prologue) { lines.push(...STORY.prologue); save.seen.prologue = true; }
+    if (!save.seen.intro[id]) { lines.push(...(lessonStory().intro || [])); save.seen.intro[id] = true; }
+    persist();
+    talk(lines);
+  }
 
   /* ---------- Заставка «Нажми любую клавишу» ---------- */
   (function splashScreen() {
     const sp = $('#splash');
-    if (!sp) return;
+    if (!sp) { setTimeout(greet); return; }
     const go = () => {
       removeEventListener('keydown', onKey, true);
       sp.classList.add('hide');
       setTimeout(() => sp.remove(), 400);
       ta.focus({ preventScroll: true });
+      greet();
     };
     const onKey = e => {
       if (['Tab', 'Shift', 'Alt', 'Control', 'Meta'].includes(e.key)) return;
