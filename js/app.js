@@ -1,17 +1,26 @@
 /* ===== Долина Эникей: интерфейс и 3D ===== */
 (() => {
-  const { TASKS, K, makeMaps, createState, commands, endCheck, WinSignal } = HeroWorld;
+  const { LESSONS, K, makeMaps, createState, commands, endCheck, WinSignal } = HeroWorld;
   const $ = s => document.querySelector(s);
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* ---------- Сохранение ---------- */
   const STORE = 'mir-geroya-usloviya-v1';
-  let save = { task: 0, code: {}, stars: {}, hints: {}, seeds: {}, fails: {} };
+  let save = { lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {} };
   try { const raw = localStorage.getItem(STORE); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* без сохранения */ }
+  // Раньше урок был один («Условия»), и номер задания лежал в save.task. Кто его начинал — вернётся туда же.
+  if (!LESSONS.some(l => l.id === save.lesson)) {
+    const old = LESSONS.find(l => l.id === 'usloviya');
+    const started = old && old.tasks.some(t => save.stars[t.id] || save.code[t.id] !== undefined);
+    save.lesson = started ? old.id : LESSONS[0].id;
+    if (started && save.pos[old.id] === undefined) save.pos[old.id] = save.task || 0;
+  }
   const persist = () => { try { localStorage.setItem(STORE, JSON.stringify(save)); } catch (e) { /* ок */ } };
 
   /* ---------- Состояние ---------- */
-  let taskIdx = Math.min(save.task || 0, TASKS.length - 1);
+  let lessonIdx = LESSONS.findIndex(l => l.id === save.lesson);
+  let TASKS = LESSONS[lessonIdx].tasks;
+  let taskIdx = Math.min(save.pos[save.lesson] || 0, TASKS.length - 1);
   let maps = [];
   let mapIdx = 0;
   let runToken = 0;
@@ -562,7 +571,21 @@
 
   function starsHtml(n) { return [0, 1, 2].map(i => `<i class="${n[i] ? 'on' : ''}">★</i>`).join(''); }
 
+  function renderLessons() {
+    const sel = $('#lessonSel');
+    sel.innerHTML = '';
+    LESSONS.forEach((l, i) => {
+      const got = l.tasks.reduce((n, t) => n + (save.stars[t.id] || []).reduce((a, b) => a + b, 0), 0);
+      const o = document.createElement('option');
+      o.value = i;
+      o.textContent = `Урок ${i + 1}. ${l.title} · ★ ${got} из ${l.tasks.length * 3}`;
+      sel.append(o);
+    });
+    sel.value = lessonIdx;
+  }
+
   function renderTabs() {
+    renderLessons();
     const nav = $('#tabs');
     nav.innerHTML = '';
     TASKS.forEach((t, i) => {
@@ -598,10 +621,17 @@
     btn.textContent = used === 2 ? 'Показать решение' : `Подсказка ${used + 1} из 2`;
   }
 
+  function selectLesson(li) {
+    lessonIdx = li;
+    TASKS = LESSONS[li].tasks;
+    selectTask(Math.min(save.pos[LESSONS[li].id] || 0, TASKS.length - 1));
+  }
+
   function selectTask(i) {
     stopRun();
     taskIdx = i;
-    save.task = i;
+    save.lesson = LESSONS[lessonIdx].id;
+    save.pos[save.lesson] = i;
     const t = TASKS[i];
     if (!save.seeds[t.id]) save.seeds[t.id] = 1000 + Math.floor(Math.random() * 90000);
     maps = makeMaps(t, save.seeds[t.id]);
@@ -625,7 +655,14 @@
     renderHints();
     hideResult();
     clearLog();
-    log('Нажми «Запуск»: код проверится на трёх разных картах. «Шаг» выполняет программу по одной строке.', 'info');
+    if (i === 0 && LESSONS[lessonIdx].intro) log(LESSONS[lessonIdx].intro, 'tip');
+    log(maps.length > 1
+      ? 'Нажми «Запуск»: код проверится на трёх разных картах. «Шаг» выполняет программу по одной строке.'
+      : 'Нажми «Запуск», и герой выполнит программу. «Шаг» выполняет её по одной строке.', 'info');
+    // в уроках без условий карта одна: переключатель карт и «Новые карты» не нужны
+    $('.hud.tl').hidden = maps.length === 1;
+    $('#newMapsBtn').hidden = maps.length === 1;
+    $('#againBtn').hidden = maps.length === 1;
     dotStates = ['', '', ''];
     showMap(0);
   }
@@ -635,7 +672,7 @@
     buildLevel(maps[i]);
     updateCoins(0, maps[i].need || maps[i].coins.size);
     setDots(dotStates);
-    $('#mapLabel').textContent = `Карта ${i + 1} из 3`;
+    $('#mapLabel').textContent = `Карта ${i + 1} из ${maps.length}`;
   }
 
   dots.forEach((d, i) => d.addEventListener('click', () => { if (!running) { dotStates = ['', '', '']; showMap(i); } }));
@@ -670,7 +707,7 @@
         return { ok: false, err: e };
       }
       if (r.done) {
-        const err = endCheck(st);
+        const err = endCheck(st, code);
         if (err) return { ok: false, err };
         await animate({ type: 'win' }, st); // карта «стоп»: герой закончил программу на флаге
         return { ok: true };
@@ -712,10 +749,10 @@
     stepMode = false;
     setRunning(true);
     dotStates = ['', '', ''];
-    for (let m = 0; m < 3; m++) {
+    for (let m = 0; m < maps.length; m++) {
       showMap(m);
       dotStates[m] = 'active'; setDots(dotStates);
-      log(`Карта ${m + 1} из 3`, 'map');
+      if (maps.length > 1) log(`Карта ${m + 1} из ${maps.length}`, 'map');
       await wait(420);
       if (token !== runToken) return;
       const r = await runOnMap(code, token);
@@ -753,12 +790,19 @@
     setRunning(true);
     dotStates = ['', '', ''];
     showMap(mapIdx);
-    log(`Пошаговый режим на карте ${mapIdx + 1}. Нажимай «Шаг», чтобы выполнить следующую строку.`, 'map');
+    log(maps.length > 1
+      ? `Пошаговый режим на карте ${mapIdx + 1}. Нажимай «Шаг», чтобы выполнить следующую строку.`
+      : 'Пошаговый режим. Нажимай «Шаг», чтобы выполнить следующую строку.', 'map');
     const r = await runOnMap(code, token);
     if (r.aborted || token !== runToken) return;
     stepMode = false;
     setRunning(false);
-    if (r.ok) { markLine(null); log(`Карта ${mapIdx + 1} пройдена. Нажми «Запуск», чтобы проверить код на всех трёх картах.`, 'ok'); }
+    if (r.ok) {
+      markLine(null);
+      log(maps.length > 1
+        ? `Карта ${mapIdx + 1} пройдена. Нажми «Запуск», чтобы проверить код на всех трёх картах.`
+        : 'Получилось! Нажми «Запуск», чтобы засчитать задание.', 'ok');
+    }
     else reportError(r.err, 0);
   }
 
@@ -778,15 +822,17 @@
     r.hidden = false;
     $('#resStars').innerHTML = starsHtml(got);
     $('#resList').innerHTML = `
-      <li class="${got[0] ? 'on' : ''}">Код работает на всех трёх картах</li>
+      <li class="${got[0] ? 'on' : ''}">${maps.length > 1 ? 'Код работает на всех трёх картах' : 'Герой дошёл до флага'}</li>
       <li class="${got[1] ? 'on' : ''}">Решено без подсказок</li>
       <li class="${got[2] ? 'on' : ''}">${t.star3 === 'first'
         ? (got[2] ? 'Сработало с первого запуска' : 'С первого запуска не вышло. Совет: проверяй код кнопкой «Шаг», такие проверки не считаются')
         : `Коротко: ${lines} ${plural(lines, 'строка', 'строки', 'строк')}${got[2] ? '' : `, а можно уложиться в ${t.best}`}`}</li>`;
     const last = taskIdx === TASKS.length - 1;
-    $('#resTitle').textContent = last ? 'Все задания урока пройдены!' : 'Готово! Код работает на любой карте.';
-    $('#nextBtn').textContent = last ? 'К первому заданию' : `Задание ${taskIdx + 2}: ${TASKS[taskIdx + 1].short}`;
-    log('Все три карты пройдены.', 'ok');
+    const nextLesson = LESSONS[lessonIdx + 1];
+    $('#resTitle').textContent = last ? 'Все задания урока пройдены!' : maps.length > 1 ? 'Готово! Код работает на любой карте.' : 'Готово!';
+    $('#nextBtn').textContent = !last ? `Задание ${taskIdx + 2}: ${TASKS[taskIdx + 1].short}`
+      : nextLesson ? `Урок ${lessonIdx + 2}: ${nextLesson.title}` : 'К первому заданию';
+    if (maps.length > 1) log('Все три карты пройдены.', 'ok');
   }
   function hideResult() { $('#result').hidden = true; }
   function plural(n, a, b, c) { const m10 = n % 10, m100 = n % 100; if (m10 === 1 && m100 !== 11) return a; if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return b; return c; }
@@ -830,7 +876,15 @@
     clearTimeout(resetArmed); resetArmed = null; b.textContent = 'Вернуть исходный код';
     ta.value = TASKS[taskIdx].starter; onEdit(); markLine(null);
   });
-  $('#nextBtn').addEventListener('click', () => selectTask((taskIdx + 1) % TASKS.length));
+  $('#nextBtn').addEventListener('click', () => {
+    if (taskIdx < TASKS.length - 1) selectTask(taskIdx + 1);
+    else if (LESSONS[lessonIdx + 1]) selectLesson(lessonIdx + 1);
+    else selectTask(0);
+  });
+  $('#lessonSel').addEventListener('change', e => {
+    if (running) { e.target.value = lessonIdx; return; }
+    selectLesson(+e.target.value);
+  });
   $('#againBtn').addEventListener('click', () => { hideResult(); $('#newMapsBtn').click(); });
 
   /* ---------- Заставка «Нажми любую клавишу» ---------- */
