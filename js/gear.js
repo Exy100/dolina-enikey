@@ -10,11 +10,17 @@ const HeroGear = (() => {
     { stars: 31, title: 'Знаток' },
     { stars: 41, title: 'Мастер' },
     { stars: 52, title: 'Изобретатель' },
-    { stars: 62, title: 'Хранитель долины' },
-    { stars: 72, title: 'Легенда долины' },
+    { stars: 62, title: 'Мудрец' },
+    { stars: 72, title: 'Инженер' },
+    { stars: 84, title: 'Архитектор' },
+    { stars: 97, title: 'Магистр кода' },
+    { stars: 111, title: 'Защитник долины' },
+    { stars: 126, title: 'Герой долины' },
+    { stars: 142, title: 'Великий программист' },
+    { stars: 158, title: 'Легенда долины' },
   ];
   // На каждый слот надевается одна вещь. level — с какого уровня открывается.
-  const SLOTS = { head: 'голова', neck: 'шея', back: 'спина', pet: 'питомец', color: 'цвет' };
+  const SLOTS = { head: 'голова', face: 'лицо', neck: 'шея', back: 'спина', pet: 'питомец', color: 'цвет' };
   const ITEMS = [
     { id: 'scarf', name: 'Шарф', slot: 'neck', level: 2 },
     { id: 'bag', name: 'Рюкзак', slot: 'back', level: 3 },
@@ -25,6 +31,12 @@ const HeroGear = (() => {
     { id: 'fire', name: 'Огненный корпус', slot: 'color', level: 8, colors: [0xe8552e, 0xff9a6b] },
     { id: 'crown', name: 'Корона', slot: 'head', level: 9 },
     { id: 'gold', name: 'Золотой корпус', slot: 'color', level: 10, colors: [0xd9a21b, 0xffd76a] },
+    { id: 'glasses', name: 'Очки изобретателя', slot: 'face', level: 11 },
+    { id: 'wings', name: 'Крылья', slot: 'back', level: 12 },
+    { id: 'night', name: 'Ночной корпус', slot: 'color', level: 13, colors: [0x2b2f5c, 0x4a5190] },
+    { id: 'spark', name: 'Искорка', slot: 'pet', level: 14 },
+    { id: 'helmet', name: 'Шлем рыцаря', slot: 'head', level: 15 },
+    { id: 'cosmic', name: 'Космический корпус', slot: 'color', level: 16, colors: [0xff4fa3, 0x7ee8ff] },
   ];
   const DEFAULT_COLORS = [0x6a55ea, 0x8f7cff]; // корпус и голова
 
@@ -75,6 +87,30 @@ const HeroGear = (() => {
         add(new THREE.SphereGeometry(0.055, 12, 10),
           new THREE.MeshStandardMaterial({ color: 0xd8ff7a, emissive: 0xb6ff3a, emissiveIntensity: 1 }), 0, 0, 0);
         break;
+      case 'glasses': {
+        const m = mat(0x1b1e3c, { metalness: 0.4 });
+        [-0.085, 0.085].forEach(x => add(new THREE.TorusGeometry(0.06, 0.012, 8, 20), m, x, 0.65, 0.225));
+        add(new THREE.BoxGeometry(0.06, 0.015, 0.015), m, 0, 0.66, 0.225);
+        break;
+      }
+      case 'wings': {
+        const m = mat(0xf2f4ff, { transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+        [-1, 1].forEach(s => {
+          const w = add(new THREE.BoxGeometry(0.02, 0.34, 0.24), m, s * 0.16, 0.42, -0.24);
+          w.rotation.set(-0.3, s * 0.5, s * 0.35);
+        });
+        break;
+      }
+      case 'spark':
+        add(new THREE.SphereGeometry(0.065, 12, 10),
+          new THREE.MeshStandardMaterial({ color: 0xffb36b, emissive: 0xff6a00, emissiveIntensity: 1 }), 0, 0, 0);
+        break;
+      case 'helmet': {
+        const m = mat(0xb8c0d8, { metalness: 0.6, roughness: 0.35 });
+        add(new THREE.SphereGeometry(0.225, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), m, 0, 0.64, 0);
+        add(new THREE.BoxGeometry(0.04, 0.12, 0.3), mat(0xe4572e), 0, 0.9, -0.02);
+        break;
+      }
       case 'crown': {
         const m = mat(0xffc83d, { emissive: 0x6b4500, emissiveIntensity: 0.4, metalness: 0.5, roughness: 0.3, side: THREE.DoubleSide });
         add(new THREE.CylinderGeometry(0.15, 0.15, 0.09, 20, 1, true), m, 0, 0.8, 0);

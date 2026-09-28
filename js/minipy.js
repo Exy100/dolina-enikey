@@ -5,6 +5,7 @@ const MiniPy = (() => {
   }
   class BreakSig {}
   class ContinueSig {}
+  class ReturnSig { constructor(value) { this.value = value; } }
 
   const norm = s => s.replace(/ё/g, 'е').replace(/Ё/g, 'Е');
   const KW = new Set(['for', 'in', 'if', 'elif', 'else', 'while', 'and', 'or', 'not', 'True', 'False',
@@ -147,7 +148,23 @@ const MiniPy = (() => {
         }
         if (tk.v === 'elif' || tk.v === 'else')
           throw new PyError(`«${tk.v}» стоит без «if» выше. Проверь, что у «${tk.v}» такой же отступ, как у своего «if».`, tk.line);
-        if (tk.v === 'def') throw new PyError('Свои функции (def) будут на одном из следующих уроков. Сейчас обойдёмся без них.', tk.line);
+        if (tk.v === 'def') {
+          next();
+          const nm = next();
+          if (nm.t !== 'NAME') throw new PyError('После «def» нужно имя приёма, например: def развернуться():', nm.line);
+          if (!accept('OP', '(')) throw new PyError(`После имени приёма нужны скобки: def ${nm.v}():`, nm.line);
+          const params = [];
+          if (!is('OP', ')')) {
+            do {
+              const p = next();
+              if (p.t !== 'NAME') throw new PyError('В скобках у def пишут имена параметров через запятую, например: def пройти(n):', p.line);
+              params.push(norm(p.v));
+            } while (accept('OP', ','));
+          }
+          if (!accept('OP', ')')) throw new PyError('Не хватает закрывающей скобки «)».', nm.line);
+          expectColon('def');
+          return { k: 'Def', name: norm(nm.v), raw: nm.v, params, body: block('def'), line: tk.line };
+        }
       }
       const RU = { 'если': 'if', 'иначе': 'else', 'пока': 'while', 'для': 'for', 'повторить': 'for' };
       if (tk.t === 'NAME' && RU[tk.v.toLowerCase()])
@@ -170,6 +187,7 @@ const MiniPy = (() => {
       if (accept('KW', 'pass')) return { k: 'Pass', line: tk.line };
       if (accept('KW', 'break')) return { k: 'Break', line: tk.line };
       if (accept('KW', 'continue')) return { k: 'Continue', line: tk.line };
+      if (accept('KW', 'return')) return { k: 'Return', value: is('NL') || is('EOF') ? null : expr(), line: tk.line };
       if (tk.t === 'NAME' && toks[i + 1].t === 'OP' && ['=', '+=', '-=', '*='].includes(toks[i + 1].v)) {
         next();
         const op = next().v;
@@ -309,8 +327,14 @@ const MiniPy = (() => {
     const vars = new Map();
     const maxSteps = opts.maxSteps || 3000;
     let steps = 0;
+    // Переменные приёма (def), который сейчас выполняется; снаружи приёмов — null.
+    // Как в Python: внутри приёма присваивание создаёт свою переменную, а читать можно и внешние.
+    let locals = null, depth = 0;
+    const hasVar = n => (locals && locals.has(n)) || vars.has(n);
+    const getVar = n => (locals && locals.has(n) ? locals.get(n) : vars.get(n));
+    const setVar = (n, v) => (locals || vars).set(n, v);
 
-    const lookupNames = () => [...vars.keys(), ...Object.keys(builtins)];
+    const lookupNames = () => [...(locals ? locals.keys() : []), ...vars.keys(), ...Object.keys(builtins)];
 
     function unknown(node) {
       const n = norm(node.name).toLowerCase();
@@ -321,7 +345,8 @@ const MiniPy = (() => {
       }
       const limit = Math.max(2, Math.floor(n.length / 3));
       if (best && bd <= limit) {
-        const shown = builtins[best] && isFn(builtins[best]) ? builtins[best].name + '()' : best;
+        const v = hasVar(best) ? getVar(best) : builtins[best];
+        const shown = isFn(v) ? v.name + '()' : best;
         return new PyError(`Не знаю, что такое «${node.raw}». Может быть, ты имел в виду ${shown}?`, node.line);
       }
       return new PyError(`Не знаю, что такое «${node.raw}». Проверь, нет ли опечатки.`, node.line);
@@ -341,7 +366,7 @@ const MiniPy = (() => {
         case 'Const': return node.v;
         case 'List': { const out = []; for (const it of node.items) out.push(yield* ev(it)); return out; }
         case 'Name': {
-          if (vars.has(node.name)) return vars.get(node.name);
+          if (hasVar(node.name)) return getVar(node.name);
           if (node.name in builtins) return builtins[node.name];
           throw unknown(node);
         }
@@ -385,6 +410,7 @@ const MiniPy = (() => {
               throw new PyError(`Команде ${f.name}() нужны ${need} в скобках, а передано ${args.length}.`, node.line);
             }
           }
+          if (f.user) return yield* callUser(f, args, node.line);
           const res = f.fn(args, node.line);
           if (res && typeof res.next === 'function') return yield* res;
           return res === undefined ? null : res;
@@ -428,12 +454,37 @@ const MiniPy = (() => {
 
     function* runBlock(body) { for (const s of body) yield* exec(s); }
 
+    // Вызов своего приёма: параметры — его собственные переменные, return — ответ приёма
+    function* callUser(f, args, line) {
+      if (++depth > 50) { depth = 0; throw new PyError(`Приём ${f.name}() вызывает сам себя слишком много раз.`, line); }
+      const saved = locals;
+      locals = new Map(f.params.map((p, j) => [p, args[j]]));
+      try {
+        yield* runBlock(f.body);
+        return null;
+      } catch (e) {
+        if (e instanceof ReturnSig) return e.value;
+        if (e instanceof BreakSig || e instanceof ContinueSig) throw new PyError('break и continue работают только внутри цикла.', line);
+        throw e;
+      } finally {
+        locals = saved;
+        depth--;
+      }
+    }
+
     function* exec(s) {
       if (++steps > maxSteps)
         throw new PyError('Слишком много шагов. Похоже, программа зациклилась: проверь условие цикла.', s.line);
       yield { type: 'line', line: s.line };
       switch (s.k) {
         case 'Pass': return;
+        case 'Def':
+          // свой приём может заменить команду героя: так чинят «сломанную» команду
+          setVar(s.name, { __fn: true, user: true, name: s.raw, arity: s.params.length, params: s.params, body: s.body });
+          return;
+        case 'Return':
+          if (!locals) throw new PyError('return работает только внутри приёма (def).', s.line);
+          throw new ReturnSig(s.value ? yield* ev(s.value) : null);
         case 'Break': throw new BreakSig();
         case 'Continue': throw new ContinueSig();
         case 'Assign': {
@@ -441,10 +492,12 @@ const MiniPy = (() => {
           if (s.op === '=') {
             if (s.name in builtins && isFn(builtins[s.name]))
               throw new PyError(`«${s.raw}» — это команда героя, её нельзя менять. Назови переменную по-другому.`, s.line);
-            vars.set(s.name, v); return;
+            setVar(s.name, v); return;
           }
-          if (!vars.has(s.name)) throw new PyError(`Переменной «${s.raw}» ещё нет. Сначала задай её: ${s.raw} = 0`, s.line);
-          vars.set(s.name, binop({ op: s.op[0], line: s.line }, vars.get(s.name), v));
+          if (locals && !locals.has(s.name) && vars.has(s.name))
+            throw new PyError(`Внутри приёма нельзя менять переменную «${s.raw}», которую создали снаружи. Передай её в скобках или верни новое значение через return.`, s.line);
+          if (!hasVar(s.name)) throw new PyError(`Переменной «${s.raw}» ещё нет. Сначала задай её: ${s.raw} = 0`, s.line);
+          setVar(s.name, binop({ op: s.op[0], line: s.line }, getVar(s.name), v));
           return;
         }
         case 'Expr': {
@@ -486,7 +539,7 @@ const MiniPy = (() => {
           else throw new PyError('Цикл for проходит по range(...), тексту или списку.', s.line);
           for (let j = 0; j < seq.length; j++) {
             if (j > 0) yield { type: 'line', line: s.line };
-            vars.set(s.name, seq[j]);
+            setVar(s.name, seq[j]);
             try { yield* runBlock(s.body); }
             catch (e) { if (e instanceof BreakSig) break; if (e instanceof ContinueSig) continue; throw e; }
           }

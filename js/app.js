@@ -64,11 +64,17 @@
     ring: new THREE.MeshBasicMaterial({ color: 0x7ef0d6, transparent: true, opacity: 0.55 }),
   };
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  Object.assign(M, {
+    gate: new THREE.MeshStandardMaterial({ color: 0xb8742e, roughness: 0.8 }),
+    gateBar: new THREE.MeshStandardMaterial({ color: 0x4a4f6a, metalness: 0.5, roughness: 0.4 }),
+    boss: new THREE.MeshStandardMaterial({ color: 0x1b1e3c, emissive: 0xff2bd6, emissiveIntensity: 0.6, roughness: 0.4 }),
+  });
 
   let levelGroup = new THREE.Group();
   scene.add(levelGroup);
   let coinMeshes = new Map();
-  let flag = null, finishRing = null;
+  let flag = null, finishRing = null, boss = null;
+  let gateMeshes = new Map(); // клетка ворот → створка
 
   /* Герой */
   const hero = new THREE.Group();
@@ -148,9 +154,13 @@
 
   function buildLevel(level) {
     scene.remove(levelGroup);
-    levelGroup.traverse(o => { if (o.geometry && o.geometry !== boxGeo) o.geometry.dispose(); });
+    levelGroup.traverse(o => {
+      if (o.geometry && o.geometry !== boxGeo) o.geometry.dispose();
+      if (o.material && o.material.isMaterial && o.material.map) o.material.map.dispose(); // у блоков — массив материалов
+    });
     levelGroup = new THREE.Group();
     coinMeshes = new Map();
+    gateMeshes = new Map();
     particles.splice(0).forEach(p => scene.remove(p.m));
     const floorKeys = [...level.floor];
     const cells = floorKeys.map(k => k.split(',').map(Number));
@@ -214,17 +224,84 @@
       levelGroup.add(c);
       coinMeshes.set(k, c);
     });
-    // финиш
+    // ворота: столбы и створка поперёк дороги; при открытии створка уходит под землю
+    level.gates.forEach(k => {
+      const [x, z] = k.split(',').map(Number);
+      const g = new THREE.Group();
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.72, 0.2), M.gate);
+      door.position.y = 0.36;
+      door.castShadow = true;
+      [-0.28, 0, 0.28].forEach(bx => {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.72, 0.24), M.gateBar);
+        bar.position.x = bx;
+        door.add(bar);
+      });
+      g.add(door);
+      // столбы и перекладина сверху: с камеры, которая смотрит вдоль створки, ворота видно по ним
+      [-0.47, 0.47].forEach(px => {
+        const p = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, 0.24), M.gateBar);
+        p.position.set(px, 0.52, 0);
+        p.castShadow = true;
+        g.add(p);
+      });
+      const beam = new THREE.Mesh(new THREE.BoxGeometry(1.08, 0.12, 0.26), M.gateBar);
+      beam.position.y = 1.02;
+      beam.castShadow = true;
+      g.add(beam);
+      g.position.set(x, 0, z);
+      // дорога идёт вдоль x — створка встаёт поперёк неё
+      if (level.floor.has(K(x - 1, z)) || level.floor.has(K(x + 1, z))) g.rotation.y = Math.PI / 2;
+      levelGroup.add(g);
+      gateMeshes.set(k, door);
+    });
+    // таблички: столбик и дощечка с числом, повёрнутая к камере
+    level.signs.forEach((v, k) => {
+      const [x, z] = k.split(',').map(Number);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.5, 6), M.trunk);
+      post.position.set(x + 0.3, 0.25, z + 0.3);
+      post.castShadow = true;
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = 64;
+      const c = cv.getContext('2d');
+      c.fillStyle = '#f3e2bf'; c.fillRect(0, 0, 64, 64);
+      c.strokeStyle = '#8a5a2b'; c.lineWidth = 6; c.strokeRect(3, 3, 58, 58);
+      c.fillStyle = '#1b1e3c'; c.font = 'bold 44px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(String(v), 32, 35);
+      const board = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3),
+        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), side: THREE.DoubleSide }));
+      board.position.set(x + 0.3, 0.58, z + 0.3);
+      board.rotation.y = cam.az;
+      levelGroup.add(post, board);
+    });
+    // финиш: флаг; на карте с боссом — Великий Сбой; спрятанный флаг не рисуется
     const f = level.finish;
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 8), M.pole);
-    pole.position.set(f.x + 0.28, 0.65, f.z - 0.28); pole.castShadow = true;
-    const fs = new THREE.Shape(); fs.moveTo(0, 0); fs.lineTo(0.5, -0.16); fs.lineTo(0, -0.32); fs.lineTo(0, 0);
-    flag = new THREE.Mesh(new THREE.ShapeGeometry(fs), M.flag);
-    flag.position.set(f.x + 0.28, 1.28, f.z - 0.28);
-    flag.castShadow = true;
-    finishRing = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.4, 28), M.ring);
-    finishRing.rotation.x = -Math.PI / 2; finishRing.position.set(f.x, 0.015, f.z);
-    levelGroup.add(pole, flag, finishRing);
+    flag = null; finishRing = null; boss = null;
+    if (!level.hidden) {
+      finishRing = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.4, 28), M.ring);
+      finishRing.rotation.x = -Math.PI / 2; finishRing.position.set(f.x, 0.015, f.z);
+      levelGroup.add(finishRing);
+    }
+    if (level.boss) {
+      boss = new THREE.Group();
+      const core = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), M.boss);
+      core.castShadow = true;
+      boss.add(core);
+      for (let i = 0; i < 4; i++) {
+        const bit = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), M.boss);
+        bit.userData.a = (i * Math.PI) / 2;
+        boss.add(bit);
+      }
+      boss.position.set(f.x, 0.85, f.z);
+      levelGroup.add(boss);
+    } else if (!level.hidden) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.3, 8), M.pole);
+      pole.position.set(f.x + 0.28, 0.65, f.z - 0.28); pole.castShadow = true;
+      const fs = new THREE.Shape(); fs.moveTo(0, 0); fs.lineTo(0.5, -0.16); fs.lineTo(0, -0.32); fs.lineTo(0, 0);
+      flag = new THREE.Mesh(new THREE.ShapeGeometry(fs), M.flag);
+      flag.position.set(f.x + 0.28, 1.28, f.z - 0.28);
+      flag.castShadow = true;
+      levelGroup.add(pole, flag);
+    }
     scene.add(levelGroup);
 
     // герой в начало
@@ -262,8 +339,12 @@
 
   /* ---------- Анимации ---------- */
   const tweens = new Set();
+  // Темп анимации: ползунок скорости × ускорение задания (в лабиринтах шагов много — fast: 3)
+  // × ускорение проверки (карты 2 и 3 идут вдвое быстрее: первую ученик смотрит, остальные — проверка)
+  let boost = 1;
+  const tempo = () => speed * boost * ((TASKS[taskIdx] && TASKS[taskIdx].fast) || 1);
   function tween(ms, fn) {
-    const dur = Math.max(16, ms / speed);
+    const dur = Math.max(16, ms / tempo());
     return new Promise(res => tweens.add({ start: performance.now(), dur, fn, res }));
   }
   const wait = ms => tween(ms, () => {});
@@ -301,7 +382,7 @@
     bubble.textContent = text;
     bubble.className = 'bubble show ' + kind;
     clearTimeout(bubbleTimer);
-    bubbleTimer = setTimeout(() => { bubble.className = 'bubble'; }, ms / Math.min(speed, 1.5) + 250);
+    bubbleTimer = setTimeout(() => { bubble.className = 'bubble'; }, ms / Math.min(tempo(), 1.5) + 250);
   }
   const headPos = new THREE.Vector3();
   function positionBubble() {
@@ -334,6 +415,16 @@
     M.lava.emissiveIntensity = 0.75 + Math.sin(time * 3) * 0.25;
     if (flag) flag.rotation.y = Math.sin(time * 2.2) * 0.25;
     if (finishRing) finishRing.material.opacity = 0.35 + Math.sin(time * 3) * 0.2;
+    if (boss && boss.visible) { // Великий Сбой дёргается и мерцает
+      boss.rotation.y += dt * 1.5;
+      const j = reduceMotion ? 0 : 0.05;
+      boss.children[0].position.set((Math.random() - 0.5) * j, Math.sin(time * 3) * 0.05, (Math.random() - 0.5) * j);
+      boss.children.slice(1).forEach((b, i) => {
+        const a = b.userData.a + time * 2;
+        b.position.set(Math.cos(a) * 0.45, Math.sin(time * 4 + i) * 0.12, Math.sin(a) * 0.45);
+      });
+      M.boss.emissive.setHex(!reduceMotion && Math.sin(time * 17) > 0.6 ? 0x2bf0ff : 0xff2bd6);
+    }
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
@@ -464,13 +555,30 @@
         return;
       }
       case 'shrug': {
-        say('Зачем прыгать?', 'bad', 1400);
+        say(ev.text || 'Зачем прыгать?', 'bad', 1400);
         await tween(360, t => { hero.rotation.z = Math.sin(t * Math.PI * 3) * 0.12; });
         hero.rotation.z = 0;
         return;
       }
+      case 'open': {
+        say('Открыто!', 'yes', 900);
+        const door = gateMeshes.get(K(ev.x, ev.z));
+        if (door) await tween(450, t => { door.position.y = 0.36 - t * 0.8; });
+        return;
+      }
+      case 'say': {
+        say(`«${ev.text}»`, 'yes', 1600);
+        await wait(700);
+        return;
+      }
       case 'win': {
-        say('Ура, флаг!', 'yes', 1100);
+        if (boss) {
+          say('Сбой повержен!', 'yes', 1400);
+          sparks(boss.position.x, boss.position.z, 0xff2bd6, 30);
+          const b = boss;
+          await tween(600, t => { b.scale.setScalar(1 - t); b.rotation.y += 0.3; });
+          b.visible = false;
+        } else say('Ура, флаг!', 'yes', 1100);
         confetti(st.hero.x, st.hero.z);
         const a0 = heroAngle;
         await tween(800, t => {
@@ -485,8 +593,9 @@
 
   /* ================= Редактор ================= */
   const ta = $('#code'), hl = $('#hl'), gutter = $('#gutter'), band = $('#band');
-  const HERO_CMDS = ['вперёд', 'вперед', 'налево', 'направо', 'взять', 'прыгнуть', 'стена_впереди', 'лава_впереди', 'есть_монета', 'на_финише', 'монет_собрано'];
-  const KWS = ['for', 'in', 'if', 'elif', 'else', 'while', 'and', 'or', 'not', 'True', 'False', 'None', 'pass', 'break', 'continue'];
+  // команды героя по-русски и по-английски (move() — это вперёд())
+  const HERO_CMDS = ['вперёд', ...Object.keys(HeroWorld.EN), ...Object.values(HeroWorld.EN)];
+  const KWS = ['for', 'in', 'if', 'elif', 'else', 'while', 'and', 'or', 'not', 'True', 'False', 'None', 'pass', 'break', 'continue', 'def', 'return'];
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const tokRe = new RegExp(
     '(#.*)|("(?:[^"\\\\\\n]|\\\\.)*"?|\'(?:[^\'\\\\\\n]|\\\\.)*\'?)|\\b(\\d+(?:\\.\\d+)?)\\b|([\\p{L}_][\\p{L}\\p{N}_]*)', 'gu');
@@ -712,6 +821,7 @@
   /* ---------- Запуск ---------- */
   function setRunning(on) {
     running = on;
+    if (!on) boost = 1;
     ta.readOnly = on;
     document.body.classList.toggle('is-running', on);
     $('#runBtn').textContent = on && stepMode ? 'Без остановок' : 'Запуск';
@@ -782,6 +892,7 @@
     setRunning(true);
     dotStates = ['', '', ''];
     for (let m = 0; m < maps.length; m++) {
+      boost = m > 0 ? 2 : 1;
       showMap(m);
       dotStates[m] = 'active'; setDots(dotStates);
       if (maps.length > 1) log(`Карта ${m + 1} из ${maps.length}`, 'map');
