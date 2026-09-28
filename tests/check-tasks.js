@@ -54,12 +54,13 @@ Object.assign(ALSO_OK, {
   'l-broken': ['while not at_goal():\n    if not wall_on_right():\n        turn_left()\n        turn_left()\n        turn_left()\n        move()\n    elif not wall_in_front():\n        move()\n    else:\n        turn_left()\n'], // без своего приёма
 });
 const WRONG = {
-  'k-steps': [['вперёд(2)\n', 'short']],
+  'k-steps': [['вперёд(2)\n', 'short'], ['вперёд()\n'.repeat(5), 'extra'], ['вперёд(100)\n', 'extra']], // шаги после флага — лишние
   'k-turn': [['вперёд(2)\nнаправо()\nвперёд(2)\n', 'wall']], // перепутал налево и направо
+  'k-far': [['вперёд(4)\nналево()\nвперёд(99)\n', 'extra']], // «с запасом» в уроке без условий нельзя
   'k-coins': [['STARTER', 'coins']],
   'k-lava': [['STARTER', 'lava'], ['вперёд()\nвперёд()\n', 'lava']],
   'k-fix': [['STARTER', 'wall']],
-  'c-coins': [['STARTER', 'short'], ['for i in range(9):\n    вперёд()\n    взять()\n', 'short']], // на шаг меньше
+  'c-coins': [['STARTER', 'short'], ['for i in range(9):\n    вперёд()\n    взять()\n', 'short'], ['for i in range(11):\n    вперёд()\n    взять()\n', 'extra']], // на шаг меньше и на шаг больше
   'c-fix': [['STARTER', 'coins']],
   'c-two': [['for i in range(4):\n    вперёд()\n    взять()\n    налево()\n', 'wall']], // поворот внутри цикла
   coins: [

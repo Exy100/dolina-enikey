@@ -30,7 +30,7 @@ const HeroWorld = (() => {
 
   /* ---- Помощники для карт ---- */
   // Карта-рисунок: строки сверху вниз — ряды клеток с севера на юг.
-  // .  пол    $  монета    ~  лава    G  ворота    1–9  табличка с числом    F  флаг
+  // .  пол    $  монета    ~  лава    G  ворота    1–9  табличка с числом    F  флаг    @  флаг с монетой
   // > ^ < v  старт (куда смотрит герой)    пробел или #  стена
   function fromAscii(rows) {
     const L = blankLevel();
@@ -44,11 +44,14 @@ const HeroWorld = (() => {
       else if (ch === '~') L.lava.add(k);
       else if (ch === 'G') L.gates.add(k);
       else if (/[1-9]/.test(ch)) L.signs.set(k, Number(ch));
-      else if (ch === 'F') { L.finish = { x, z }; hasFinish = true; }
+      else if (ch === 'F' || ch === '@') {
+        L.finish = { x, z }; hasFinish = true;
+        if (ch === '@') L.coins.add(k);
+      }
       else if (ch in dirOf) { L.start = { x, z, dir: dirOf[ch] }; hasStart = true; }
       else if (ch !== '.') throw new Error(`Непонятный знак «${ch}» в карте, строка ${z + 1}`);
     }));
-    if (!hasStart || !hasFinish) throw new Error('На карте нужны старт (> ^ < v) и флаг (F)');
+    if (!hasStart || !hasFinish) throw new Error('На карте нужны старт (> ^ < v) и флаг (F или @)');
     return L;
   }
   // Коридор из прямых отрезков длиной lens. После каждого поворот: turns[i] = 1 — налево (по умолчанию), 3 — направо.
@@ -179,10 +182,12 @@ const HeroWorld = (() => {
     if (st.level.need) return new WorldError(`Герой дошёл до флага, но собрал монет: ${st.collected}, а нужно ${st.level.need}.`, line, 'coins');
     return new WorldError(`Герой дошёл до флага, но пропустил монеты: ${st.total - st.collected} шт. Нужно собрать все.`, line, 'coins');
   }
+  // Флаг засчитывается только в конце программы: на картах «стоп» и в уроках без условий (basic),
+  // где учатся писать ровно столько команд, сколько нужно
+  const atEnd = L => L.stop || L.basic;
   function arrive(st, line) {
     const h = st.hero, f = st.level.finish;
-    // на картах «стоп» флаг засчитывается, только когда программа закончилась
-    if (st.level.stop || h.x !== f.x || h.z !== f.z) return false;
+    if (atEnd(st.level) || h.x !== f.x || h.z !== f.z) return false;
     const e = coinsError(st, line);
     if (e) throw e;
     return true;
@@ -219,6 +224,12 @@ const HeroWorld = (() => {
     if (n > LOOP_LIMIT)
       throw new WorldError('Похоже, цикл никогда не закончится: Бит снова и снова делает одно и то же на одном месте. Проверь, что в цикле что-то меняется — например, есть шаг вперёд().', line, 'loop');
   }
+  // В уроках без условий Бит должен остановиться на флаге: шаг с флага — лишняя команда
+  function leaveFlag(st, line) {
+    const h = st.hero, f = st.level.finish;
+    if (st.level.basic && h.x === f.x && h.z === f.z)
+      throw new WorldError('Бит уже стоял на флаге, но пошёл дальше: после флага в программе лишние команды. Убери их.', line, 'extra');
+  }
   // Датчик: вопрос Биту, ответ показывается в облачке
   function sense(st, line, text, value) {
     st.idle++;
@@ -234,6 +245,7 @@ const HeroWorld = (() => {
         if (typeof n !== 'number' || !Number.isInteger(n) || n < 1)
           throw new PyError('В скобках у вперёд() может быть только целое число шагов, например вперёд(2).', line);
         for (let s = 0; s < n; s++) {
+          leaveFlag(st, line);
           const to = ahead(st);
           const c = cellOf(st, to.x, to.z);
           if (c === 'wall' || c === 'gate') {
@@ -288,6 +300,7 @@ const HeroWorld = (() => {
         return null;
       }),
       'прыгнуть': fn('прыгнуть', 0, function* (args, line) {
+        leaveFlag(st, line);
         const mid = ahead(st, 1), to = ahead(st, 2);
         const cm = cellOf(st, mid.x, mid.z);
         if (cm === 'wall') { yield { type: 'bump' }; throw new WorldError('Впереди стена, её не перепрыгнуть.', line, 'wall'); }
@@ -436,7 +449,7 @@ const HeroWorld = (() => {
      По коду понятно, что уже знает ученик: без циклов и условий не советуем про повторы и отступы у if */
   function endCheck(st, code = '') {
     const h = st.hero, f = st.level.finish;
-    if (st.level.stop && h.x === f.x && h.z === f.z) return coinsError(st, null) || answerError(st);
+    if (atEnd(st.level) && h.x === f.x && h.z === f.z) return coinsError(st, null) || answerError(st);
     if (!st.moved && !st.idle)
       return new WorldError('Программа закончилась, а герой не сделал ни шага. Напиши для него команды.', null, 'short');
     if (st.idle >= 3 && /^\s*(if|elif|while)\b/m.test(code))
