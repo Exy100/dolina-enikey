@@ -6,7 +6,7 @@
 
   /* ---------- Сохранение ---------- */
   const STORE = 'mir-geroya-usloviya-v1';
-  let save = { lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {} };
+  let save = { lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} } };
   try { const raw = localStorage.getItem(STORE); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* без сохранения */ }
   // Раньше урок был один («Условия»), и номер задания лежал в save.task. Кто его начинал — вернётся туда же.
   if (!LESSONS.some(l => l.id === save.lesson)) {
@@ -100,13 +100,35 @@
     const arrow = new THREE.Mesh(new THREE.ShapeGeometry(tri), new THREE.MeshBasicMaterial({ color: 0xffc83d, transparent: true, opacity: 0.9 }));
     arrow.rotation.x = -Math.PI / 2; arrow.position.set(0, 0.012, 0.3);
     hero.add(body, head, ant, bulb, arrow);
-    Object.assign(heroParts, { body, head, violet, violetLight });
+    Object.assign(heroParts, { body, head, violet, violetLight, ant, bulb });
   })();
   const heroRig = new THREE.Group(); // для прыжков и сдвигов
   heroRig.add(hero);
   scene.add(heroRig);
   let heroAngle = 0;
   const DIR_ANGLE = [Math.PI / 2, Math.PI, Math.PI * 1.5, 0];
+
+  /* ---------- Прокачка героя: уровень за звёзды во всём курсе, снаряжение видно на герое ---------- */
+  const { LEVELS, ITEMS, SLOTS } = HeroGear;
+  const gearOn = {}; // слот → 3D-модель надетой вещи
+  function totalStars() {
+    return LESSONS.reduce((n, l) => n + l.tasks.reduce((m, t) => m + (save.stars[t.id] || []).reduce((a, b) => a + b, 0), 0), 0);
+  }
+  const heroLevel = () => HeroGear.levelFor(totalStars());
+  const isOpen = it => it.level <= heroLevel();
+  function applyGear() {
+    Object.keys(gearOn).forEach(slot => { hero.remove(gearOn[slot]); delete gearOn[slot]; });
+    let colors = HeroGear.DEFAULT_COLORS;
+    ITEMS.forEach(it => {
+      if (save.gear[it.slot] !== it.id || !isOpen(it)) return;
+      if (it.colors) colors = it.colors;
+      else hero.add(gearOn[it.slot] = HeroGear.build(it.id, THREE));
+    });
+    heroParts.violet.color.setHex(colors[0]);
+    heroParts.violetLight.color.setHex(colors[1]);
+    heroParts.ant.visible = heroParts.bulb.visible = !gearOn.head; // шляпа и корона надеваются вместо антенны
+  }
+  applyGear();
 
   /* Камера */
   const cam = { az: -0.38, el: 0.9, dist: 14, target: new THREE.Vector3(), goal: { az: -0.38, el: 0.9, dist: 14 }, top: false, shake: 0 };
@@ -308,6 +330,7 @@
         c.position.y = 0.5 + (reduceMotion ? 0 : Math.abs(Math.sin(time * 4)) * 0.45);
       } else c.position.y = 0.42 + Math.sin(time * 2.4 + c.userData.phase) * 0.05;
     });
+    if (gearOn.pet) { const a = time * 1.7; gearOn.pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); }
     M.lava.emissiveIntensity = 0.75 + Math.sin(time * 3) * 0.25;
     if (flag) flag.rotation.y = Math.sin(time * 2.2) * 0.25;
     if (finishRing) finishRing.material.opacity = 0.35 + Math.sin(time * 3) * 0.2;
@@ -584,8 +607,17 @@
     sel.value = lessonIdx;
   }
 
+  function renderBadge() {
+    const stars = totalStars(), n = HeroGear.levelFor(stars), cur = LEVELS[n - 1], next = LEVELS[n];
+    $('#hbLvl').textContent = n;
+    $('#hbTitle').textContent = cur.title;
+    $('#hbBar').style.width = next ? `${Math.round(((stars - cur.stars) / (next.stars - cur.stars)) * 100)}%` : '100%';
+    $('#heroBtn').setAttribute('aria-label', `${STORY.hero}, уровень ${n}: ${cur.title}. Снаряжение`);
+  }
+
   function renderTabs() {
     renderLessons();
+    renderBadge();
     const nav = $('#tabs');
     nav.innerHTML = '';
     TASKS.forEach((t, i) => {
@@ -636,7 +668,7 @@
     if (!save.seeds[t.id]) save.seeds[t.id] = 1000 + Math.floor(Math.random() * 90000);
     maps = makeMaps(t, save.seeds[t.id]);
     persist();
-    $('#taskNum').textContent = `Задание ${i + 1} из ${TASKS.length}`;
+    $('#taskNum').textContent = `${lessonStory().place || `Урок ${lessonIdx + 1}`} · задание ${i + 1} из ${TASKS.length}`;
     $('#taskTitle').textContent = t.title;
     $('#taskGoal').textContent = t.goal;
     $('#taskNew').textContent = t.news;
@@ -815,7 +847,17 @@
     const first = !save.fails[t.id];
     const got = [1, hintsUsed() === 0 ? 1 : 0, (t.star3 === 'first' ? first : lines <= t.best) ? 1 : 0];
     const prev = save.stars[t.id] || [0, 0, 0];
+    const lvlBefore = heroLevel();
     save.stars[t.id] = prev.map((v, i) => (v || got[i] ? 1 : 0));
+    // новый уровень: открытые вещи сразу надеваются, чтобы их было видно на герое
+    const lvl = heroLevel(), fresh = ITEMS.filter(it => it.level > lvlBefore && it.level <= lvl);
+    fresh.forEach(it => { save.gear[it.slot] = it.id; });
+    if (fresh.length) applyGear();
+    $('#resLevel').hidden = lvl <= lvlBefore;
+    $('#resLevel').textContent = `Новый уровень ${lvl}: ${LEVELS[lvl - 1].title}!`
+      + (fresh.length ? ` Открыто: ${fresh.map(it => it.name.toLowerCase()).join(', ')}.` : '');
+    // урок пройден целиком: на «Дальше» проводник квеста скажет прощальные слова
+    outroPending = !save.seen.outro[LESSONS[lessonIdx].id] && TASKS.every(x => (save.stars[x.id] || [])[0]);
     persist();
     renderTabs();
     const r = $('#result');
@@ -877,25 +919,114 @@
     ta.value = TASKS[taskIdx].starter; onEdit(); markLine(null);
   });
   $('#nextBtn').addEventListener('click', () => {
-    if (taskIdx < TASKS.length - 1) selectTask(taskIdx + 1);
-    else if (LESSONS[lessonIdx + 1]) selectLesson(lessonIdx + 1);
-    else selectTask(0);
+    const next = () => {
+      if (taskIdx < TASKS.length - 1) selectTask(taskIdx + 1);
+      else if (LESSONS[lessonIdx + 1]) { selectLesson(lessonIdx + 1); greet(); }
+      else selectTask(0);
+    };
+    if (!outroPending) { next(); return; }
+    outroPending = false;
+    save.seen.outro[LESSONS[lessonIdx].id] = true;
+    persist();
+    hideResult();
+    talk(lessonStory().outro, next);
   });
   $('#lessonSel').addEventListener('change', e => {
     if (running) { e.target.value = lessonIdx; return; }
     selectLesson(+e.target.value);
+    greet();
   });
   $('#againBtn').addEventListener('click', () => { hideResult(); $('#newMapsBtn').click(); });
+
+  /* ---------- Снаряжение героя ---------- */
+  function renderGear() {
+    const stars = totalStars(), n = HeroGear.levelFor(stars), next = LEVELS[n];
+    $('#gearTitle').textContent = `${STORY.hero} · уровень ${n}, ${LEVELS[n - 1].title.toLowerCase()}`;
+    $('#gearSub').textContent = next
+      ? `Звёзд: ${stars}. До уровня ${n + 1} — ещё ${next.stars - stars}. За уровни открываются вещи.`
+      : `Звёзд: ${stars}. Это высший уровень!`;
+    const list = $('#gearList');
+    list.innerHTML = '';
+    ITEMS.forEach(it => {
+      const on = save.gear[it.slot] === it.id, open = isOpen(it);
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'gear-item';
+      b.disabled = !open;
+      b.setAttribute('aria-pressed', String(on && open));
+      const name = document.createElement('span');
+      name.textContent = it.name;
+      const state = document.createElement('span');
+      state.className = 'gi-state';
+      state.textContent = !open ? `уровень ${it.level}` : on ? 'надето' : SLOTS[it.slot];
+      b.append(name, state);
+      b.addEventListener('click', () => { save.gear[it.slot] = on ? null : it.id; persist(); applyGear(); renderGear(); });
+      const li = document.createElement('li');
+      li.append(b);
+      list.append(li);
+    });
+  }
+  $('#heroBtn').addEventListener('click', () => {
+    const p = $('#gearPanel');
+    p.hidden = !p.hidden;
+    if (!p.hidden) renderGear();
+  });
+  $('#gearClose').addEventListener('click', () => { $('#gearPanel').hidden = true; });
+  $('#storyBtn').addEventListener('click', () => {
+    $('#gearPanel').hidden = true;
+    const s = lessonStory();
+    talk([...STORY.prologue, ...(s.intro || []), ...(save.seen.outro[LESSONS[lessonIdx].id] ? s.outro || [] : [])]);
+  });
+
+  /* ---------- Сюжет: реплики персонажей (js/story.js) ---------- */
+  let talkQueue = [], talkDone = null, outroPending = false;
+  function lessonStory() { return STORY.lessons[LESSONS[lessonIdx].id] || {}; }
+  function talk(lines, done) {
+    if (!lines || !lines.length) { if (done) done(); return; }
+    talkQueue = lines.slice();
+    talkDone = done || null;
+    showLine();
+  }
+  function showLine() {
+    const [who, text] = talkQueue.shift();
+    const p = STORY.people[who];
+    const face = $('#talkFace');
+    face.textContent = p.letter;
+    face.style.background = p.color;
+    $('#talkName').textContent = p.role ? `${p.name}, ${p.role}` : p.name;
+    $('#talkText').textContent = text;
+    $('#talkNext').textContent = talkQueue.length ? 'Дальше' : 'Понятно';
+    $('#talk').hidden = false;
+    $('#talkNext').focus({ preventScroll: true });
+  }
+  function endTalk() {
+    $('#talk').hidden = true;
+    talkQueue = [];
+    const done = talkDone;
+    talkDone = null;
+    if (done) done(); else ta.focus({ preventScroll: true });
+  }
+  $('#talkNext').addEventListener('click', () => (talkQueue.length ? showLine() : endTalk()));
+  $('#talkSkip').addEventListener('click', endTalk);
+  // При входе в урок: пролог — один раз за всю игру, вступление урока — один раз для каждого урока
+  function greet() {
+    const id = LESSONS[lessonIdx].id, lines = [];
+    if (!save.seen.prologue) { lines.push(...STORY.prologue); save.seen.prologue = true; }
+    if (!save.seen.intro[id]) { lines.push(...(lessonStory().intro || [])); save.seen.intro[id] = true; }
+    persist();
+    talk(lines);
+  }
 
   /* ---------- Заставка «Нажми любую клавишу» ---------- */
   (function splashScreen() {
     const sp = $('#splash');
-    if (!sp) return;
+    if (!sp) { setTimeout(greet); return; }
     const go = () => {
       removeEventListener('keydown', onKey, true);
       sp.classList.add('hide');
       setTimeout(() => sp.remove(), 400);
       ta.focus({ preventScroll: true });
+      greet();
     };
     const onKey = e => {
       if (['Tab', 'Shift', 'Alt', 'Control', 'Meta'].includes(e.key)) return;
