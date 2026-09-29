@@ -140,6 +140,16 @@ body.is-running .ed-code textarea { cursor: default; }
 .hud.tl { top: 14px; left: 14px; }
 .hud.tr { top: 14px; right: 14px; }
 .hud.bl { bottom: 14px; left: 14px; }
+/* «Угадай»: подсказка над картой, кнопка в режиме выбора, курсор-прицел */
+.hud.tc { top: 64px; left: 14px; right: 14px; justify-content: center; pointer-events: none; }
+.hud.tc > * { pointer-events: auto; }
+.guess-box { font-weight: 600; font-size: 14px; gap: 10px; box-shadow: 0 6px 20px rgba(18,20,43,.18); }
+.guess-btn[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+#stage.picking.over-opt { cursor: pointer; }
+.guess-opts { display: flex; gap: 6px; }
+.guess-opt { width: 34px; height: 34px; border-radius: 50%; border: 3px solid #fff; padding: 0; background: var(--opt, #6a55ea); color: #fff;
+  font: 700 16px var(--display); display: grid; place-items: center; box-shadow: 0 2px 8px rgba(18,20,43,.25); transition: transform .12s; }
+.guess-opt:hover { transform: scale(1.12); }
 .hud-box { background: var(--hud); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 14px; padding: 6px 10px; display: flex; align-items: center; gap: 8px; }
 .hud-btn { background: var(--hud); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 0; border-radius: 12px; padding: 8px 12px; font-size: 14px; font-weight: 500; }
 .map-label { font-weight: 600; font-size: 14px; }
@@ -221,6 +231,8 @@ body.is-running .ed-code textarea { cursor: default; }
   .hud.bl { left: 10px; bottom: 14px; }
   .hud-btn { padding: 6px 10px; font-size: 13px; }
   .hud-box { padding: 5px 8px; }
+  .guess-box { font-size: 13px; }
+  .guess-opt { width: 30px; height: 30px; font-size: 14px; border-width: 2px; }
 }
 /* Заставка */
 .splash { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px;
@@ -235,6 +247,11 @@ body.is-running .ed-code textarea { cursor: default; }
 .splash-btn .p { color: #FFD166; margin-right: 10px; }
 .splash-btn .cur { display: inline-block; width: .6em; height: 1.1em; vertical-align: -3px; margin-left: 4px; background: #FFD166; animation: blink 1s steps(1) infinite; }
 .splash-btn .touch { display: none; }
+/* узкий телефон: вопрос сверху, варианты под ним */
+@media (max-width: 480px) {
+  .guess-box { flex-wrap: wrap; justify-content: center; row-gap: 6px; }
+  .guess-box > span:first-child { flex-basis: 100%; text-align: center; }
+}
 @media (hover: none) { .splash-btn .desk { display: none; } .splash-btn .touch { display: inline; } }
 @keyframes blink { 50% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
