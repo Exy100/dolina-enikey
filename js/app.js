@@ -2,11 +2,12 @@
 (() => {
   const { LESSONS, K, makeMaps, createState, commands, endCheck, WinSignal } = HeroWorld;
   const $ = s => document.querySelector(s);
+  const $$ = s => [...document.querySelectorAll(s)];
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* ---------- Сохранение ---------- */
   const STORE = 'mir-geroya-usloviya-v1';
-  let save = { lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} } };
+  let save = { lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} }, predict: { tries: 0, hits: 0 } };
   try { const raw = localStorage.getItem(STORE); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* без сохранения */ }
   // Раньше урок был один («Условия»), и номер задания лежал в save.task. Кто его начинал — вернётся туда же.
   if (!LESSONS.some(l => l.id === save.lesson)) {
@@ -153,6 +154,7 @@
   function hash(x, z) { let h = (x * 374761393 + z * 668265263) >>> 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
 
   function buildLevel(level) {
+    clearTrail();
     scene.remove(levelGroup);
     levelGroup.traverse(o => {
       if (o.geometry && o.geometry !== boxGeo) o.geometry.dispose();
@@ -415,6 +417,8 @@
     M.lava.emissiveIntensity = 0.75 + Math.sin(time * 3) * 0.25;
     if (flag) flag.rotation.y = Math.sin(time * 2.2) * 0.25;
     if (finishRing) finishRing.material.opacity = 0.35 + Math.sin(time * 3) * 0.2;
+    if (guess) animateGuess(time);
+    if (failRing && !reduceMotion) failRing.scale.setScalar(1 + Math.sin(time * 5) * 0.08);
     if (boss && boss.visible) { // Великий Сбой дёргается и мерцает
       boss.rotation.y += dt * 1.5;
       const j = reduceMotion ? 0 : 0.05;
@@ -463,14 +467,251 @@
     let drag = null;
     el.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, az: cam.goal.az, el: cam.goal.el, touch: e.pointerType === 'touch' }; el.setPointerCapture(e.pointerId); });
     el.addEventListener('pointermove', e => {
-      if (!drag) return;
+      if (!drag) { onGuessHover(e); return; }
       cam.goal.az = drag.az - (e.clientX - drag.x) * 0.008;
       if (!drag.touch) cam.goal.el = Math.max(0.35, Math.min(1.5, drag.el + (e.clientY - drag.y) * 0.005));
     });
-    const up = () => { drag = null; };
+    // щелчок без перетаскивания — выбор клетки в режиме «Угадай»
+    const up = e => {
+      if (drag && e.type === 'pointerup' && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) < 6) onGuessPick(e);
+      drag = null;
+    };
     el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
     el.addEventListener('wheel', e => { e.preventDefault(); cam.goal.dist = Math.max(5, Math.min(40, cam.goal.dist * (1 + e.deltaY * 0.001))); }, { passive: false });
   })();
+
+  /* ---------- След героя: точки и стрелки по пройденному пути, дуга над прыжком ---------- */
+  const trailGroup = new THREE.Group();
+  scene.add(trailGroup);
+  const TRAIL = {
+    dot: new THREE.CircleGeometry(0.09, 20),
+    seg: new THREE.PlaneGeometry(0.06, 1),
+    chev: (() => {
+      const s = new THREE.Shape();
+      s.moveTo(-0.1, -0.06); s.lineTo(0, 0.07); s.lineTo(0.1, -0.06); s.lineTo(0, -0.02); s.lineTo(-0.1, -0.06);
+      return new THREE.ShapeGeometry(s);
+    })(),
+    hop: new THREE.SphereGeometry(0.035, 8, 6),
+    ring: new THREE.RingGeometry(0.3, 0.42, 36),
+    mat: new THREE.MeshBasicMaterial({ color: 0x6a55ea, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }),
+    fail: new THREE.MeshBasicMaterial({ color: 0xff4d2e, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }),
+  };
+  let failRing = null;
+  // Плоская метка на земле; angle поворачивает её «носом» по направлению dx, dz
+  function flat(geo, mat, x, z, y, dx = 0, dz = -1) {
+    const m = new THREE.Mesh(geo, mat);
+    m.rotation.set(-Math.PI / 2, 0, Math.atan2(-dx, -dz));
+    m.position.set(x, y, z);
+    trailGroup.add(m);
+    return m;
+  }
+  function clearTrail() {
+    while (trailGroup.children.length) trailGroup.remove(trailGroup.children[0]);
+    failRing = null;
+  }
+  function trailStart(p) { clearTrail(); flat(TRAIL.dot, TRAIL.mat, p.x, p.z, 0.021); }
+  function trailStep(a, b) {
+    const dx = b.x - a.x, dz = b.z - a.z;
+    flat(TRAIL.seg, TRAIL.mat, (a.x + b.x) / 2, (a.z + b.z) / 2, 0.02, dx, dz);
+    flat(TRAIL.chev, TRAIL.mat, (a.x + b.x) / 2, (a.z + b.z) / 2, 0.024, dx, dz);
+    flat(TRAIL.dot, TRAIL.mat, b.x, b.z, 0.021);
+  }
+  function trailHop(a, b) {
+    for (let i = 1; i < 8; i++) {
+      const t = i / 8, m = new THREE.Mesh(TRAIL.hop, TRAIL.mat);
+      m.position.set(a.x + (b.x - a.x) * t, 0.1 + Math.sin(t * Math.PI) * 0.85, a.z + (b.z - a.z) * t);
+      trailGroup.add(m);
+    }
+    flat(TRAIL.dot, TRAIL.mat, b.x, b.z, 0.021);
+  }
+  // Где программа сломалась — красное кольцо
+  function markFail(st) { if (st) failRing = flat(TRAIL.ring, TRAIL.fail, st.hero.x, st.hero.z, 0.035); }
+
+  /* ---------- «Угадай»: на карте три варианта — А, Б, В. Один верный, два — частые ошибки.
+     Ученик выбирает кнопкой, значком или клеткой, программа запускается, верный вариант загорается зелёным ---------- */
+  const guessGroup = new THREE.Group();
+  scene.add(guessGroup);
+  const LETTERS = ['А', 'Б', 'В'];
+  const GUESS_COLOR = { idle: '#6a55ea', right: '#1fa88f', wrong: '#ff8a3d', dim: '#9aa0c0' };
+  // guess: { options: [{ x, z, letter, sprite, ring }], chosen } — пока идёт выбор и после запуска
+  let guess = null, picking = false, hovered = -1;
+  const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), groundHit = new THREE.Vector3();
+
+  // Где остановится Бит: программа прогоняется молча, без анимации (ошибка или победа — Бит там, где встал)
+  function simulate(code, level) {
+    const st = createState(level);
+    const path = [{ x: st.hero.x, z: st.hero.z }];
+    try {
+      const g = MiniPy.execute(code, { ...MiniPy.stdlib(), ...commands(st) });
+      // без ограничения цикл без команд героя (while True: pass) повесил бы страницу
+      for (let r = g.next(), n = 0; !r.done && n < 20000; r = g.next(), n++) if (r.value.type === 'move' || r.value.type === 'jump') path.push({ x: r.value.to.x, z: r.value.to.z });
+    } catch (e) { /* остановился здесь */ }
+    return { end: { x: st.hero.x, z: st.hero.z }, dir: st.hero.dir, path };
+  }
+  // Верный ответ и два правдоподобных неверных: «дошёл до флага», «шагнул дальше», «на шаг раньше», «остался на старте»
+  function guessOptions(sim, level) {
+    const key = p => K(p.x, p.z), same = (a, b) => a.x === b.x && a.z === b.z;
+    const [dx, dz] = HeroWorld.DIRS[sim.dir];
+    const near = [...level.floor].map(k => { const [x, z] = k.split(',').map(Number); return { x, z }; })
+      .sort((a, b) => (Math.abs(a.x - sim.end.x) + Math.abs(a.z - sim.end.z)) - (Math.abs(b.x - sim.end.x) + Math.abs(b.z - sim.end.z)));
+    const cands = [level.hidden ? null : level.finish, { x: sim.end.x + dx, z: sim.end.z + dz },
+      sim.path[sim.path.length - 2], sim.path[sim.path.length - 3], level.start, ...near];
+    const picked = [sim.end];
+    for (const c of cands) {
+      if (picked.length === 3) break;
+      if (c && level.floor.has(key(c)) && !level.lava.has(key(c)) && !picked.some(p => same(p, c))) picked.push({ x: c.x, z: c.z });
+    }
+    for (let i = picked.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [picked[i], picked[j]] = [picked[j], picked[i]]; }
+    return picked;
+  }
+  // Круглый значок с буквой (спрайт всегда повёрнут к камере и не прячется за стенами)
+  function badgeTexture(letter, color) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const c = cv.getContext('2d');
+    c.fillStyle = color; c.beginPath(); c.arc(64, 64, 56, 0, Math.PI * 2); c.fill();
+    c.lineWidth = 10; c.strokeStyle = '#ffffff'; c.stroke();
+    c.fillStyle = '#ffffff'; c.font = 'bold 70px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(letter, 64, 70);
+    return new THREE.CanvasTexture(cv);
+  }
+  function paintOption(o, color, opacity) {
+    o.sprite.material.map.dispose();
+    o.sprite.material.map = badgeTexture(o.letter, color);
+    o.sprite.material.opacity = opacity;
+    o.sprite.material.needsUpdate = true;
+    o.ring.material.color.set(color);
+    o.ring.material.opacity = 0.9 * opacity;
+    $$('.guess-opt')[LETTERS.indexOf(o.letter)]?.style.setProperty('--opt', color);
+  }
+  function showOptions(points) {
+    clearGuess();
+    guess = { options: [], chosen: -1 };
+    points.forEach((p, i) => {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: badgeTexture(LETTERS[i], GUESS_COLOR.idle), transparent: true, depthTest: false }));
+      sprite.scale.set(0.62, 0.62, 1);
+      sprite.position.set(p.x, 1.3, p.z);
+      sprite.renderOrder = 10;
+      const ring = new THREE.Mesh(TRAIL.ring, new THREE.MeshBasicMaterial({ color: GUESS_COLOR.idle, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(p.x, 0.045, p.z);
+      guessGroup.add(sprite, ring);
+      guess.options.push({ x: p.x, z: p.z, letter: LETTERS[i], sprite, ring });
+    });
+    // те же буквы — кнопками в подсказке над картой
+    const box = $('#guessOpts');
+    box.innerHTML = '';
+    guess.options.forEach((o, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'guess-opt';
+      b.textContent = o.letter;
+      b.setAttribute('aria-label', `Вариант ${o.letter}`);
+      b.addEventListener('click', () => chooseGuess(i));
+      box.append(b);
+    });
+  }
+  function clearGuess() {
+    if (guess) guess.options.forEach(o => { o.sprite.material.map.dispose(); o.sprite.material.dispose(); o.ring.material.dispose(); });
+    while (guessGroup.children.length) guessGroup.remove(guessGroup.children[0]);
+    guess = null;
+    hovered = -1;
+  }
+  // Значок покачивается; тот, что под курсором, крупнее
+  function animateGuess(time) {
+    guess.options.forEach((o, i) => {
+      o.sprite.position.y = 1.3 + (reduceMotion ? 0 : Math.sin(time * 3 + i) * 0.06);
+      const s = picking && i === hovered ? 0.76 : 0.62;
+      o.sprite.scale.set(s, s, 1);
+    });
+  }
+  // Вариант под курсором: значок или клетка под ним
+  function optionFromEvent(e) {
+    if (!guess) return -1;
+    const r = renderer.domElement.getBoundingClientRect();
+    ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects(guess.options.map(o => o.sprite))[0];
+    if (hit) return guess.options.findIndex(o => o.sprite === hit.object);
+    if (!ray.ray.intersectPlane(ground, groundHit)) return -1;
+    const x = Math.round(groundHit.x), z = Math.round(groundHit.z);
+    return guess.options.findIndex(o => o.x === x && o.z === z);
+  }
+  function startGuess() {
+    if (running) return;
+    if (picking) { cancelGuess(); return; }
+    clearLog(); hideResult(); markLine(null);
+    const code = ta.value;
+    try { MiniPy.parse(code); } catch (e) { reportError(e, 0); return; }
+    showMap(mapIdx); // Бит снова на старте
+    showOptions(guessOptions(simulate(code, maps[mapIdx]), maps[mapIdx]));
+    picking = true;
+    $('#guessHud').hidden = false;
+    $('#guessBtn').setAttribute('aria-pressed', 'true');
+    stage.classList.add('picking');
+    log('Прочитай программу. Где Бит остановится, когда она закончится: А, Б или В?', 'info');
+  }
+  // Отмена: убрать и подсказку, и значки
+  function cancelGuess() { stopPicking(); clearGuess(); }
+  function stopPicking() {
+    picking = false;
+    hovered = -1;
+    $('#guessHud').hidden = true;
+    $('#guessBtn').setAttribute('aria-pressed', 'false');
+    stage.classList.remove('picking', 'over-opt');
+  }
+  function onGuessHover(e) {
+    if (!picking) return;
+    hovered = optionFromEvent(e);
+    stage.classList.toggle('over-opt', hovered >= 0);
+  }
+  function onGuessPick(e) {
+    if (!picking) return;
+    const i = optionFromEvent(e);
+    if (i < 0) { say('Выбери А, Б или В', 'bad', 1200); return; }
+    chooseGuess(i);
+  }
+  function chooseGuess(i) {
+    if (!picking || !guess || !guess.options[i]) return;
+    guess.chosen = i;
+    stopPicking();
+    guess.options.forEach((o, j) => paintOption(o, j === i ? GUESS_COLOR.idle : GUESS_COLOR.dim, j === i ? 1 : 0.5));
+    runGuess();
+  }
+  async function runGuess() {
+    const code = ta.value, token = ++runToken;
+    stepMode = false;
+    setRunning(true);
+    showMap(mapIdx);
+    const o = guess.options[guess.chosen];
+    log(`Твой ответ — ${o.letter}. Смотрим, где остановится Бит.`, 'map');
+    await wait(400);
+    if (token !== runToken) return;
+    const r = await runOnMap(code, token);
+    if (r.aborted || token !== runToken) return;
+    setRunning(false);
+    markLine(null);
+    const h = r.st.hero, right = h.x === o.x && h.z === o.z;
+    const answer = guess.options.find(p => p.x === h.x && p.z === h.z);
+    save.predict.tries++;
+    if (right) save.predict.hits++;
+    persist();
+    // верный вариант — зелёный, неверный выбор — оранжевый, остальные гаснут
+    guess.options.forEach(p => paintOption(p,
+      p === answer ? GUESS_COLOR.right : p === o ? GUESS_COLOR.wrong : GUESS_COLOR.dim,
+      p === answer || p === o ? 1 : 0.35));
+    const score = `Угадано: ${save.predict.hits} из ${save.predict.tries}.`;
+    if (right) {
+      say('Угадал!', 'yes', 1400);
+      confetti(o.x, o.z, 30);
+      log(`Угадал! Верный ответ — ${o.letter}. ${score}`, 'ok');
+    } else {
+      log(`Не угадал: Бит остановился на клетке ${answer ? answer.letter : 'рядом'}, а ты выбрал ${o.letter}. Пройди по следу Бита и найди, где он пошёл не так, как ты думал. ${score}`, 'tip');
+    }
+    // почему Бит встал именно там; где он стоит, и так видно по зелёному значку — без красного кольца
+    if (!r.ok) reportError(r.err, 0);
+    if (r.ok) log(maps.length > 1 ? 'Программа дошла до флага на этой карте. Нажми «Запуск», чтобы проверить все три.' : 'Программа дошла до флага. Нажми «Запуск», чтобы засчитать задание.', 'info');
+  }
 
   /* Анимация одного события мира */
   async function animate(ev, st) {
@@ -494,6 +735,7 @@
           hero.position.y = Math.sin(t * Math.PI) * 0.14;
         });
         hero.position.y = 0;
+        trailStep(ev.from, ev.to);
         return;
       }
       case 'jump': {
@@ -506,6 +748,7 @@
           hero.scale.set(1, 1 + Math.sin(t * Math.PI) * 0.1, 1);
         });
         hero.position.y = 0; hero.scale.set(1, 1, 1);
+        trailHop(ev.from, ev.to);
         return;
       }
       case 'turn': {
@@ -645,6 +888,7 @@
     onEdit();
   }
   function onEdit() {
+    if (guess && !running) cancelGuess(); // варианты посчитаны для прежнего кода
     if (markedKind === 'err') markLine(null); else refreshEditor();
     save.code[TASKS[taskIdx].id] = ta.value;
     persist();
@@ -770,6 +1014,7 @@
 
   function selectTask(i) {
     stopRun();
+    cancelGuess();
     taskIdx = i;
     save.lesson = LESSONS[lessonIdx].id;
     save.pos[save.lesson] = i;
@@ -816,7 +1061,7 @@
     $('#mapLabel').textContent = `Карта ${i + 1} из ${maps.length}`;
   }
 
-  dots.forEach((d, i) => d.addEventListener('click', () => { if (!running) { dotStates = ['', '', '']; showMap(i); } }));
+  dots.forEach((d, i) => d.addEventListener('click', () => { if (!running) { dotStates = ['', '', '']; cancelGuess(); showMap(i); } }));
 
   /* ---------- Запуск ---------- */
   function setRunning(on) {
@@ -827,6 +1072,7 @@
     $('#runBtn').textContent = on && stepMode ? 'Без остановок' : 'Запуск';
     $('#runBtn').disabled = on && !stepMode;
     $('#stopBtn').disabled = !on;
+    $('#guessBtn').disabled = on;
   }
 
   function stopRun() {
@@ -837,22 +1083,24 @@
     setRunning(false);
   }
 
+  // Прогон на текущей карте; в ответе и состояние мира (st) — где Бит остановился
   async function runOnMap(code, token) {
     const st = createState(maps[mapIdx]);
+    trailStart(st.hero);
     const g = MiniPy.execute(code, { ...MiniPy.stdlib(), ...commands(st) });
     while (true) {
       if (token !== runToken) return { aborted: true };
       let r;
       try { r = g.next(); }
       catch (e) {
-        if (e instanceof WinSignal) return { ok: true };
-        return { ok: false, err: e };
+        if (e instanceof WinSignal) return { ok: true, st };
+        return { ok: false, err: e, st };
       }
       if (r.done) {
         const err = endCheck(st, code);
-        if (err) return { ok: false, err };
-        await animate({ type: 'win' }, st); // карта «стоп»: герой закончил программу на флаге
-        return { ok: true };
+        if (err) return { ok: false, err, st };
+        await animate({ type: 'win' }, st); // флаг засчитывается в конце программы
+        return { ok: true, st };
       }
       await animate(r.value, st);
       if (token !== runToken) return { aborted: true };
@@ -885,6 +1133,7 @@
       return;
     }
     const code = ta.value;
+    cancelGuess();
     clearLog(); hideResult(); markLine(null);
     try { MiniPy.parse(code); } catch (e) { reportError(e, 0); return; }
     const token = ++runToken;
@@ -902,6 +1151,7 @@
       if (r.aborted || token !== runToken) return;
       if (!r.ok) {
         dotStates[m] = 'fail'; setDots(dotStates);
+        markFail(r.st);
         reportError(r.err, m, code);
         // для звезды «с первого запуска»: запуск нетронутого стартового кода не считается
         const id = TASKS[taskIdx].id;
@@ -926,6 +1176,7 @@
     if (running && stepMode) { if (stepResolve) stepResolve(); return; }
     if (running) return;
     const code = ta.value;
+    cancelGuess();
     clearLog(); hideResult(); markLine(null);
     try { MiniPy.parse(code); } catch (e) { reportError(e, 0); return; }
     const token = ++runToken;
@@ -946,7 +1197,7 @@
         ? `Карта ${mapIdx + 1} пройдена. Нажми «Запуск», чтобы проверить код на всех трёх картах.`
         : 'Получилось! Нажми «Запуск», чтобы засчитать задание.', 'ok');
     }
-    else reportError(r.err, 0);
+    else { markFail(r.st); reportError(r.err, 0); }
   }
 
   // строки кода без пустых и комментариев
@@ -993,7 +1244,17 @@
   /* ---------- Кнопки ---------- */
   $('#runBtn').addEventListener('click', runAll);
   $('#stepBtn').addEventListener('click', stepRun);
-  $('#stopBtn').addEventListener('click', () => { stopRun(); markLine(null); log('Остановлено.', 'info'); showMap(mapIdx); });
+  $('#guessBtn').addEventListener('click', startGuess);
+  $('#guessCancel').addEventListener('click', () => { cancelGuess(); log('Догадку отменили.', 'info'); });
+  // Клавиши в режиме «Угадай»: 1, 2, 3 или А, Б, В — выбрать, Esc — отменить
+  addEventListener('keydown', e => {
+    if (!picking) return;
+    if (e.key === 'Escape') { cancelGuess(); log('Догадку отменили.', 'info'); return; }
+    if (e.ctrlKey || e.metaKey || e.altKey || /^(TEXTAREA|INPUT|SELECT)$/.test(e.target.tagName)) return;
+    const i = ['1', '2', '3'].indexOf(e.key) >= 0 ? ['1', '2', '3'].indexOf(e.key) : LETTERS.indexOf(e.key.toUpperCase());
+    if (i >= 0 && guess && guess.options[i]) { e.preventDefault(); chooseGuess(i); }
+  });
+  $('#stopBtn').addEventListener('click', () => { stopRun(); cancelGuess(); markLine(null); log('Остановлено.', 'info'); showMap(mapIdx); });
   $('#speed').addEventListener('input', e => { speed = parseFloat(e.target.value); $('#speedVal').textContent = speed.toFixed(1).replace('.', ',') + '×'; });
   $('#topBtn').addEventListener('click', () => {
     cam.top = !cam.top; fitCamera();
@@ -1002,6 +1263,7 @@
   });
   $('#newMapsBtn').addEventListener('click', () => {
     if (running) return;
+    cancelGuess();
     const t = TASKS[taskIdx];
     save.seeds[t.id] = 1000 + Math.floor(Math.random() * 90000);
     persist();

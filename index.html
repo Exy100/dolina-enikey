@@ -59,6 +59,7 @@
       <div class="controls">
         <button type="button" class="btn primary" id="runBtn">Запуск</button>
         <button type="button" class="btn secondary" id="stepBtn">Шаг</button>
+        <button type="button" class="btn secondary guess-btn" id="guessBtn" aria-pressed="false" title="Покажи на карте, где остановится Бит, — и проверим">Угадай</button>
         <button type="button" class="btn ghost" id="stopBtn" disabled>Стоп</button>
         <label class="speed">Скорость <input type="range" id="speed" min="0.5" max="3" step="0.5" value="1"><output id="speedVal">1,0×</output></label>
       </div>
@@ -90,6 +91,14 @@
         <button type="button" class="hud-btn" id="newMapsBtn">Новые карты</button>
       </div>
       <div class="hud bl"><div class="hud-box coins" id="coins" hidden></div></div>
+      <!-- Режим «Угадай»: на карте три варианта, ученик выбирает, где остановится Бит -->
+      <div class="hud tc" id="guessHud" hidden>
+        <div class="hud-box guess-box">
+          <span>Где остановится Бит?</span>
+          <span class="guess-opts" id="guessOpts"></span>
+          <button type="button" class="hud-btn" id="guessCancel">Отмена</button>
+        </div>
+      </div>
       <div class="result" id="result" hidden>
         <div class="res-card" role="dialog" aria-labelledby="resTitle">
           <div class="res-stars" id="resStars"></div>
