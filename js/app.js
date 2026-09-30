@@ -16,7 +16,21 @@
     save.lesson = started ? old.id : LESSONS[0].id;
     if (started && save.pos[old.id] === undefined) save.pos[old.id] = save.task || 0;
   }
+  // Пролог (пробное занятие) вынесен из урока «Команды»: кто начинал старый урок, продолжит с того же задания
+  if (save.pos.komandy !== undefined && save.pos.prolog === undefined) {
+    const OLD = ['k-steps', 'k-turn', 'k-far', 'k-zigzag', 'k-coins', 'k-lava', 'k-fix', 'k-final'];
+    const id = OLD[Math.min(save.pos.komandy, OLD.length - 1)] || OLD[0];
+    const to = LESSONS.find(l => l.tasks.some(t => t.id === id));
+    save.pos.prolog = 0;
+    save.pos.komandy = 0;
+    save.pos[to.id] = to.tasks.findIndex(t => t.id === id);
+    if (save.lesson === 'komandy') save.lesson = to.id;
+    if (save.seen.intro.komandy) save.seen.intro.prolog = true; // Аду они уже слышали
+  }
   const persist = () => { try { localStorage.setItem(STORE, JSON.stringify(save)); } catch (e) { /* ок */ } };
+  // Пролог идёт без номера, уроки после него — «Урок 1», «Урок 2»…
+  const lessonNo = i => i + (LESSONS[0].prologue ? 0 : 1);
+  const lessonName = i => (LESSONS[i].prologue ? LESSONS[i].title : `Урок ${lessonNo(i)}. ${LESSONS[i].title}`);
 
   /* ---------- Состояние ---------- */
   let lessonIdx = LESSONS.findIndex(l => l.id === save.lesson);
@@ -41,7 +55,8 @@
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
-  scene.add(new THREE.HemisphereLight(0xdff0ff, 0x6b5a4a, 0.62));
+  const hemi = new THREE.HemisphereLight(0xdff0ff, 0x6b5a4a, 0.62);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff1dc, 0.8);
   sun.position.set(6, 12, 5);
   sun.castShadow = true;
@@ -106,6 +121,7 @@
     tri.moveTo(-0.16, 0); tri.lineTo(0.16, 0); tri.lineTo(0, 0.2); tri.lineTo(-0.16, 0);
     const arrow = new THREE.Mesh(new THREE.ShapeGeometry(tri), new THREE.MeshBasicMaterial({ color: 0xffc83d, transparent: true, opacity: 0.9 }));
     arrow.rotation.x = -Math.PI / 2; arrow.position.set(0, 0.012, 0.3);
+    arrow.name = 'arrow'; // стрелка «куда смотрит»: в портрете её прячем
     hero.add(body, head, ant, bulb, arrow);
     Object.assign(heroParts, { body, head, violet, violetLight, ant, bulb });
   })();
@@ -152,6 +168,31 @@
   }
 
   function hash(x, z) { let h = (x * 374761393 + z * 668265263) >>> 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+
+  // Великий Сбой: тёмный куб с осколками вокруг. Он же босс лабиринта и он же — в сцене конца пролога
+  function makeSboy() {
+    const g = new THREE.Group();
+    const core = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), M.boss);
+    core.castShadow = true;
+    g.add(core);
+    for (let i = 0; i < 4; i++) {
+      const bit = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), M.boss);
+      bit.userData.a = (i * Math.PI) / 2;
+      g.add(bit);
+    }
+    return g;
+  }
+  // Сбой дёргается и мерцает
+  function animateSboy(g, time, dt) {
+    g.rotation.y += dt * 1.5;
+    const j = reduceMotion ? 0 : 0.05;
+    g.children[0].position.set((Math.random() - 0.5) * j, Math.sin(time * 3) * 0.05, (Math.random() - 0.5) * j);
+    g.children.slice(1).forEach((b, i) => {
+      const a = b.userData.a + time * 2;
+      b.position.set(Math.cos(a) * 0.45, Math.sin(time * 4 + i) * 0.12, Math.sin(a) * 0.45);
+    });
+    M.boss.emissive.setHex(!reduceMotion && Math.sin(time * 17) > 0.6 ? 0x2bf0ff : 0xff2bd6);
+  }
 
   function buildLevel(level) {
     clearTrail();
@@ -284,15 +325,7 @@
       levelGroup.add(finishRing);
     }
     if (level.boss) {
-      boss = new THREE.Group();
-      const core = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), M.boss);
-      core.castShadow = true;
-      boss.add(core);
-      for (let i = 0; i < 4; i++) {
-        const bit = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.14), M.boss);
-        bit.userData.a = (i * Math.PI) / 2;
-        boss.add(bit);
-      }
+      boss = makeSboy();
       boss.position.set(f.x, 0.85, f.z);
       levelGroup.add(boss);
     } else if (!level.hidden) {
@@ -345,8 +378,9 @@
   // × ускорение проверки (карты 2 и 3 идут вдвое быстрее: первую ученик смотрит, остальные — проверка)
   let boost = 1;
   const tempo = () => speed * boost * ((TASKS[taskIdx] && TASKS[taskIdx].fast) || 1);
-  function tween(ms, fn) {
-    const dur = Math.max(16, ms / tempo());
+  // fixed — длительность без учёта ползунка скорости (для сюжетных сцен)
+  function tween(ms, fn, fixed = false) {
+    const dur = Math.max(16, fixed ? ms : ms / tempo());
     return new Promise(res => tweens.add({ start: performance.now(), dur, fn, res }));
   }
   const wait = ms => tween(ms, () => {});
@@ -365,12 +399,12 @@
       scene.add(m);
     }
   }
-  function sparks(x, z, color, n = 16) {
+  function sparks(x, z, color, n = 16, y = 0.45) {
     const g = new THREE.SphereGeometry(0.04, 6, 4);
     const mat = new THREE.MeshBasicMaterial({ color });
     for (let i = 0; i < n; i++) {
       const m = new THREE.Mesh(g, mat);
-      m.position.set(x, 0.45, z);
+      m.position.set(x, y, z);
       const a = Math.random() * Math.PI * 2;
       particles.push({ m, v: new THREE.Vector3(Math.cos(a) * 1.6, 2 + Math.random() * 2, Math.sin(a) * 1.6), life: 0.7, spin: 0 });
       scene.add(m);
@@ -419,16 +453,8 @@
     if (finishRing) finishRing.material.opacity = 0.35 + Math.sin(time * 3) * 0.2;
     if (guess) animateGuess(time);
     if (failRing && !reduceMotion) failRing.scale.setScalar(1 + Math.sin(time * 5) * 0.08);
-    if (boss && boss.visible) { // Великий Сбой дёргается и мерцает
-      boss.rotation.y += dt * 1.5;
-      const j = reduceMotion ? 0 : 0.05;
-      boss.children[0].position.set((Math.random() - 0.5) * j, Math.sin(time * 3) * 0.05, (Math.random() - 0.5) * j);
-      boss.children.slice(1).forEach((b, i) => {
-        const a = b.userData.a + time * 2;
-        b.position.set(Math.cos(a) * 0.45, Math.sin(time * 4 + i) * 0.12, Math.sin(a) * 0.45);
-      });
-      M.boss.emissive.setHex(!reduceMotion && Math.sin(time * 17) > 0.6 ? 0x2bf0ff : 0xff2bd6);
-    }
+    if (boss && boss.visible) animateSboy(boss, time, dt);
+    if (cut) animateCut(time, dt);
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
@@ -713,6 +739,138 @@
     if (r.ok) log(maps.length > 1 ? 'Программа дошла до флага на этой карте. Нажми «Запуск», чтобы проверить все три.' : 'Программа дошла до флага. Нажми «Запуск», чтобы засчитать задание.', 'info');
   }
 
+  /* ---------- Сцена конца пролога: Ада показывает Ключ-код, Сбой его крадёт.
+     Эффекты привязаны к репликам (третий элемент реплики, список — STORY.fx) и идут, пока реплика на экране ---------- */
+  const world = $('.world');
+  const KEY_MAT = new THREE.MeshStandardMaterial({ color: 0xffc83d, emissive: 0xb86b00, emissiveIntensity: 0.55, metalness: 0.7, roughness: 0.25 });
+  let glowTex = null;
+  function glowTexture() {
+    if (glowTex) return glowTex;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const c = cv.getContext('2d'), gr = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = gr; c.fillRect(0, 0, 64, 64);
+    return (glowTex = new THREE.CanvasTexture(cv));
+  }
+  // Золотой ключ: кольцо, стержень, две бородки и свечение. Внутренняя группа покачивается, внешняя летает
+  function makeKey() {
+    const g = new THREE.Group(), inner = new THREE.Group();
+    const bow = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.045, 10, 24), KEY_MAT);
+    bow.position.y = 0.2;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.46, 10), KEY_MAT);
+    shaft.position.y = -0.13;
+    const bit1 = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.055, 0.05), KEY_MAT);
+    bit1.position.set(0.075, -0.31, 0);
+    const bit2 = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.055, 0.05), KEY_MAT);
+    bit2.position.set(0.055, -0.2, 0);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffd76a, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+    glow.scale.set(1.4, 1.4, 1);
+    inner.add(glow, bow, shaft, bit1, bit2);
+    g.add(inner);
+    g.userData.inner = inner;
+    return g;
+  }
+  let cut = null, talkFx = null, lightTok = 0; // cut: { f, key, sboy } — пока идёт сцена
+  // Убрать ключ или Сбоя со сцены. Материалы общие (M.boss, KEY_MAT, свечение) — их не трогаем
+  function drop(o) {
+    if (!o) return;
+    scene.remove(o);
+    o.traverse(m => { if (m.geometry) m.geometry.dispose(); if (m.isSprite) m.material.dispose(); });
+  }
+  const LIGHT = { hemi: hemi.intensity, sun: sun.intensity };
+  function dimLights(k, ms) {
+    const tok = ++lightTok, h0 = hemi.intensity, s0 = sun.intensity;
+    return tween(ms, t => {
+      if (tok !== lightTok) return; // сцену пропустили — свет уже вернули
+      hemi.intensity = h0 + (LIGHT.hemi * k - h0) * t;
+      sun.intensity = s0 + (LIGHT.sun * k - s0) * t;
+    }, true);
+  }
+  function glitchPulse() {
+    if (reduceMotion) return;
+    world.classList.remove('glitch');
+    void world.offsetWidth; // перезапуск CSS-анимации
+    world.classList.add('glitch');
+    setTimeout(() => world.classList.remove('glitch'), 700);
+  }
+  const CUT_FX = {
+    key() { // над флагом поднимается Ключ-код
+      const { f } = cut, k = cut.key = makeKey();
+      k.position.set(f.x, 1.2, f.z);
+      k.scale.setScalar(0.01);
+      scene.add(k);
+      sparks(f.x, f.z, 0xffc83d, 24, 1.3);
+      tween(1100, t => { const e = ease(t); k.position.y = 1.2 + e * 0.95; k.scale.setScalar(0.01 + e * 1.49); }, true);
+    },
+    sboy() { // небо темнеет, мир дрожит, появляется Сбой
+      if (!cut.key) CUT_FX.key();
+      const { f } = cut, g = cut.sboy = makeSboy();
+      world.classList.add('storm');
+      glitchPulse();
+      dimLights(0.45, 700);
+      if (!reduceMotion) cam.shake = 0.35;
+      // Сбой зависает рядом с ключом, со стороны центра карты — чтобы не уйти за край кадра
+      const dx = cam.target.x - f.x, dz = cam.target.z - f.z, len = Math.hypot(dx, dz);
+      const [ux, uz] = len > 0.5 ? [dx / len, dz / len] : [-1, 0], d = Math.min(1.7, Math.max(1.2, len));
+      g.position.set(f.x + ux * d, 2.45, f.z + uz * d);
+      g.scale.setScalar(0.01);
+      scene.add(g);
+      sparks(g.position.x, g.position.z, 0xff2bd6, 30, g.position.y);
+      tween(600, t => g.scale.setScalar(0.01 + ease(t) * 1.29), true);
+    },
+    async steal() { // Сбой хватает ключ и улетает
+      if (!cut.sboy) CUT_FX.sboy();
+      const my = cut, { key, sboy } = cut; // если сцену пропустят или начнут заново, эта уже не продолжается
+      glitchPulse();
+      const from = key.position.clone(), to = sboy.position.clone().add(new THREE.Vector3(0, -0.9, 0));
+      await tween(600, t => key.position.lerpVectors(from, to, ease(t)), true);
+      if (cut !== my) return;
+      if (!reduceMotion) cam.shake = 0.25;
+      sparks(sboy.position.x, sboy.position.z, 0xff2bd6, 20, sboy.position.y);
+      await tween(1500, () => {}, true); // висит с ключом, пока читают его реплику
+      if (cut !== my) return;
+      glitchPulse();
+      const y0 = sboy.position.y, k0 = key.scale.x, s0 = sboy.scale.x;
+      await tween(1000, t => {
+        const e = t * t, s = 1 - e * 0.85;
+        sboy.position.y = y0 + e * 4.5;
+        key.position.y = y0 - 0.9 + e * 4.5;
+        sboy.scale.setScalar(s0 * s); key.scale.setScalar(k0 * s);
+      }, true);
+      if (cut !== my) return;
+      drop(sboy); drop(key);
+      cut.sboy = cut.key = null;
+      world.classList.remove('storm');
+      dimLights(1, 900);
+    },
+  };
+  function animateCut(time, dt) {
+    if (cut.key) {
+      cut.key.rotation.y += dt * 1.8;
+      cut.key.userData.inner.position.y = reduceMotion ? 0 : Math.sin(time * 2.2) * 0.06;
+    }
+    if (cut.sboy) animateSboy(cut.sboy, time, dt);
+  }
+  // Реплики со сценой: эффекты по ходу, в конце (и при «Пропустить») мир возвращается как был
+  function cutscene(lines, done) {
+    endCutscene();
+    cut = { f: maps[mapIdx].finish, key: null, sboy: null };
+    talkFx = fx => { if (cut && CUT_FX[fx]) CUT_FX[fx](); };
+    talk(lines, () => { endCutscene(); if (done) done(); });
+  }
+  function endCutscene() {
+    talkFx = null;
+    if (!cut) return;
+    drop(cut.key);
+    drop(cut.sboy);
+    cut = null;
+    lightTok++;
+    hemi.intensity = LIGHT.hemi;
+    sun.intensity = LIGHT.sun;
+    world.classList.remove('storm', 'glitch');
+  }
+
   /* Анимация одного события мира */
   async function animate(ev, st) {
     switch (ev.type) {
@@ -954,7 +1112,7 @@
       const got = l.tasks.reduce((n, t) => n + (save.stars[t.id] || []).reduce((a, b) => a + b, 0), 0);
       const o = document.createElement('option');
       o.value = i;
-      o.textContent = `Урок ${i + 1}. ${l.title} · ★ ${got} из ${l.tasks.length * 3}`;
+      o.textContent = `${lessonName(i)} · ★ ${got} из ${l.tasks.length * 3}`;
       sel.append(o);
     });
     sel.value = lessonIdx;
@@ -1022,7 +1180,7 @@
     if (!save.seeds[t.id]) save.seeds[t.id] = 1000 + Math.floor(Math.random() * 90000);
     maps = makeMaps(t, save.seeds[t.id]);
     persist();
-    $('#taskNum').textContent = `${lessonStory().place || `Урок ${lessonIdx + 1}`} · задание ${i + 1} из ${TASKS.length}`;
+    $('#taskNum').textContent = `${lessonStory().place || lessonName(lessonIdx)} · задание ${i + 1} из ${TASKS.length}`;
     $('#taskTitle').textContent = t.title;
     $('#taskGoal').textContent = t.goal;
     $('#taskNew').textContent = t.news;
@@ -1233,9 +1391,11 @@
         : `Коротко: ${lines} ${plural(lines, 'строка', 'строки', 'строк')}${got[2] ? '' : `, а можно уложиться в ${t.best}`}`}</li>`;
     const last = taskIdx === TASKS.length - 1;
     const nextLesson = LESSONS[lessonIdx + 1];
-    $('#resTitle').textContent = last ? 'Все задания урока пройдены!' : maps.length > 1 ? 'Готово! Код работает на любой карте.' : 'Готово!';
+    const pro = LESSONS[lessonIdx].prologue;
+    $('#resTitle').textContent = last ? (pro ? 'Пролог пройден!' : 'Все задания урока пройдены!') : maps.length > 1 ? 'Готово! Код работает на любой карте.' : 'Готово!';
     $('#nextBtn').textContent = !last ? `Задание ${taskIdx + 2}: ${TASKS[taskIdx + 1].short}`
-      : nextLesson ? `Урок ${lessonIdx + 2}: ${nextLesson.title}` : 'К первому заданию';
+      : pro && outroPending ? 'Дальше' // впереди сцена со Сбоем — не выдаём её заранее
+      : nextLesson ? `Урок ${lessonNo(lessonIdx + 1)}: ${nextLesson.title}` : 'К первому заданию';
     if (maps.length > 1) log('Все три карты пройдены.', 'ok');
   }
   function hideResult() { $('#result').hidden = true; }
@@ -1299,10 +1459,13 @@
     };
     if (!outroPending) { next(); return; }
     outroPending = false;
-    save.seen.outro[LESSONS[lessonIdx].id] = true;
+    const L = LESSONS[lessonIdx];
+    save.seen.outro[L.id] = true;
     persist();
     hideResult();
-    talk(lessonStory().outro, next);
+    // конец пролога — сцена со Сбоем, потом итог для родителя
+    if (L.prologue) cutscene(lessonStory().outro, openRecap);
+    else talk(lessonStory().outro, next);
   });
   $('#lessonSel').addEventListener('change', e => {
     if (running) { e.target.value = lessonIdx; return; }
@@ -1314,6 +1477,7 @@
   /* ---------- Снаряжение героя ---------- */
   function renderGear() {
     const stars = totalStars(), n = HeroGear.levelFor(stars), next = LEVELS[n];
+    $('#recapBtn').hidden = !prologueDone();
     $('#gearTitle').textContent = `${STORY.hero} · уровень ${n}, ${LEVELS[n - 1].title.toLowerCase()}`;
     $('#gearSub').textContent = next
       ? `Звёзд: ${stars}. До уровня ${n + 1} — ещё ${next.stars - stars}. За уровни открываются вещи.`
@@ -1347,9 +1511,102 @@
   $('#gearClose').addEventListener('click', () => { $('#gearPanel').hidden = true; });
   $('#storyBtn').addEventListener('click', () => {
     $('#gearPanel').hidden = true;
-    const s = lessonStory();
-    talk([...STORY.prologue, ...(s.intro || []), ...(save.seen.outro[LESSONS[lessonIdx].id] ? s.outro || [] : [])]);
+    const L = LESSONS[lessonIdx], s = lessonStory();
+    // после пролога в историю входит и кража Ключ-кода — с тем же представлением в 3D
+    const theft = !L.prologue && PRO >= 0 && save.seen.outro[LESSONS[PRO].id] ? STORY.lessons[LESSONS[PRO].id].outro : [];
+    cutscene([...STORY.prologue, ...theft, ...(s.intro || []), ...(save.seen.outro[L.id] ? s.outro || [] : [])]);
   });
+  $('#recapBtn').addEventListener('click', () => { $('#gearPanel').hidden = true; openRecap(); });
+
+  /* ---------- Итог пролога: карточка для ученика и родителя после пробного занятия ---------- */
+  const PRO = LESSONS.findIndex(l => l.prologue);
+  const solved = t => !!(save.stars[t.id] || [])[0];
+  const prologueDone = () => PRO >= 0 && LESSONS[PRO].tasks.every(solved);
+  const lessonStars = l => l.tasks.reduce((n, t) => n + (save.stars[t.id] || []).reduce((a, b) => a + b, 0), 0);
+  const KEY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.5" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M11.7 12H21M17.5 12v3.4M20.5 12v2.4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
+  function openRecap() {
+    if (PRO < 0) return;
+    const L = LESSONS[PRO], tasks = L.tasks, last = tasks[tasks.length - 1], next = LESSONS[PRO + 1];
+    const stars = lessonStars(L), lines = tasks.reduce((n, t) => n + codeLines(save.code[t.id] ?? t.hints[2]).length, 0);
+    const lvl = heroLevel(), items = ITEMS.filter(isOpen).map(it => it.name.toLowerCase());
+    $('#recapDate').textContent = new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    $('#recapStats').innerHTML = [
+      [tasks.length, `${plural(tasks.length, 'программа', 'программы', 'программ')} на Python`],
+      [lines, `${plural(lines, 'строка', 'строки', 'строк')} кода`],
+      [`${stars}<small> из ${tasks.length * 3}</small>`, plural(stars, 'звезда', 'звезды', 'звёзд')],
+      [lvl, `уровень · ${LEVELS[lvl - 1].title}`],
+    ].map(([v, k]) => `<li><b>${v}</b><span>${k}</span></li>`).join('');
+    $('#recapLvl').textContent = lvl;
+    $('#recapGear').textContent = items.length ? `Бит получил: ${items.join(', ')}` : '';
+    $('#recapTasks').innerHTML = tasks.map(t => `<li><span>${esc(t.title)}</span><span class="stars">${starsHtml(save.stars[t.id] || [0, 0, 0])}</span></li>`).join('');
+    $('#recapCmds').innerHTML = [...new Set(tasks.flatMap(t => t.cmds))].map(c => `<code>${esc(c)}</code>`).join('');
+    // сверху — комментарий с названием задания, как в настоящем файле с кодом
+    $('#recapCode').innerHTML = highlight(`# ${last.title}\n${codeLines(save.code[last.id] ?? last.hints[2]).join('\n')}`).replace(/\n $/, '');
+    const rest = LESSONS.length - PRO - 1;
+    $('#recapNextText').textContent = `Сбой унёс Ключ-код в свой замок. Чтобы вернуть его, Бит пройдёт всю долину: ${rest} ${plural(rest, 'урок', 'урока', 'уроков')} — от длинных дорог до циклов, условий и своих команд.`;
+    $('#recapPath').innerHTML = LESSONS.map((l, i) => {
+      const done = l.tasks.every(solved), end = i === LESSONS.length - 1;
+      const mark = done ? '✓' : end ? KEY_ICON : lessonNo(i);
+      return `<li class="${done ? 'done' : ''}${end ? ' end' : ''}" title="${esc((STORY.lessons[l.id] || {}).place || '')}"><i>${mark}</i><span>${esc(l.title)}</span></li>`;
+    }).join('');
+    $('#recapGo').hidden = !next || lessonIdx !== PRO; // «Дальше» — только из самого пролога
+    if (next) $('#recapGo').textContent = `Дальше: урок ${lessonNo(PRO + 1)} «${next.title}»`;
+    $('#recap').hidden = false;
+    document.body.classList.add('recap-open');
+    startPortrait();
+    ($('#recapGo').hidden ? $('#recapClose') : $('#recapGo')).focus({ preventScroll: true });
+  }
+  function closeRecap() {
+    $('#recap').hidden = true;
+    document.body.classList.remove('recap-open');
+    stopPortrait();
+  }
+  // 3D-портрет Бита в снаряжении: своя маленькая сцена, клон героя медленно поворачивается
+  let portrait = null;
+  function startPortrait() {
+    stopPortrait();
+    const box = $('#recapHero');
+    let r;
+    try { r = new THREE.WebGLRenderer({ antialias: true, alpha: true }); } catch (e) { return; }
+    r.setPixelRatio(Math.min(devicePixelRatio, 2));
+    r.setSize(box.clientWidth || 150, box.clientHeight || 150, false);
+    r.domElement.className = 'recap-canvas';
+    box.prepend(r.domElement);
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight(0xffffff, 0x8a7fb0, 0.95));
+    const key = new THREE.DirectionalLight(0xffffff, 0.75);
+    key.position.set(2, 4, 3);
+    sc.add(key);
+    const bot = hero.clone(true);
+    bot.position.set(0, 0, 0);
+    bot.rotation.set(0, 0, 0);
+    bot.scale.set(1, 1, 1);
+    bot.getObjectByName('arrow').visible = false;
+    sc.add(bot);
+    const c = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
+    c.position.set(0, 0.9, 2.35);
+    c.lookAt(0, 0.5, 0);
+    let raf = 0;
+    const loop = t => {
+      bot.rotation.y = reduceMotion ? 0.45 : 0.35 + Math.sin(t / 1500) * 0.65;
+      r.render(sc, c);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    portrait = { r, raf: () => raf };
+  }
+  function stopPortrait() {
+    if (!portrait) return;
+    cancelAnimationFrame(portrait.raf());
+    portrait.r.dispose();
+    portrait.r.forceContextLoss();
+    portrait.r.domElement.remove();
+    portrait = null;
+  }
+  $('#recapGo').addEventListener('click', () => { closeRecap(); selectLesson(PRO + 1); greet(); });
+  $('#recapClose').addEventListener('click', closeRecap);
+  $('#recap').addEventListener('click', e => { if (e.target.id === 'recap') closeRecap(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#recap').hidden) closeRecap(); });
 
   /* ---------- Сюжет: реплики персонажей (js/story.js) ---------- */
   let talkQueue = [], talkDone = null, outroPending = false;
@@ -1361,7 +1618,7 @@
     showLine();
   }
   function showLine() {
-    const [who, text] = talkQueue.shift();
+    const [who, text, fx] = talkQueue.shift();
     const p = STORY.people[who];
     const face = $('#talkFace');
     face.textContent = p.letter;
@@ -1369,7 +1626,9 @@
     $('#talkName').textContent = p.role ? `${p.name}, ${p.role}` : p.name;
     $('#talkText').textContent = text;
     $('#talkNext').textContent = talkQueue.length ? 'Дальше' : 'Понятно';
+    $('#talk').classList.toggle('sboy', who === 'sboy'); // реплики Сбоя «сбоят»
     $('#talk').hidden = false;
+    if (fx && talkFx) talkFx(fx);
     $('#talkNext').focus({ preventScroll: true });
   }
   function endTalk() {
