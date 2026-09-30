@@ -1,6 +1,8 @@
 // Проверка сюжета и прокачки: node tests/check-story.js
 //  - у каждого урока есть проводник, место, вступление и прощание (js/story.js);
 //  - реплики ссылаются на существующих персонажей и не слишком длинные — их читают вслух на занятии;
+//  - эффект реплики (третий элемент), если есть, описан в STORY.fx;
+//  - у урока-пролога прощание — сцена, где Сбой крадёт Ключ-код (эффекты key, sboy, steal по порядку);
 //  - уровни идут по возрастанию, последний достижим звёздами курса (js/gear.js);
 //  - у вещей уникальные id, известные слоты, уровни в пределах списка, и каждая собирается в three.js.
 const fs = require('fs');
@@ -19,7 +21,8 @@ const MAX_LINE = 160;
 
 function checkLines(lines, where) {
   if (!Array.isArray(lines) || !lines.length) { fail(`${where}: нет реплик`); return; }
-  lines.forEach(([who, text], i) => {
+  lines.forEach(([who, text, fx], i) => {
+    if (fx !== undefined && !(STORY.fx && STORY.fx[fx])) fail(`${where}, реплика ${i + 1}: неизвестный эффект «${fx}» (опиши его в STORY.fx и в app.js)`);
     if (!STORY.people[who]) fail(`${where}, реплика ${i + 1}: неизвестный персонаж «${who}»`);
     if (!text || !text.trim()) fail(`${where}, реплика ${i + 1}: пустой текст`);
     else if (text.length > MAX_LINE) fail(`${where}, реплика ${i + 1}: ${text.length} знаков, а можно не больше ${MAX_LINE}`);
@@ -35,6 +38,12 @@ W.LESSONS.forEach(l => {
   checkLines(s.intro, `${l.id}: вступление`);
   checkLines(s.outro, `${l.id}: прощание`);
 });
+const pro = W.LESSONS.filter(l => l.prologue);
+if (pro.length !== 1 || W.LESSONS[0] !== pro[0]) fail('пролог должен быть один и идти первым уроком');
+else {
+  const fx = ((STORY.lessons[pro[0].id] || {}).outro || []).map(l => l[2]).filter(Boolean).join(' ');
+  if (fx !== 'key sboy steal') fail(`прощание пролога: ждали эффекты key, sboy, steal по порядку, а там «${fx}»`);
+}
 Object.keys(STORY.lessons).forEach(id => {
   if (!W.LESSONS.some(l => l.id === id)) fail(`в js/story.js есть сюжет для несуществующего урока «${id}»`);
 });

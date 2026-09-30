@@ -119,7 +119,10 @@
         </div>
         <p class="gear-sub" id="gearSub"></p>
         <ul class="gear-list" id="gearList"></ul>
-        <button type="button" class="btn secondary" id="storyBtn">История долины</button>
+        <div class="gear-actions">
+          <button type="button" class="btn secondary" id="storyBtn">История долины</button>
+          <button type="button" class="btn secondary" id="recapBtn" hidden>Итог пролога</button>
+        </div>
       </div>
       <!-- Реплика персонажа: пролог, начало и конец квеста -->
       <div class="talk" id="talk" hidden>
@@ -138,13 +141,50 @@
     </section>
   </main>
 </div>
+<!-- Итог пролога: карточка для ученика и родителя после пробного занятия (заполняет js/app.js) -->
+<div class="recap" id="recap" hidden>
+  <div class="recap-card" role="dialog" aria-modal="true" aria-labelledby="recapTitle">
+    <header class="recap-top">
+      <div class="recap-head">
+        <p class="recap-kicker">Долина Эникей · <span id="recapDate"></span></p>
+        <h2 id="recapTitle">Пролог пройден!</h2>
+        <p class="recap-lead">Первые программы на настоящем Python — и робот Бит выполнил каждую.</p>
+        <p class="recap-gear" id="recapGear"></p>
+      </div>
+      <div class="recap-hero" id="recapHero" aria-hidden="true"><span class="recap-lvl" id="recapLvl"></span></div>
+    </header>
+    <ul class="recap-stats" id="recapStats" aria-label="Итоги"></ul>
+    <div class="recap-grid">
+      <section>
+        <h3>Задания</h3>
+        <ol class="recap-tasks" id="recapTasks"></ol>
+        <h3>Команды, которые уже знакомы</h3>
+        <div class="recap-cmds" id="recapCmds"></div>
+      </section>
+      <section>
+        <h3>Последняя программа</h3>
+        <pre class="recap-code" id="recapCode"></pre>
+      </section>
+    </div>
+    <section class="recap-next">
+      <h3>Что дальше</h3>
+      <p id="recapNextText"></p>
+      <ol class="recap-path" id="recapPath" aria-label="Путь по долине"></ol>
+    </section>
+    <div class="recap-actions">
+      <button type="button" class="btn primary" id="recapGo"></button>
+      <button type="button" class="btn secondary" id="recapClose">Закрыть</button>
+    </div>
+  </div>
+</div>
 <!-- 3D-библиотека (локальная копия, работает без интернета) -->
 <script src="js/three.min.js"></script>
 <!-- Учебный Python: разбор и пошаговое выполнение кода -->
 <script src="js/minipy.js"></script>
 <!-- Мир: команды героя и карты -->
 <script src="js/world.js"></script>
-<!-- Уроки по порядку: каждый файл добавляет себя в HeroWorld.LESSONS -->
+<!-- Уроки по порядку: каждый файл добавляет себя в HeroWorld.LESSONS. Пролог — пробное занятие -->
+<script src="js/lessons/0-prolog.js"></script>
 <script src="js/lessons/1-komandy.js"></script>
 <script src="js/lessons/2-cikly.js"></script>
 <script src="js/lessons/3-usloviya.js"></script>
