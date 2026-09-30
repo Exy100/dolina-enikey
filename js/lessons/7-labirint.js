@@ -49,10 +49,26 @@
   const RULE_RU = 'while not на_финише():\n    if not стена_справа():\n        направо()\n        вперёд()\n    elif not стена_впереди():\n        вперёд()\n    else:\n        налево()';
   const RULE_EN = 'while not at_goal():\n    if not wall_on_right():\n        turn_right()\n        move()\n    elif not wall_in_front():\n        move()\n    else:\n        turn_left()';
 
+  // Задание со звёздочкой: лава в проходах между комнатами. Прыжок из комнаты в комнату — то же,
+  // что два шага через проход, поэтому правило руки работает, если вместо move() делать step()
+  function genLava(r) {
+    for (let guard = 0; guard < 300; guard++) {
+      const L = maze(r, 4, 3);
+      const pass = [...L.floor].filter(k => { const [x, z] = k.split(',').map(Number); return x % 2 || z % 2; });
+      if (pass.length < 3) continue;
+      sample(r, pass, 3).forEach(k => L.lava.add(k));
+      L.english = true;
+      L.sig = [...L.floor].sort().join(';') + '|' + [...L.lava].sort().join(';');
+      return L;
+    }
+  }
+
   HeroWorld.addLesson({
     id: 'labirint',
     title: 'Лабиринт',
     intro: 'Лабиринт каждый раз новый. Держись правой рукой за стену — и дойдёшь до выхода. С третьего задания Бит понимает только английские команды.',
+    // Разминка в начале урока: задания из прошлых уроков на свежих картах, с нуля
+    warmup: ['f-param', 'v-sign'],
     tasks: [
       {
         id: 'l-right',
@@ -197,6 +213,27 @@
         star3: 'first',
         fast: 3,
         gen: r => genMaze(r, 4, 3, { coins: 3, extra: { english: true, boss: true } }),
+      },
+    ],
+    // Задание со звёздочкой: необязательное, для тех, кто решил урок быстро
+    bonus: [
+      {
+        id: 'l-star',
+        short: 'Лава',
+        title: 'Лавовый лабиринт',
+        goal: 'В проходах замка — лава. Сделай приём step(), который прыгает через лаву, и пройди лабиринт правилом правой руки. По-английски.',
+        news: 'lava_in_front() — лава впереди, jump() — прыжок. Свой приём по-английски пишут так же: def step():',
+        cmds: [...EN, 'lava_in_front()', 'jump()', 'def step():'],
+        starter: '# Правило правой руки. Но в проходах лава.\n' + RULE_EN + '\n',
+        hints: [
+          'Замени оба move() в правиле на свой приём step(): он прыгает, если впереди лава, и шагает, если нет.',
+          'def step():\n    if lava_in_front():\n        jump()\n    else:\n        move()',
+          'def step():\n    if lava_in_front():\n        jump()\n    else:\n        move()\nwhile not at_goal():\n    if not wall_on_right():\n        turn_right()\n        step()\n    elif not wall_in_front():\n        step()\n    else:\n        turn_left()',
+        ],
+        best: 13,
+        star3: 'first',
+        fast: 3,
+        gen: r => genLava(r),
       },
     ],
   });

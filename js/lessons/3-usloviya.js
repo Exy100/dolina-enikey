@@ -106,10 +106,29 @@
     return L;
   }
 
+  // Задание со звёздочкой: повороты и лава, монет 4–6, а рюкзак вмещает только 3
+  function genStar(r) {
+    const L = blankLevel();
+    const lens = [randInt(r, 3, 5), randInt(r, 3, 4), randInt(r, 3, 4)];
+    const path = corridor(L, lens);
+    const lava = pickLava(r, path, lens, 1, 2);
+    lava.forEach(i => L.lava.add(K(path[i].x, path[i].z)));
+    const free = [];
+    for (let i = 1; i < path.length - 1; i++) if (!lava.includes(i)) free.push(i);
+    let coins;
+    do { coins = free.filter(() => r() < 0.45); } while (coins.length < 4 || coins.length > 6);
+    coins.forEach(i => L.coins.add(K(path[i].x, path[i].z)));
+    L.need = 3;
+    L.sig = lens.join('') + '|' + lava.join(',') + '|' + coins.join(',');
+    return L;
+  }
+
   HeroWorld.addLesson({
     id: 'usloviya',
     title: 'Условия',
     intro: 'С этого урока долина каждый раз новая: код проверяется на трёх случайных картах. Программа «под одну карту» не пройдёт — нужны условия.',
+    // Разминка в начале урока: задания из прошлых уроков на свежих картах, с нуля
+    warmup: ['c-two', 'k-final'],
     tasks: [
       {
         id: 'coins',
@@ -244,6 +263,26 @@
         best: 9,
         star3: 'first',
         gen: r => genFinal(r),
+      },
+    ],
+    // Задание со звёздочкой: необязательное, для тех, кто решил урок быстро
+    bonus: [
+      {
+        id: 'u-star',
+        short: 'Рюкзак',
+        title: 'Рюкзак на поворотах',
+        goal: 'Повороты, лава и монеты — как в финале, но в рюкзак влезает только 3 монеты. Дойди до флага с тремя монетами.',
+        news: 'Два условия сразу: if есть_монета() and монет_собрано() < 3 — верно, только когда верны оба.',
+        cmds: ALL_CMDS,
+        starter: '# Решение финала — но рюкзак здесь маленький.\nwhile not на_финише():\n    if есть_монета():\n        взять()\n    if стена_впереди():\n        налево()\n    elif лава_впереди():\n        прыгнуть()\n    else:\n        вперёд()\n',
+        hints: [
+          'Монету можно брать, только пока в рюкзаке меньше трёх. Сколько уже взято, скажет монет_собрано().',
+          'Соедини две проверки словом and:\n    if есть_монета() and монет_собрано() < 3:\n        взять()',
+          'while not на_финише():\n    if есть_монета() and монет_собрано() < 3:\n        взять()\n    if стена_впереди():\n        налево()\n    elif лава_впереди():\n        прыгнуть()\n    else:\n        вперёд()',
+        ],
+        best: 9,
+        star3: 'first',
+        gen: r => genStar(r),
       },
     ],
   });

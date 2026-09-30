@@ -408,7 +408,8 @@ const HeroWorld = (() => {
   // Уроки лежат в js/lessons/ и сами добавляют себя сюда — в том порядке, в каком подключены в index.html
   const LESSONS = [];
   function addLesson(lesson) {
-    lesson.tasks.forEach(t => { t.lesson = lesson.id; t.basic = !!lesson.basic; });
+    // основные задания и задание со звёздочкой (bonus); разминка (warmup) — это id заданий прошлых уроков
+    [...lesson.tasks, ...(lesson.bonus || [])].forEach(t => { t.lesson = lesson.id; t.basic = !!lesson.basic; });
     LESSONS.push(lesson);
   }
 
@@ -464,6 +465,99 @@ const HeroWorld = (() => {
   }
 
   /* Прогон кода без анимации (для проверки в тестах) */
+  /* ---- Свой уровень (редактор): проверка карты и маршрут-решение ---- */
+  // Кратчайший маршрут: шаг на соседнюю клетку без лавы или прыжок через одну лаву; через флаг — только в самом конце
+  // (в уроках без условий шаг с флага — ошибка). Монеты — в лучшем порядке (до 6 — перебором, больше — ближайшая).
+  // Возвращает { code } — программу-решение, или { fail: 'flag' | 'coin' }, если дойти нельзя
+  function planRoute(L) {
+    const fin = K(L.finish.x, L.finish.z);
+    const walk = (x, z) => L.floor.has(K(x, z)) && !L.lava.has(K(x, z));
+    function bfs(a, b, throughFlag = false) {
+      const prev = new Map([[K(a.x, a.z), null]]), q = [a], goal = K(b.x, b.z);
+      while (q.length && !prev.has(goal)) {
+        const c = q.shift();
+        DIRS.forEach(([dx, dz], d) => {
+          let n = null;
+          if (walk(c.x + dx, c.z + dz)) n = { x: c.x + dx, z: c.z + dz, jump: false };
+          else if (L.lava.has(K(c.x + dx, c.z + dz)) && walk(c.x + 2 * dx, c.z + 2 * dz)) n = { x: c.x + 2 * dx, z: c.z + 2 * dz, jump: true };
+          if (!n) return;
+          const k = K(n.x, n.z);
+          if (prev.has(k) || (k === fin && k !== goal && !throughFlag)) return;
+          prev.set(k, { from: c, d, jump: n.jump });
+          q.push(n);
+        });
+      }
+      if (!prev.has(goal)) return null;
+      const steps = [];
+      for (let k = goal; prev.get(k); ) { const p = prev.get(k); steps.unshift(p); k = K(p.from.x, p.from.z); }
+      return steps;
+    }
+    const start = { x: L.start.x, z: L.start.z }, coins = [...L.coins].filter(k => k !== fin).map(k => { const [x, z] = k.split(',').map(Number); return { x, z }; });
+    const pts = [start, ...coins], dist = pts.map(a => pts.map(b => (a === b ? 0 : (bfs(a, b) || { length: Infinity }).length)));
+    const lost = pts.findIndex((p, i) => i && dist[0][i] === Infinity);
+    if (lost > 0) return { fail: bfs(start, pts[lost], true) ? 'behind' : 'coin' }; // behind — монета за флагом
+    // порядок монет
+    let order = coins.map((_, i) => i + 1);
+    if (coins.length <= 6) {
+      let best = Infinity, perm = [];
+      const go = (rest, at, cost, path) => {
+        if (cost >= best) return;
+        if (!rest.length) { const f = bfs(pts[at], L.finish); const c = cost + (f ? f.length : Infinity); if (c < best) { best = c; perm = path; } return; }
+        rest.forEach(i => go(rest.filter(j => j !== i), i, cost + dist[at][i], [...path, i]));
+      };
+      go(order, 0, 0, []);
+      if (best === Infinity) return { fail: 'flag' };
+      order = perm;
+    } else {
+      const left = new Set(order); order = [];
+      for (let at = 0; left.size; ) { const i = [...left].sort((a, b) => dist[at][a] - dist[at][b])[0]; order.push(i); left.delete(i); at = i; }
+    }
+    const cmds = [];
+    let dir = L.start.dir, pos = start;
+    for (const target of [...order.map(i => pts[i]), L.finish]) {
+      const steps = bfs(pos, target);
+      if (!steps) return { fail: target === L.finish ? 'flag' : 'coin' };
+      steps.forEach(st => {
+        const t = (st.d - dir + 4) % 4;
+        if (t === 1) cmds.push('налево()'); else if (t === 3) cmds.push('направо()'); else if (t === 2) cmds.push('налево()', 'налево()');
+        dir = st.d;
+        cmds.push(st.jump ? 'прыгнуть()' : 'вперёд()');
+      });
+      if (target !== L.finish) cmds.push('взять()');
+      pos = target;
+    }
+    if (L.coins.has(fin)) cmds.push('взять()');
+    // подряд идущие шаги — одной командой вперёд(n)
+    const out = [];
+    cmds.forEach(c => {
+      const m = out.length && out[out.length - 1].match(/^вперёд\((\d*)\)$/);
+      if (c === 'вперёд()' && m) out[out.length - 1] = `вперёд(${(+m[1] || 1) + 1})`;
+      else out.push(c);
+    });
+    return { code: out.join('\n') };
+  }
+  // Карта из редактора: строки в формате fromAscii, не больше 14 × 10, один старт и один флаг, всё достижимо
+  const LEVEL_CHARS = /^[ .$~F>^<v]*$/;
+  function checkLevel(rows) {
+    if (!Array.isArray(rows) || !rows.length || rows.length > 10
+      || rows.some(r => typeof r !== 'string' || r.length > 14 || !LEVEL_CHARS.test(r))) return { ok: false, msg: 'Карта повреждена: её не получится открыть.' };
+    const all = rows.join(''), starts = (all.match(/[>^<v]/g) || []).length, flags = (all.match(/F/g) || []).length;
+    if (starts !== 1) return { ok: false, msg: starts ? 'Старт должен быть один.' : 'Поставь старт — клетку, откуда Бит начинает путь.' };
+    if (flags !== 1) return { ok: false, msg: flags ? 'Флаг должен быть один.' : 'Поставь флаг — клетку, куда Биту нужно дойти.' };
+    let L;
+    try { L = fromAscii(rows); } catch (e) { return { ok: false, msg: e.message }; }
+    L.basic = true;
+    const plan = planRoute(L);
+    if (!plan.code) return { ok: false, msg: {
+      coin: 'До одной из монет не добраться: дорога не доходит или лава шире одной клетки.',
+      behind: 'Монета за флагом: на флаге путь Бита кончается, дальше идти нельзя. Перенеси монету или флаг.',
+      flag: 'До флага не добраться: дорога прерывается или лава шире одной клетки.',
+    }[plan.fail] };
+    const r = runSilent(plan.code, L);
+    if (!r.ok) return { ok: false, msg: 'Не получилось построить путь по этой карте. Попробуй сделать дорогу проще.' };
+    return { ok: true, L, sol: plan.code };
+  }
+
   function runSilent(code, level) {
     const st = createState(level);
     const b = { ...MiniPy.stdlib(), ...commands(st) };
@@ -483,7 +577,7 @@ const HeroWorld = (() => {
   return {
     LESSONS, addLesson, ALL_CMDS, EN, DIRS, K, rng, randInt, blankLevel, fromAscii, corridor, pickLava,
     pathOk, winding, corners, maze, handWalk,
-    makeMaps, createState, commands, cellAt, endCheck, WorldError, WinSignal, runSilent,
+    makeMaps, createState, commands, cellAt, endCheck, WorldError, WinSignal, runSilent, planRoute, checkLevel,
   };
 })();
 if (typeof module !== 'undefined') module.exports = HeroWorld;

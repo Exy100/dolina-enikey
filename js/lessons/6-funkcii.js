@@ -104,10 +104,27 @@
   const LEFT = 'def ниша_слева():\n    налево()\n    вперёд()\n    взять()\n    развернуться()\n    вперёд()\n    налево()\n';
   const RIGHT = 'def ниша_справа():\n    направо()\n    вперёд()\n    взять()\n    развернуться()\n    вперёд()\n    направо()\n';
 
+  // Задание со звёздочкой: тропа с поворотами в обе стороны, лава и монеты
+  function genStar(r) {
+    for (let guard = 0; guard < 300; guard++) {
+      const { L, path, lens, turns } = winding(r, randInt(r, 4, 5), 3, 5, false);
+      const used = turns.slice(0, lens.length - 1);
+      if (!used.includes(1) || !used.includes(3)) continue;
+      const lava = pickLava(r, path, lens, 2, 3);
+      lava.forEach(i => L.lava.add(K(path[i].x, path[i].z)));
+      const free = Array.from({ length: path.length - 2 }, (_, i) => i + 1).filter(i => !lava.includes(i));
+      sample(r, free, randInt(r, 2, 3)).forEach(i => L.coins.add(K(path[i].x, path[i].z)));
+      L.sig = `${lens.join('')}|${used.join('')}|${lava.join(',')}|${[...L.coins].sort().join(';')}`;
+      return L;
+    }
+  }
+
   HeroWorld.addLesson({
     id: 'funkcii',
     title: 'Функции',
     intro: 'Свой приём пишут один раз через def, а используют сколько угодно — просто по имени, со скобками.',
+    // Разминка в начале урока: задания из прошлых уроков на свежих картах, с нуля
+    warmup: ['v-steps', 'p-coins'],
     tasks: [
       {
         id: 'f-back',
@@ -244,6 +261,26 @@
         best: 29,
         star3: 'first',
         gen: r => genFinal(r),
+      },
+    ],
+    // Задание со звёздочкой: необязательное, для тех, кто решил урок быстро
+    bonus: [
+      {
+        id: 'f-star',
+        short: 'Сюрпризы',
+        title: 'Тропа с сюрпризами',
+        goal: 'Повороты в обе стороны, лава и монеты. Сделай приём шаг(), который прыгает через лаву и берёт монеты, — и пройди тропу правилом правой руки.',
+        news: 'Приём может вызывать другой приём и сам проверять условия: правило руки думает о поворотах, а шаг() — о лаве и монетах.',
+        cmds: CMDS,
+        starter: '# Правило правой руки из задания «Приём правой руки». Но здесь лава и монеты.\nwhile not на_финише():\n    if not стена_справа():\n        направо()\n        вперёд()\n    elif not стена_впереди():\n        вперёд()\n    else:\n        налево()\n',
+        hints: [
+          'Замени оба вперёд() в правиле на свой приём шаг(). А в шаг() — выбор: лава впереди — прыгнуть, иначе вперёд. После шага — проверка монеты.',
+          'def шаг():\n    if лава_впереди():\n        прыгнуть()\n    else:\n        вперёд()\n    if есть_монета():\n        взять()',
+          'def шаг():\n    if лава_впереди():\n        прыгнуть()\n    else:\n        вперёд()\n    if есть_монета():\n        взять()\nwhile not на_финише():\n    if not стена_справа():\n        направо()\n        шаг()\n    elif not стена_впереди():\n        шаг()\n    else:\n        налево()',
+        ],
+        best: 15,
+        star3: 'first',
+        gen: r => genStar(r),
       },
     ],
   });
