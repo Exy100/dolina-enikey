@@ -34,6 +34,8 @@
 
   <main>
     <section class="code-pane" aria-label="Задание и код">
+      <!-- Режим показа (?show): подпись к уровню вместо задания -->
+      <div class="reel-cap" id="reelCap"><p class="reel-lesson" id="reelLesson"></p><h2 id="reelTitle"></h2><p class="reel-what" id="reelWhat"></p></div>
       <article class="task">
         <p class="num-line" id="taskNum"></p>
         <h2 id="taskTitle"></h2>
@@ -87,10 +89,12 @@
         </div>
       </div>
       <div class="hud tr">
+        <button type="button" class="hud-btn icon-btn" id="soundBtn" aria-pressed="true"></button>
         <button type="button" class="hud-btn" id="topBtn" aria-pressed="false">Вид сверху</button>
         <button type="button" class="hud-btn" id="newMapsBtn">Новые карты</button>
       </div>
       <div class="hud bl"><div class="hud-box coins" id="coins" hidden></div></div>
+      <div class="reel-toast" id="reelToast" hidden></div>
       <!-- Режим «Угадай»: на карте три варианта, ученик выбирает, где остановится Бит -->
       <div class="hud tc" id="guessHud" hidden>
         <div class="hud-box guess-box">
@@ -140,6 +144,18 @@
       </div>
     </section>
   </main>
+</div>
+<!-- Режим показа (?show): карточки в начале и в конце ролика для Авито (тексты — REEL в js/app.js) -->
+<div class="reel" id="reel" hidden>
+  <div class="reel-card">
+    <div class="reel-hero" id="reelHero" aria-hidden="true"></div>
+    <p class="reel-kicker" id="reelKicker"></p>
+    <h2 class="reel-name" id="reelName"></h2>
+    <p class="reel-lead" id="reelLead"></p>
+    <ul class="reel-lines" id="reelLines"></ul>
+    <p class="reel-cta" id="reelCta" hidden></p>
+  </div>
+  <p class="reel-hint" id="reelHint"></p>
 </div>
 <!-- Итог пролога: карточка для ученика и родителя после пробного занятия (заполняет js/app.js) -->
 <div class="recap" id="recap" hidden>
@@ -195,6 +211,8 @@
 <!-- Сюжет: персонажи и реплики. Прокачка: уровни и снаряжение героя -->
 <script src="js/story.js"></script>
 <script src="js/gear.js"></script>
+<!-- Звуки: синтез в браузере, без файлов -->
+<script src="js/sound.js"></script>
 <!-- Интерфейс, 3D-сцена и анимации -->
 <script src="js/app.js"></script>
 </body>

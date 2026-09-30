@@ -4,7 +4,8 @@
 //  - стартовый код обязан ломаться хотя бы на одной карте;
 //  - типичные ошибки (WRONG) обязаны ломаться на каждом наборе карт и с нужной причиной (kind);
 //  - если третья звезда за «коротко», эталон укладывается в best строк.
-// Ещё проверяется, что каждый файл из js/lessons/ подключён в index.html и id заданий не повторяются.
+// Ещё проверяется, что каждый файл из js/lessons/ подключён в index.html и id заданий не повторяются,
+// а уровни ролика для Авито (REEL в js/app.js, режим ?show) существуют и проходятся на его картах.
 // Глубже, на большем числе наборов карт: SEEDS=1000 node tests/check-tasks.js
 const fs = require('fs');
 const path = require('path');
@@ -160,5 +161,23 @@ TASKS.forEach(t => {
   }
   console.log(`${t.id}: проверено`);
 });
+// Ролик для Авито (?show): задания из REEL есть в курсе, эталон проходит карты ролика (seed REEL)
+const app = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
+const reel = app.match(/const REEL = \{[\s\S]*?items: \[([\s\S]*?)\n {4}\],[\s\S]*?seed: (\d+)/);
+if (!reel) { console.log('✗ не найден список уровней ролика REEL в js/app.js'); errors++; }
+else {
+  const seed = +reel[2], items = [...reel[1].matchAll(/\{ id: '([^']+)'(.*)\}/g)];
+  if (!items.length) { console.log('✗ в ролике REEL нет уровней'); errors++; }
+  items.forEach(([, id, rest]) => {
+    const t = TASKS.find(x => x.id === id);
+    if (!t) { console.log(`✗ ролик: задания «${id}» нет в курсе`); errors++; return; }
+    W.makeMaps(t, seed).slice(0, /again:/.test(rest) ? 2 : 1).forEach((m, i) => {
+      const r = W.runSilent(t.hints[2], m);
+      if (!r.ok) { console.log(`✗ ролик: «${id}» не проходит карту ${i + 1}: ${r.err}`); errors++; }
+    });
+  });
+  if (!html.includes('src="js/sound.js"')) { console.log('✗ js/sound.js не подключён в index.html'); errors++; }
+  console.log(`ролик для Авито: ${items.length} уровней проверено`);
+}
 console.log(errors ? `Ошибок: ${errors}` : 'Все задания в порядке.');
 process.exit(errors ? 1 : 0);
