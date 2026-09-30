@@ -374,7 +374,7 @@ const HeroWorld = (() => {
         return v;
       }),
       'на_финише': fn('на_финише', 0, function* (args, line) {
-        if (L.hidden) throw new WorldError('Флаг спрятан, поэтому на_финише() тут не подскажет. Считай шаги сам.', line, 'hidden');
+        if (L.hidden) throw new WorldError('Флаг спрятан, поэтому на_финише() тут не подскажет. Считай шаги в переменной.', line, 'hidden');
         const f = L.finish, v = st.hero.x === f.x && st.hero.z === f.z;
         yield sense(st, line, `я на финише? ${yesNo(v)}`, v);
         return v;

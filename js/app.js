@@ -84,6 +84,7 @@
     gate: new THREE.MeshStandardMaterial({ color: 0xb8742e, roughness: 0.8 }),
     gateBar: new THREE.MeshStandardMaterial({ color: 0x4a4f6a, metalness: 0.5, roughness: 0.4 }),
     boss: new THREE.MeshStandardMaterial({ color: 0x1b1e3c, emissive: 0xff2bd6, emissiveIntensity: 0.6, roughness: 0.4 }),
+    bossFixed: new THREE.MeshStandardMaterial({ color: 0x8f7cff, emissive: 0x1fb89a, emissiveIntensity: 0.35, roughness: 0.4 }), // починенный Сбой
   });
 
   let levelGroup = new THREE.Group();
@@ -169,7 +170,8 @@
 
   function hash(x, z) { let h = (x * 374761393 + z * 668265263) >>> 0; h = (h ^ (h >>> 13)) * 1274126177; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
 
-  // Великий Сбой: тёмный куб с осколками вокруг. Он же босс лабиринта и он же — в сцене конца пролога
+  // Великий Сбой — первая программа Ады с ошибкой: тёмный куб с осколками вокруг.
+  // Он же босс лабиринта (в финале его чинят) и он же — в сцене конца пролога
   function makeSboy() {
     const g = new THREE.Group();
     const core = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), M.boss);
@@ -182,8 +184,14 @@
     }
     return g;
   }
-  // Сбой дёргается и мерцает
+  // Сбой дёргается и мерцает, а починенный спокойно кружится, осколки идут ровным кольцом
   function animateSboy(g, time, dt) {
+    if (g.userData.fixed) {
+      g.rotation.y += dt * 0.6;
+      g.children[0].position.set(0, Math.sin(time * 1.5) * 0.06, 0);
+      g.children.slice(1).forEach(b => { const a = b.userData.a + time * 0.8; b.position.set(Math.cos(a) * 0.5, 0, Math.sin(a) * 0.5); });
+      return;
+    }
     g.rotation.y += dt * 1.5;
     const j = reduceMotion ? 0 : 0.05;
     g.children[0].position.set((Math.random() - 0.5) * j, Math.sin(time * 3) * 0.05, (Math.random() - 0.5) * j);
@@ -728,14 +736,14 @@
       p === answer || p === o ? 1 : 0.35));
     const score = `Угадано: ${save.predict.hits} из ${save.predict.tries}.`;
     if (right) {
-      say('Угадал!', 'yes', 1400);
+      say('Верно!', 'yes', 1400);
       confetti(o.x, o.z, 30);
-      log(`Угадал! Верный ответ — ${o.letter}. ${score}`, 'ok');
+      log(`Верно! Ответ — ${o.letter}. ${score}`, 'ok');
     } else {
-      log(`Не угадал: Бит остановился на клетке ${answer ? answer.letter : 'рядом'}, а ты выбрал ${o.letter}. Пройди по следу Бита и найди, где он пошёл не так, как ты думал. ${score}`, 'tip');
+      log(`Мимо: Бит остановился на клетке ${answer ? answer.letter : 'рядом'}, а твой ответ — ${o.letter}. Пройди по следу Бита и найди место, где его путь расходится с твоей догадкой. ${score}`, 'tip');
     }
     // почему Бит встал именно там; где он стоит, и так видно по зелёному значку — без красного кольца
-    if (!r.ok) reportError(r.err, 0);
+    if (!r.ok) reportError(r.err, 0, '', !right); // угадал — пусть в облачке останется «Верно!»
     if (r.ok) log(maps.length > 1 ? 'Программа дошла до флага на этой карте. Нажми «Запуск», чтобы проверить все три.' : 'Программа дошла до флага. Нажми «Запуск», чтобы засчитать задание.', 'info');
   }
 
@@ -973,12 +981,13 @@
         return;
       }
       case 'win': {
-        if (boss) {
-          say('Сбой повержен!', 'yes', 1400);
-          sparks(boss.position.x, boss.position.z, 0xff2bd6, 30);
-          const b = boss;
-          await tween(600, t => { b.scale.setScalar(1 - t); b.rotation.y += 0.3; });
-          b.visible = false;
+        if (boss) { // Бит добрался до Сбоя — ошибка найдена: Сбой успокаивается, светлеет и поднимается над Битом
+          say('Сбой починен!', 'yes', 1600);
+          const b = boss, y0 = b.position.y;
+          b.userData.fixed = true;
+          b.children.forEach(m => { m.material = M.bossFixed; });
+          sparks(b.position.x, b.position.z, 0x3fd3b5, 30, 1);
+          await tween(900, t => { b.position.y = y0 + ease(t) * 1.1; b.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.25); });
         } else say('Ура, флаг!', 'yes', 1100);
         confetti(st.hero.x, st.hero.z);
         const a0 = heroAngle;
@@ -1269,10 +1278,13 @@
     }
   }
 
-  function reportError(err, mIdx, code = '') {
+  // Бит всё понимает буквально — и так и говорит в облачке
+  const BIT_SAYS = { extra: 'Тут флаг, а команды ещё есть!', short: 'Команды кончились — стою.', coins: 'Что написано, то и взял!', loop: 'Хожу по кругу… как написано.' };
+  function reportError(err, mIdx, code = '', bitTalks = true) {
     const line = err.line || null;
     if (line) markLine(line, 'err'); else markLine(null);
     log(err.message, 'err', line);
+    if (bitTalks && BIT_SAYS[err.kind]) say(BIT_SAYS[err.kind], 'no', 2200);
     if (err.kind === 'coins' && !maps[mapIdx].need) {
       coinMeshes.forEach(c => { if (!c.userData.taken) c.userData.missed = true; });
       log('Пропущенные монеты подпрыгивают на карте: посмотри, мимо каких прошёл герой.', 'tip');
@@ -1392,7 +1404,8 @@
     const last = taskIdx === TASKS.length - 1;
     const nextLesson = LESSONS[lessonIdx + 1];
     const pro = LESSONS[lessonIdx].prologue;
-    $('#resTitle').textContent = last ? (pro ? 'Пролог пройден!' : 'Все задания урока пройдены!') : maps.length > 1 ? 'Готово! Код работает на любой карте.' : 'Готово!';
+    const allDone = TASKS.every(x => (save.stars[x.id] || [])[0]);
+    $('#resTitle').textContent = last && allDone ? (pro ? 'Пролог пройден!' : 'Все задания урока пройдены!') : maps.length > 1 ? 'Готово! Код работает на любой карте.' : 'Готово!';
     $('#nextBtn').textContent = !last ? `Задание ${taskIdx + 2}: ${TASKS[taskIdx + 1].short}`
       : pro && outroPending ? 'Дальше' // впереди сцена со Сбоем — не выдаём её заранее
       : nextLesson ? `Урок ${lessonNo(lessonIdx + 1)}: ${nextLesson.title}` : 'К первому заданию';
