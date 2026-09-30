@@ -4,6 +4,7 @@
 //  - эффект реплики (третий элемент), если есть, описан в STORY.fx;
 //  - у урока-пролога прощание — сцена, где Сбой крадёт Ключ-код (эффекты key, sboy, steal по порядку);
 //  - тексты обращаются к ученику без мужского рода: не «ты прошёл», не «пиши сам» — учатся и мальчики, и девочки;
+//  - каждый звук, который вызывает app.js (Sound.play('…')), есть в js/sound.js;
 //  - уровни идут по возрастанию, последний достижим звёздами курса (js/gear.js);
 //  - у вещей уникальные id, известные слоты, уровни в пределах списка, и каждая собирается в three.js.
 const fs = require('fs');
@@ -65,6 +66,13 @@ W.LESSONS.forEach(l => {
 texts.forEach(([where, t, lessonText]) => {
   const m = t.match(MASC) || (lessonText && t.match(SAM));
   if (m) fail(`${where}: мужской род в обращении к ученику — «${m[0].trim()}». Перепиши нейтрально`);
+});
+
+// Звуки: всё, что вызывает интерфейс, есть в sound.js
+const Sound = require('../js/sound.js');
+const appSrc = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
+[...new Set([...appSrc.matchAll(/Sound\.play\('([^']+)'/g)].map(m => m[1]))].forEach(n => {
+  if (!Sound.names.includes(n)) fail(`app.js зовёт звук «${n}», а в js/sound.js его нет`);
 });
 
 const maxStars = W.LESSONS.reduce((n, l) => n + l.tasks.length * 3, 0);

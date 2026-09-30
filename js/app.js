@@ -7,8 +7,16 @@
 
   /* ---------- Сохранение ---------- */
   const STORE = 'mir-geroya-usloviya-v1';
-  let save = { lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} }, predict: { tries: 0, hits: 0 } };
+  const blankSave = () => ({ lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} }, predict: { tries: 0, hits: 0 } });
+  let save = blankSave();
   try { const raw = localStorage.getItem(STORE); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* без сохранения */ }
+  // Режим показа для видео (?show): свой Бит — в шляпе, шарфе и с рюкзаком; прогресс ученика не читаем и не пишем
+  const SHOW = new URLSearchParams(location.search).has('show');
+  if (SHOW) {
+    const stars = {};
+    ['k-steps', 'k-turn', 'k-coins', 'k-lava', 'k-far'].forEach(id => { stars[id] = [1, 1, 1]; });
+    save = Object.assign(blankSave(), { stars, gear: { head: 'hat', neck: 'scarf', back: 'bag' }, mute: false });
+  }
   // Раньше урок был один («Условия»), и номер задания лежал в save.task. Кто его начинал — вернётся туда же.
   if (!LESSONS.some(l => l.id === save.lesson)) {
     const old = LESSONS.find(l => l.id === 'usloviya');
@@ -27,7 +35,7 @@
     if (save.lesson === 'komandy') save.lesson = to.id;
     if (save.seen.intro.komandy) save.seen.intro.prolog = true; // Аду они уже слышали
   }
-  const persist = () => { try { localStorage.setItem(STORE, JSON.stringify(save)); } catch (e) { /* ок */ } };
+  const persist = () => { if (SHOW) return; try { localStorage.setItem(STORE, JSON.stringify(save)); } catch (e) { /* ок */ } };
   // Пролог идёт без номера, уроки после него — «Урок 1», «Урок 2»…
   const lessonNo = i => i + (LESSONS[0].prologue ? 0 : 1);
   const lessonName = i => (LESSONS[i].prologue ? LESSONS[i].title : `Урок ${lessonNo(i)}. ${LESSONS[i].title}`);
@@ -738,8 +746,10 @@
     if (right) {
       say('Верно!', 'yes', 1400);
       confetti(o.x, o.z, 30);
+      Sound.play('right');
       log(`Верно! Ответ — ${o.letter}. ${score}`, 'ok');
     } else {
+      Sound.play('wrong');
       log(`Мимо: Бит остановился на клетке ${answer ? answer.letter : 'рядом'}, а твой ответ — ${o.letter}. Пройди по следу Бита и найди место, где его путь расходится с твоей догадкой. ${score}`, 'tip');
     }
     // почему Бит встал именно там; где он стоит, и так видно по зелёному значку — без красного кольца
@@ -809,6 +819,7 @@
       k.scale.setScalar(0.01);
       scene.add(k);
       sparks(f.x, f.z, 0xffc83d, 24, 1.3);
+      Sound.play('key');
       tween(1100, t => { const e = ease(t); k.position.y = 1.2 + e * 0.95; k.scale.setScalar(0.01 + e * 1.49); }, true);
     },
     sboy() { // небо темнеет, мир дрожит, появляется Сбой
@@ -816,6 +827,7 @@
       const { f } = cut, g = cut.sboy = makeSboy();
       world.classList.add('storm');
       glitchPulse();
+      Sound.play('glitch');
       dimLights(0.45, 700);
       if (!reduceMotion) cam.shake = 0.35;
       // Сбой зависает рядом с ключом, со стороны центра карты — чтобы не уйти за край кадра
@@ -832,6 +844,7 @@
       const my = cut, { key, sboy } = cut; // если сцену пропустят или начнут заново, эта уже не продолжается
       glitchPulse();
       const from = key.position.clone(), to = sboy.position.clone().add(new THREE.Vector3(0, -0.9, 0));
+      Sound.play('steal');
       await tween(600, t => key.position.lerpVectors(from, to, ease(t)), true);
       if (cut !== my) return;
       if (!reduceMotion) cam.shake = 0.25;
@@ -839,6 +852,7 @@
       await tween(1500, () => {}, true); // висит с ключом, пока читают его реплику
       if (cut !== my) return;
       glitchPulse();
+      Sound.play('steal');
       const y0 = sboy.position.y, k0 = key.scale.x, s0 = sboy.scale.x;
       await tween(1000, t => {
         const e = t * t, s = 1 - e * 0.85;
@@ -890,10 +904,12 @@
         log(ev.text, 'print');
         return;
       case 'check':
+        Sound.play('tick');
         say(ev.text, typeof ev.value === 'boolean' ? (ev.value ? 'yes' : 'no') : '', 850);
         await wait(380);
         return;
       case 'move': {
+        Sound.play('step');
         const fx = ev.from.x, fz = ev.from.z, tx = ev.to.x, tz = ev.to.z;
         await tween(360, t => {
           const e = ease(t);
@@ -907,6 +923,7 @@
       case 'jump': {
         const fx = ev.from.x, fz = ev.from.z, tx = ev.to.x, tz = ev.to.z;
         say('Прыжок!', 'yes', 700);
+        Sound.play('jump');
         await tween(620, t => {
           const e = ease(t);
           heroRig.position.set(fx + (tx - fx) * e, 0, fz + (tz - fz) * e);
@@ -914,10 +931,12 @@
           hero.scale.set(1, 1 + Math.sin(t * Math.PI) * 0.1, 1);
         });
         hero.position.y = 0; hero.scale.set(1, 1, 1);
+        Sound.play('land');
         trailHop(ev.from, ev.to);
         return;
       }
       case 'turn': {
+        Sound.play('turn');
         const a0 = heroAngle, a1 = heroAngle + ev.side * Math.PI / 2;
         heroAngle = a1;
         await tween(260, t => { hero.rotation.y = a0 + (a1 - a0) * ease(t); });
@@ -926,6 +945,7 @@
       case 'take': {
         const k = K(ev.x, ev.z), c = coinMeshes.get(k);
         say(`+1 монета (${ev.count} из ${ev.total})`, 'yes', 800);
+        Sound.play('coin', { n: ev.count });
         updateCoins(ev.count, ev.total);
         if (c) {
           c.userData.taken = true;
@@ -938,6 +958,7 @@
       }
       case 'bump': {
         say('Бум! Стена', 'bad', 1400);
+        Sound.play('bump');
         const [dx, dz] = HeroWorld.DIRS[st.hero.dir];
         if (!reduceMotion) cam.shake = 0.25;
         await tween(300, t => { const s = Math.sin(t * Math.PI) * 0.25; hero.position.set(dx * s, 0, dz * s); });
@@ -946,6 +967,7 @@
       }
       case 'burn': {
         say('Горячо!', 'bad', 1400);
+        Sound.play('burn');
         sparks(st.hero.x, st.hero.z, 0xff5a1f, 24);
         heroParts.violet.emissive.setHex(0xff2a00);
         await tween(700, t => { hero.position.y = -t * 0.55; });
@@ -953,42 +975,48 @@
       }
       case 'grab-air': {
         say('Пусто…', 'bad', 1400);
+        Sound.play('air');
         await tween(320, t => { const s = Math.sin(t * Math.PI); hero.scale.set(1 + s * 0.12, 1 - s * 0.18, 1 + s * 0.12); });
         hero.scale.set(1, 1, 1);
         return;
       }
       case 'full': {
         say('Рюкзак полон!', 'bad', 1400);
+        Sound.play('nope');
         await tween(360, t => { hero.rotation.z = Math.sin(t * Math.PI * 3) * 0.12; });
         hero.rotation.z = 0;
         return;
       }
       case 'shrug': {
         say(ev.text || 'Зачем прыгать?', 'bad', 1400);
+        Sound.play('nope');
         await tween(360, t => { hero.rotation.z = Math.sin(t * Math.PI * 3) * 0.12; });
         hero.rotation.z = 0;
         return;
       }
       case 'open': {
         say('Открыто!', 'yes', 900);
+        Sound.play('gate');
         const door = gateMeshes.get(K(ev.x, ev.z));
         if (door) await tween(450, t => { door.position.y = 0.36 - t * 0.8; });
         return;
       }
       case 'say': {
         say(`«${ev.text}»`, 'yes', 1600);
+        Sound.play('talk');
         await wait(700);
         return;
       }
       case 'win': {
         if (boss) { // Бит добрался до Сбоя — ошибка найдена: Сбой успокаивается, светлеет и поднимается над Битом
           say('Сбой починен!', 'yes', 1600);
+          Sound.play('fixed');
           const b = boss, y0 = b.position.y;
           b.userData.fixed = true;
           b.children.forEach(m => { m.material = M.bossFixed; });
           sparks(b.position.x, b.position.z, 0x3fd3b5, 30, 1);
           await tween(900, t => { b.position.y = y0 + ease(t) * 1.1; b.scale.setScalar(1 + Math.sin(t * Math.PI) * 0.25); });
-        } else say('Ура, флаг!', 'yes', 1100);
+        } else { say('Ура, флаг!', 'yes', 1100); Sound.play('win'); }
         confetti(st.hero.x, st.hero.z);
         const a0 = heroAngle;
         await tween(800, t => {
@@ -1026,9 +1054,10 @@
     out += esc(src.slice(lastI));
     return out + '\n ';
   }
-  let markedLine = null, markedKind = '';
+  let markedLine = null, markedKind = '', reelTyping = false;
   function refreshEditor() {
     hl.innerHTML = highlight(ta.value);
+    if (reelTyping) hl.innerHTML = hl.innerHTML.replace(/\n $/, '<i class="reel-caret"></i>\n '); // курсор, пока «печатается» код
     const n = ta.value.split('\n').length;
     let g = '';
     for (let i = 1; i <= n; i++) g += `<span class="${i === markedLine ? 'on ' + markedKind : ''}">${i}</span>`;
@@ -1284,6 +1313,7 @@
     const line = err.line || null;
     if (line) markLine(line, 'err'); else markLine(null);
     log(err.message, 'err', line);
+    Sound.play('fail');
     if (bitTalks && BIT_SAYS[err.kind]) say(BIT_SAYS[err.kind], 'no', 2200);
     if (err.kind === 'coins' && !maps[mapIdx].need) {
       coinMeshes.forEach(c => { if (!c.userData.taken) c.userData.missed = true; });
@@ -1394,6 +1424,8 @@
     renderTabs();
     const r = $('#result');
     r.hidden = false;
+    Sound.play('stars', { n: got.reduce((a, b) => a + b, 0) });
+    if (lvl > lvlBefore) Sound.play('levelup');
     $('#resStars').innerHTML = starsHtml(got);
     $('#resList').innerHTML = `
       <li class="${got[0] ? 'on' : ''}">${maps.length > 1 ? 'Код работает на всех трёх картах' : 'Герой дошёл до флага'}</li>
@@ -1413,6 +1445,162 @@
   }
   function hideResult() { $('#result').hidden = true; }
   function plural(n, a, b, c) { const m10 = n % 10, m100 = n % 100; if (m10 === 1 && m100 !== 11) return a; if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return b; return c; }
+
+  /* ---------- Звук: включается после первого нажатия (так требуют браузеры), кнопка в углу мира ---------- */
+  const SPEAKER = '<path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>';
+  function renderSoundBtn() {
+    const on = !save.mute, b = $('#soundBtn');
+    b.setAttribute('aria-pressed', String(on));
+    b.setAttribute('aria-label', on ? 'Звук включён' : 'Звук выключен');
+    b.title = on ? 'Выключить звук' : 'Включить звук';
+    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${SPEAKER}${on
+      ? '<path d="M16 9.5a4 4 0 0 1 0 5M18.5 7a7.5 7.5 0 0 1 0 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'
+      : '<path d="M16.5 9.5l5 5M21.5 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>'}</svg>`;
+    Sound.muted = !!save.mute;
+  }
+  renderSoundBtn();
+  $('#soundBtn').addEventListener('click', () => { save.mute = !save.mute; persist(); renderSoundBtn(); Sound.play('tick'); });
+  ['pointerdown', 'keydown'].forEach(ev => addEventListener(ev, () => Sound.unlock(), true));
+
+  /* ---------- Режим показа для видео на Авито (?show): титульная карточка, затем Бит сам проходит уровни —
+     код печатается буква за буквой, — и финальная карточка. Запись экрана становится роликом.
+     Тексты карточек и список уровней — в REEL; карты всегда одни и те же (seed) ---------- */
+  const REEL = {
+    title: { kicker: 'Python для детей от 12 лет', name: 'Долина Эникей', lead: 'Ребёнок пишет настоящий код — робот Бит выполняет его в 3D-мире.' },
+    // speed — скорость анимации уровня: где много проверок в цикле, быстрее, чтобы ролик уложился примерно в минуту
+    items: [
+      { id: 'k-lava', what: 'Команды по порядку: шаг, прыжок, взять', speed: 1.4 },
+      { id: 'c-stairs', what: 'Цикл for: повторить четыре раза', speed: 1.8 },
+      { id: 'choice', what: 'if, elif, else: программа сама решает, что делать', again: 'Другая карта — тот же код', speed: 3 },
+      { id: 'p-gates', what: 'Цикл while: повторять, пока Бит не у флага', speed: 2.5 },
+      { id: 'l-boss', what: 'Английские команды — как в настоящем Python', speed: 3 },
+    ],
+    end: {
+      name: 'Долина Эникей',
+      lines: ['Занятия с репетитором один на один, онлайн', 'Пролог и 7 уроков: команды, циклы, условия, while, переменные, функции'],
+      cta: 'Напишите — пришлю ссылку на пробное занятие',
+    },
+    seed: 7,
+  };
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  // Ждём клавишу или щелчок: звук в браузере включается только после действия человека
+  function waitPress() {
+    return new Promise(res => {
+      const h = e => {
+        if (e.type === 'keydown' && ['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(e.key)) return;
+        if (e.key === 'Escape') { location.href = location.pathname; return; } // выйти из режима показа
+        e.preventDefault();
+        removeEventListener('keydown', h, true); removeEventListener('pointerdown', h, true);
+        Sound.unlock();
+        res();
+      };
+      addEventListener('keydown', h, true); addEventListener('pointerdown', h, true);
+    });
+  }
+  function reelCard(c, hint) {
+    const el = $('#reel');
+    $('#reelKicker').textContent = c.kicker || '';
+    $('#reelName').textContent = c.name;
+    $('#reelLead').textContent = c.lead || '';
+    $('#reelLines').innerHTML = (c.lines || []).map(l => `<li>${esc(l)}</li>`).join('');
+    $('#reelCta').hidden = !c.cta;
+    $('#reelCta').textContent = c.cta || '';
+    $('#reelHint').textContent = hint || '';
+    el.classList.remove('out');
+    el.hidden = false;
+    startPortrait($('#reelHero'));
+  }
+  async function hideReelCard() {
+    const el = $('#reel');
+    el.classList.add('out');
+    await sleep(600);
+    el.hidden = true;
+    stopPortrait();
+  }
+  // Код «печатается»: буква за буквой, отступы — сразу, на переносе строки — пауза
+  async function typeCode(code) {
+    ta.value = '';
+    reelTyping = true;
+    refreshEditor();
+    for (let i = 0; i < code.length; i++) {
+      const ch = code[i];
+      ta.value += ch;
+      if (ch === ' ' && (i === 0 || code[i - 1] === '\n' || code[i - 1] === ' ')) continue;
+      refreshEditor();
+      Sound.play('type');
+      await sleep(ch === '\n' ? 150 : 28 + Math.random() * 24);
+    }
+    reelTyping = false;
+    refreshEditor();
+  }
+  async function reelRun() {
+    const token = ++runToken;
+    stepMode = false;
+    setRunning(true);
+    const r = await runOnMap(ta.value, token);
+    setRunning(false);
+    ta.readOnly = true;
+    markLine(null);
+    return r;
+  }
+  function reelToast(text) {
+    const t = $('#reelToast');
+    t.textContent = text;
+    t.hidden = !text;
+    t.classList.remove('in'); void t.offsetWidth; t.classList.add('in');
+  }
+  async function startReel() {
+    document.body.classList.add('show-mode');
+    addEventListener('keydown', e => { if (e.key === 'Escape') location.href = location.pathname; }); // выйти в обычный режим
+    speed = 1.4;
+    ta.readOnly = true;
+    resize();
+    reelCard(REEL.title, 'Включи запись экрана и нажми любую клавишу. Esc — выйти из режима показа');
+    await waitPress();
+    $('#reelHint').textContent = '';
+    Sound.play('key');
+    await sleep(2600);
+    await hideReelCard();
+    for (const it of REEL.items) {
+      const li = LESSONS.findIndex(l => l.tasks.some(t => t.id === it.id));
+      if (li < 0) continue;
+      selectLesson(li);
+      speed = it.speed || 1.4;
+      const ti = TASKS.findIndex(t => t.id === it.id), t = TASKS[ti];
+      selectTask(ti);
+      maps = makeMaps(t, REEL.seed);
+      dotStates = ['', '', ''];
+      showMap(0);
+      ta.readOnly = true;
+      ta.value = '';
+      refreshEditor();
+      reelToast('');
+      $('#reelLesson').textContent = lessonName(li);
+      $('#reelTitle').textContent = t.title;
+      $('#reelWhat').textContent = it.what;
+      const cap = $('#reelCap');
+      cap.classList.remove('in'); void cap.offsetWidth; cap.classList.add('in');
+      await sleep(800);
+      await typeCode(t.hints[2]);
+      await sleep(400);
+      await reelRun();
+      if (it.again && maps.length > 1) {
+        await sleep(700);
+        reelToast(it.again);
+        showMap(1);
+        await sleep(1200);
+        await reelRun();
+      }
+      await sleep(1100);
+    }
+    reelToast('');
+    reelCard(REEL.end, '');
+    Sound.play('win');
+    await sleep(1500);
+    $('#reelHint').textContent = 'Любая клавиша — сначала, Esc — выйти';
+    await waitPress();
+    location.reload();
+  }
 
   /* ---------- Кнопки ---------- */
   $('#runBtn').addEventListener('click', runAll);
@@ -1576,9 +1764,8 @@
   }
   // 3D-портрет Бита в снаряжении: своя маленькая сцена, клон героя медленно поворачивается
   let portrait = null;
-  function startPortrait() {
+  function startPortrait(box = $('#recapHero')) {
     stopPortrait();
-    const box = $('#recapHero');
     let r;
     try { r = new THREE.WebGLRenderer({ antialias: true, alpha: true }); } catch (e) { return; }
     r.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -1665,8 +1852,10 @@
   /* ---------- Заставка «Нажми любую клавишу» ---------- */
   (function splashScreen() {
     const sp = $('#splash');
+    if (SHOW) { sp.remove(); return; } // в режиме показа вместо заставки — титульная карточка ролика
     if (!sp) { setTimeout(greet); return; }
     const go = () => {
+      Sound.unlock();
       removeEventListener('keydown', onKey, true);
       sp.classList.add('hide');
       setTimeout(() => sp.remove(), 400);
@@ -1686,4 +1875,5 @@
   resize();
   selectTask(taskIdx);
   requestAnimationFrame(t => { last = t; frame(t); });
+  if (SHOW) startReel();
 })();

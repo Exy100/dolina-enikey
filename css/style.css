@@ -152,6 +152,9 @@ body.is-running .ed-code textarea { cursor: default; }
 .guess-opt:hover { transform: scale(1.12); }
 .hud-box { background: var(--hud); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 14px; padding: 6px 10px; display: flex; align-items: center; gap: 8px; }
 .hud-btn { background: var(--hud); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 0; border-radius: 12px; padding: 8px 12px; font-size: 14px; font-weight: 500; }
+.icon-btn { display: grid; place-items: center; padding: 6px; width: 36px; height: 36px; color: var(--ink); }
+.icon-btn svg { width: 20px; height: 20px; }
+.icon-btn[aria-pressed="false"] { color: var(--muted); }
 .map-label { font-weight: 600; font-size: 14px; }
 .dots { display: flex; gap: 6px; }
 .dot { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--line); background: var(--panel); font: 700 12px var(--display); display: grid; place-items: center; padding: 0; color: var(--muted); }
@@ -290,6 +293,57 @@ body.is-running .ed-code textarea { cursor: default; }
 .talk.sboy .talk-face { box-shadow: 0 0 0 3px #FF2BD6, 0 0 18px #FF2BD6; animation: jitter .25s steps(2) infinite; }
 .talk.sboy .btn.ghost { color: #C9B8FF; }
 @keyframes jitter { 50% { transform: translate(1px, -1px) rotate(-4deg); } }
+
+/* Режим показа (?show): только мир и код, крупно — для записи ролика на Авито */
+.reel-cap, .reel-toast { display: none; }
+body.show-mode .top, body.show-mode .task, body.show-mode .controls, body.show-mode .out, body.show-mode .hints,
+body.show-mode .ed-bar button, body.show-mode .hud.tl, body.show-mode .hud.tr, body.show-mode #guessHud { display: none !important; }
+body.show-mode .app { grid-template-rows: 1fr; height: 100vh; }
+body.show-mode main { padding-top: 14px; grid-template-columns: minmax(380px, 38%) 1fr; }
+body.show-mode .code-pane { overflow: hidden; }
+body.show-mode .editor { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+body.show-mode .ed-scroll { flex: 1; height: auto; }
+body.show-mode .ed-code pre, body.show-mode .ed-code textarea, body.show-mode .gutter { font-size: 20px; line-height: 32px; }
+body.show-mode .band { height: 32px; }
+body.show-mode .reel-cap { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 16px 20px; }
+.reel-cap.in { animation: capIn .5s cubic-bezier(.2,.9,.3,1.1); }
+.reel-lesson { display: inline-block; margin: 0 0 8px; padding: 4px 12px; border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+  font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.reel-cap h2 { margin: 0 0 4px; font: 700 26px/1.15 var(--display); }
+.reel-what { margin: 0; font-size: 17px; color: var(--muted); }
+body.show-mode .reel-toast:not([hidden]) { display: block; position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 4; white-space: nowrap;
+  padding: 10px 20px; border-radius: 14px; background: var(--hud); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  font: 700 18px var(--ui); box-shadow: 0 8px 24px rgba(18,20,43,.18); }
+.reel-toast.in { animation: toastIn .45s ease; }
+.reel-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 1px; background: #FFD166; vertical-align: -.18em; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes capIn { from { transform: translateY(-10px); opacity: 0; } }
+@keyframes toastIn { from { transform: translate(-50%, -10px); opacity: 0; } }
+.reel { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px; color: #fff; transition: opacity .6s ease;
+  background: radial-gradient(120% 80% at 50% 0%, #4b2fa8 0%, #241a58 45%, #110d2c 100%); }
+.reel[hidden] { display: none; }
+.reel.out { opacity: 0; }
+.reel-card { text-align: center; max-width: 920px; animation: rise .6s cubic-bezier(.2,.9,.3,1.1); }
+.reel-hero { position: relative; width: clamp(160px, 22vmin, 240px); aspect-ratio: 1; margin: 0 auto 12px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, rgba(140,123,255,.5) 0 40%, rgba(140,123,255,0) 70%); }
+.reel-kicker { margin: 0; font-weight: 700; font-size: clamp(14px, 1.8vw, 18px); letter-spacing: .14em; text-transform: uppercase; color: #FFD166; }
+.reel-name { margin: 10px 0 16px; font: 700 clamp(42px, 8vw, 96px)/1 var(--display); letter-spacing: -.01em;
+  background: linear-gradient(90deg, #fff, #c9b8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.reel-lead { margin: 0 auto; max-width: 32ch; font-size: clamp(18px, 2.5vw, 28px); line-height: 1.35; color: #DCD7FF; }
+.reel-lead:empty { display: none; }
+.reel-lines { list-style: none; margin: 0 auto; padding: 0; display: grid; gap: 8px; font-size: clamp(17px, 2.2vw, 24px); color: #DCD7FF; }
+.reel-cta { display: inline-block; margin: 26px 0 0; padding: 14px 26px; border-radius: 999px; background: #FFD166; color: #1B1E3C;
+  font-weight: 700; font-size: clamp(17px, 2.2vw, 24px); box-shadow: 0 10px 30px rgba(255,209,102,.3); }
+.reel-hint { position: absolute; left: 0; right: 0; bottom: 22px; margin: 0; text-align: center; font-size: 14px; color: rgba(255,255,255,.5); }
+/* вертикальное видео (окно уже, чем выше): мир сверху, код снизу */
+@media (max-aspect-ratio: 4/5) {
+  body.show-mode main { grid-template-columns: 1fr; grid-template-rows: 60% 1fr; }
+  body.show-mode .world { order: -1; height: auto; min-height: 0; }
+  body.show-mode .ed-code pre, body.show-mode .ed-code textarea, body.show-mode .gutter { font-size: 22px; line-height: 34px; }
+  body.show-mode .band { height: 34px; }
+  body.show-mode .reel-cap { padding: 12px 16px; }
+  body.show-mode .reel-cap h2 { font-size: 22px; }
+}
 
 /* Итог пролога: карточка для ученика и родителя, её удобно показать или сфотографировать экран */
 body.recap-open { overflow: hidden; }
