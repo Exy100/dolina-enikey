@@ -335,6 +335,10 @@ const MiniPy = (() => {
     const setVar = (n, v) => (locals || vars).set(n, v);
 
     const lookupNames = () => [...(locals ? locals.keys() : []), ...vars.keys(), ...Object.keys(builtins)];
+    // Снимок переменных для панели «Переменные» (приёмы не показываем). Отдаётся с каждым событием line —
+    // функцией, чтобы не тратить время, когда панель не нужна (тесты, тихий прогон)
+    const shown = m => [...m].filter(([, v]) => !isFn(v)).map(([k, v]) => [k, repr(v, true)]);
+    const scope = () => ({ vars: shown(vars), locals: locals ? shown(locals) : null });
 
     function unknown(node) {
       const n = norm(node.name).toLowerCase();
@@ -475,7 +479,7 @@ const MiniPy = (() => {
     function* exec(s) {
       if (++steps > maxSteps)
         throw new PyError('Слишком много шагов. Похоже, программа зациклилась: проверь условие цикла.', s.line);
-      yield { type: 'line', line: s.line };
+      yield { type: 'line', line: s.line, scope };
       switch (s.k) {
         case 'Pass': return;
         case 'Def':
@@ -511,7 +515,7 @@ const MiniPy = (() => {
         }
         case 'If': {
           for (const b of s.branches) {
-            if (b !== s.branches[0]) yield { type: 'line', line: b.line };
+            if (b !== s.branches[0]) yield { type: 'line', line: b.line, scope };
             const v = yield* ev(b.cond);
             if (cond(b.cond, v, 'условии')) { yield* runBlock(b.body); return; }
           }
@@ -525,8 +529,8 @@ const MiniPy = (() => {
             if (!cond(s.cond, v, 'условии цикла')) break;
             if (++guard > 2000) throw new PyError('Цикл while крутится слишком долго. Проверь, что условие когда-нибудь станет ложным.', s.line);
             try { yield* runBlock(s.body); }
-            catch (e) { if (e instanceof BreakSig) break; if (e instanceof ContinueSig) { yield { type: 'line', line: s.line }; continue; } throw e; }
-            yield { type: 'line', line: s.line };
+            catch (e) { if (e instanceof BreakSig) break; if (e instanceof ContinueSig) { yield { type: 'line', line: s.line, scope }; continue; } throw e; }
+            yield { type: 'line', line: s.line, scope };
           }
           return;
         }
@@ -538,7 +542,7 @@ const MiniPy = (() => {
           else if (typeof it === 'number') throw new PyError(`Цикл не может пройти по числу. Нужно так: for ${s.name} in range(${it}):`, s.line);
           else throw new PyError('Цикл for проходит по range(...), тексту или списку.', s.line);
           for (let j = 0; j < seq.length; j++) {
-            if (j > 0) yield { type: 'line', line: s.line };
+            if (j > 0) yield { type: 'line', line: s.line, scope };
             setVar(s.name, seq[j]);
             try { yield* runBlock(s.body); }
             catch (e) { if (e instanceof BreakSig) break; if (e instanceof ContinueSig) continue; throw e; }

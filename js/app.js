@@ -7,7 +7,7 @@
 
   /* ---------- Сохранение ---------- */
   const STORE = 'mir-geroya-usloviya-v1';
-  const blankSave = () => ({ lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} }, predict: { tries: 0, hits: 0 } });
+  const blankSave = () => ({ lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} }, predict: { tries: 0, hits: 0 }, warm: {} });
   let save = blankSave();
   try { const raw = localStorage.getItem(STORE); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* без сохранения */ }
   // Режим показа для видео (?show): свой Бит — в шляпе, шарфе и с рюкзаком; прогресс ученика не читаем и не пишем
@@ -39,10 +39,70 @@
   // Пролог идёт без номера, уроки после него — «Урок 1», «Урок 2»…
   const lessonNo = i => i + (LESSONS[0].prologue ? 0 : 1);
   const lessonName = i => (LESSONS[i].prologue ? LESSONS[i].title : `Урок ${lessonNo(i)}. ${LESSONS[i].title}`);
+  // Задания урока: основные (их номера хранятся в save.pos), задание со звёздочкой (kind: 'bonus') и разминка
+  // (kind: 'warm') — копия задания прошлого урока со своим id «w:…», свежими картами, с нуля и без звёзд.
+  // На вкладках разминка идёт первой, звёздочка — последней
+  const warmCache = {};
+  function warmTask(id) {
+    if (warmCache[id]) return warmCache[id];
+    const from = LESSONS.findIndex(l => l.tasks.some(t => t.id === id));
+    if (from < 0) return null;
+    const o = LESSONS[from].tasks.find(t => t.id === id);
+    return (warmCache[id] = {
+      ...o, id: 'w:' + id, kind: 'warm', from,
+      starter: `# Разминка: «${o.title}» из урока «${LESSONS[from].title}».\n# Напиши программу с нуля — вспомни, как это делается.\n`,
+    });
+  }
+  function lessonTasks(li) {
+    const l = LESSONS[li];
+    (l.bonus || []).forEach(t => { t.kind = 'bonus'; });
+    const own = customTask();
+    return [...l.tasks, ...(l.bonus || []), ...(l.warmup || []).map(warmTask).filter(Boolean), ...(own ? [own] : [])];
+  }
+  /* Свой уровень (редактор или ссылка #level=…) — вкладка «Свой уровень» в конце любого урока. Решение строит
+     HeroWorld.checkLevel (для «Показать решение» и третьей звезды); звёзды за свои уровни в уровень Бита не идут */
+  const cleanTitle = t => String(t || '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+  const hashStr = str => { let h = 2166136261; for (const c of str) h = Math.imul(h ^ c.codePointAt(0), 16777619); return (h >>> 0).toString(36); };
+  function customTask() {
+    const c = save.custom;
+    if (!c || SHOW) return null;
+    const chk = HeroWorld.checkLevel(c.rows);
+    if (!chk.ok) return null;
+    const title = cleanTitle(c.title) || 'Свой уровень', coins = chk.L.coins.size;
+    return {
+      id: 'my:' + hashStr(JSON.stringify(c.rows)), kind: 'custom', basic: true, map: c.rows, title, short: 'Свой уровень',
+      goal: `Доведи Бита до флага${coins ? (coins === 1 ? ' и собери монету' : ' и собери все монеты') : ''}. Этот уровень нарисован в редакторе.`,
+      news: 'Свой уровень: карту нарисовали в редакторе. Реши его, а потом отправь ссылку другу — пусть попробует.',
+      cmds: ['вперёд()', 'налево()', 'направо()', 'взять()', 'прыгнуть()', 'for i in range(3):'],
+      starter: `# Свой уровень «${title}».\n# Пиши программу здесь.\n`,
+      hints: [
+        'Раздели путь на прямые куски: до поворота, поворот, снова до поворота. Где лава — прыгнуть(), где монета — взять().',
+        'Числа в скобках сокращают программу: вперёд(3) — три шага. Повторяющиеся куски можно завернуть в цикл for.',
+        chk.sol,
+      ],
+      best: codeLines(chk.sol).length,
+    };
+  }
+  // Уровень по ссылке (#level=…): становится своим уровнем и открывается сразу
+  const b64enc = str => btoa(String.fromCharCode(...new TextEncoder().encode(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const b64dec = str => new TextDecoder().decode(Uint8Array.from(atob(str.replace(/-/g, '+').replace(/_/g, '/')), ch => ch.charCodeAt(0)));
+  let openOwn = false;
+  (function levelFromLink() {
+    const m = location.hash.match(/^#level=([A-Za-z0-9_-]{4,2000})$/);
+    if (!m || SHOW) return;
+    try {
+      const d = JSON.parse(b64dec(m[1]));
+      if (HeroWorld.checkLevel(d.r).ok) { save.custom = { title: cleanTitle(d.t), rows: d.r }; openOwn = true; persist(); }
+    } catch (e) { /* битая ссылка — просто откроется игра */ }
+    history.replaceState(null, '', location.href.split('#')[0]);
+  })();
+  const MAIN = () => LESSONS[lessonIdx].tasks;
+  const solvedTask = t => !!(save.stars[t.id] || [])[0];
+  const firstOpen = () => Math.max(0, MAIN().findIndex(t => !solvedTask(t)));
 
   /* ---------- Состояние ---------- */
   let lessonIdx = LESSONS.findIndex(l => l.id === save.lesson);
-  let TASKS = LESSONS[lessonIdx].tasks;
+  let TASKS = lessonTasks(lessonIdx);
   let taskIdx = Math.min(save.pos[save.lesson] || 0, TASKS.length - 1);
   let maps = [];
   let mapIdx = 0;
@@ -144,7 +204,7 @@
   const { LEVELS, ITEMS, SLOTS } = HeroGear;
   const gearOn = {}; // слот → 3D-модель надетой вещи
   function totalStars() {
-    return LESSONS.reduce((n, l) => n + l.tasks.reduce((m, t) => m + (save.stars[t.id] || []).reduce((a, b) => a + b, 0), 0), 0);
+    return LESSONS.reduce((n, l) => n + [...l.tasks, ...(l.bonus || [])].reduce((m, t) => m + (save.stars[t.id] || []).reduce((a, b) => a + b, 0), 0), 0);
   }
   const heroLevel = () => HeroGear.levelFor(totalStars());
   const isOpen = it => it.level <= heroLevel();
@@ -753,7 +813,7 @@
       log(`Мимо: Бит остановился на клетке ${answer ? answer.letter : 'рядом'}, а твой ответ — ${o.letter}. Пройди по следу Бита и найди место, где его путь расходится с твоей догадкой. ${score}`, 'tip');
     }
     // почему Бит встал именно там; где он стоит, и так видно по зелёному значку — без красного кольца
-    if (!r.ok) reportError(r.err, 0, '', !right); // угадал — пусть в облачке останется «Верно!»
+    if (!r.ok) reportError(r.err, 0, '', !right, r.st); // угадал — пусть в облачке останется «Верно!»
     if (r.ok) log(maps.length > 1 ? 'Программа дошла до флага на этой карте. Нажми «Запуск», чтобы проверить все три.' : 'Программа дошла до флага. Нажми «Запуск», чтобы засчитать задание.', 'info');
   }
 
@@ -898,6 +958,7 @@
     switch (ev.type) {
       case 'line':
         markLine(ev.line, 'run');
+        showVars(ev, st);
         await wait(stepMode ? 0 : 110);
         return;
       case 'print':
@@ -1085,6 +1146,7 @@
   }
   function onEdit() {
     if (guess && !running) cancelGuess(); // варианты посчитаны для прежнего кода
+    if (!running) hideVars();
     if (markedKind === 'err') markLine(null); else refreshEditor();
     save.code[TASKS[taskIdx].id] = ta.value;
     persist();
@@ -1154,6 +1216,11 @@
       sel.append(o);
     });
     sel.value = lessonIdx;
+    // кнопка карты долины: где Бит сейчас и сколько звёзд в этом краю
+    const l = LESSONS[lessonIdx], place = (STORY.lessons[l.id] || {}).place || l.title;
+    $('#mbText').innerHTML = `<b>${esc(place)}</b> <span>· ${l.prologue ? 'Пролог' : `Урок ${lessonNo(lessonIdx)}`}</span>`;
+    $('#mbStars').textContent = `★ ${lessonStars(l)}/${l.tasks.length * 3}`;
+    $('#mapBtn').setAttribute('aria-label', `Карта долины. Сейчас: ${place}, ${lessonName(lessonIdx)}`);
   }
 
   function renderBadge() {
@@ -1169,13 +1236,25 @@
     renderBadge();
     const nav = $('#tabs');
     nav.innerHTML = '';
-    TASKS.forEach((t, i) => {
-      const b = document.createElement('button');
+    // порядок на вкладках: разминка, основные задания, задание со звёздочкой
+    const rank = t => ({ warm: 0, bonus: 2, custom: 3 }[t.kind] ?? 1);
+    [...TASKS.keys()].sort((a, b) => rank(TASKS[a]) - rank(TASKS[b]) || a - b).forEach(i => {
+      const t = TASKS[i], b = document.createElement('button');
       b.type = 'button';
-      b.className = 'tab' + (i === taskIdx ? ' active' : '');
+      b.className = 'tab' + (t.kind ? ' ' + t.kind : '') + (i === taskIdx ? ' active' : '');
       b.setAttribute('aria-current', i === taskIdx ? 'step' : 'false');
       const st = save.stars[t.id] || [0, 0, 0];
-      b.innerHTML = `<span class="num">${i + 1}</span><span class="nm">${t.short}</span><span class="stars">${starsHtml(st)}</span>`;
+      if (t.kind === 'warm') {
+        b.title = `Разминка: «${t.title}» из урока «${LESSONS[t.from].title}»`;
+        b.setAttribute('aria-label', `Разминка: ${t.title}${save.warm[t.id] ? ', пройдено' : ''}`);
+        b.innerHTML = `<span class="num" aria-hidden="true">↻</span>${save.warm[t.id] ? '<span class="tick" aria-hidden="true">✓</span>' : ''}`;
+      } else if (t.kind === 'bonus') {
+        b.title = 'Задание со звёздочкой — для тех, кто решил урок быстро';
+        b.innerHTML = `<span class="num" aria-hidden="true">★</span><span class="nm">${t.short}</span><span class="stars">${starsHtml(st)}</span>`;
+      } else if (t.kind === 'custom') {
+        b.title = `Свой уровень «${t.title}»`;
+        b.innerHTML = `<span class="num" aria-hidden="true">✎</span><span class="nm">${t.short}</span>`;
+      } else b.innerHTML = `<span class="num">${i + 1}</span><span class="nm">${t.short}</span><span class="stars">${starsHtml(st)}</span>`;
       b.addEventListener('click', () => { if (!running) selectTask(i); });
       nav.append(b);
     });
@@ -1204,21 +1283,27 @@
 
   function selectLesson(li) {
     lessonIdx = li;
-    TASKS = LESSONS[li].tasks;
-    selectTask(Math.min(save.pos[LESSONS[li].id] || 0, TASKS.length - 1));
+    TASKS = lessonTasks(li);
+    // в новом уроке — сначала разминка
+    const p = save.pos[LESSONS[li].id], warm = TASKS.findIndex(t => t.kind === 'warm' && !save.warm[t.id]);
+    selectTask(p === undefined && warm >= 0 ? warm : Math.min(p || 0, MAIN().length - 1));
   }
 
   function selectTask(i) {
     stopRun();
     cancelGuess();
+    hideVars();
     taskIdx = i;
     save.lesson = LESSONS[lessonIdx].id;
-    save.pos[save.lesson] = i;
     const t = TASKS[i];
+    if (!t.kind) save.pos[save.lesson] = i; // номер запоминаем только у основных заданий
     if (!save.seeds[t.id]) save.seeds[t.id] = 1000 + Math.floor(Math.random() * 90000);
     maps = makeMaps(t, save.seeds[t.id]);
     persist();
-    $('#taskNum').textContent = `${lessonStory().place || lessonName(lessonIdx)} · задание ${i + 1} из ${TASKS.length}`;
+    const place = lessonStory().place || lessonName(lessonIdx);
+    $('#taskNum').textContent = t.kind === 'custom' ? 'Свой уровень · нарисован в редакторе'
+      : t.kind === 'warm' ? `Разминка · задание из урока «${LESSONS[t.from].title}»`
+      : t.kind === 'bonus' ? `${place} · задание со звёздочкой` : `${place} · задание ${i + 1} из ${MAIN().length}`;
     $('#taskTitle').textContent = t.title;
     $('#taskGoal').textContent = t.goal;
     $('#taskNew').textContent = t.news;
@@ -1237,7 +1322,10 @@
     renderHints();
     hideResult();
     clearLog();
-    if (i === 0 && LESSONS[lessonIdx].intro) log(LESSONS[lessonIdx].intro, 'tip');
+    if (t.kind === 'custom') log('Свой уровень. Изменить карту или получить ссылку — на карте долины, кнопка «Свой уровень».', 'tip');
+    else if (t.kind === 'warm') log('Разминка: реши с нуля задание из прошлого урока, на свежей карте. Звёзд за неё нет — это проверка, что тема не забылась.', 'tip');
+    else if (t.kind === 'bonus') log('Задание со звёздочкой: необязательное и потруднее. Звёзды за него идут в уровень Бита.', 'tip');
+    else if (i === 0 && LESSONS[lessonIdx].intro) log(LESSONS[lessonIdx].intro, 'tip');
     log(maps.length > 1
       ? 'Нажми «Запуск»: код проверится на трёх разных картах. «Шаг» выполняет программу по одной строке.'
       : 'Нажми «Запуск», и герой выполнит программу. «Шаг» выполняет её по одной строке.', 'info');
@@ -1282,6 +1370,10 @@
   // Прогон на текущей карте; в ответе и состояние мира (st) — где Бит остановился
   async function runOnMap(code, token) {
     const st = createState(maps[mapIdx]);
+    // для подсказки к строке: на какой строке Бит попал на каждую клетку (stamp — номер запуска строки,
+    // у шагов одной команды вперёд(3) он общий)
+    st.trace = []; st.lastLine = null; st.stamp = 0;
+    varsPrev = new Map();
     trailStart(st.hero);
     const g = MiniPy.execute(code, { ...MiniPy.stdlib(), ...commands(st) });
     while (true) {
@@ -1298,9 +1390,12 @@
         await animate({ type: 'win' }, st); // флаг засчитывается в конце программы
         return { ok: true, st };
       }
-      await animate(r.value, st);
+      const ev = r.value;
+      if (ev.type === 'line') { st.lastLine = ev.line; st.stamp++; }
+      else if (ev.type === 'move' || ev.type === 'jump') st.trace.push({ x: ev.to.x, z: ev.to.z, line: st.lastLine, stamp: st.stamp });
+      await animate(ev, st);
       if (token !== runToken) return { aborted: true };
-      if (stepMode && r.value.type === 'line') {
+      if (stepMode && ev.type === 'line') {
         await new Promise(res => { stepResolve = res; });
         stepResolve = null;
       }
@@ -1309,7 +1404,112 @@
 
   // Бит всё понимает буквально — и так и говорит в облачке
   const BIT_SAYS = { extra: 'Тут флаг, а команды ещё есть!', short: 'Команды кончились — стою.', coins: 'Что написано, то и взял!', loop: 'Хожу по кругу… как написано.' };
-  function reportError(err, mIdx, code = '', bitTalks = true) {
+  /* Панель «Переменные»: значения переменных программы и что знает Бит — видно, как меняются i и счётчики.
+     Обновляется на каждой строке; изменившееся значение на миг подсвечивается. Остаётся после прогона до правки кода */
+  const varsBox = $('#vars'), ARROW = ['→', '↑', '←', '↓']; // куда смотрит Бит — стрелкой, как на экране
+  let varsPrev = new Map();
+  function showVars(ev, st) {
+    if (SHOW || !ev.scope) return;
+    const sc = ev.scope(), items = [...sc.vars.map(([k, v]) => ['', k, v]), ...(sc.locals || []).map(([k, v]) => ['loc', k, v])];
+    if (!items.length && !stepMode && varsBox.hidden) return; // переменных нет — панель нужна только в режиме «Шаг»
+    const chip = (cls, name, val, key) => {
+      const changed = varsPrev.has(key) && varsPrev.get(key) !== val;
+      varsPrev.set(key, val);
+      return `<span class="var ${cls}${changed ? ' changed' : ''}"><b>${esc(name)}</b> = ${esc(val)}</span>`;
+    };
+    const en = st.level.english;
+    const bit = [`<span class="var bit">Бит смотрит <b>${ARROW[st.hero.dir]}</b></span>`];
+    if (st.total) bit.push(chip('bit', `${en ? 'coins_taken' : 'монет_собрано'}()`, String(st.collected), '#coins'));
+    varsBox.innerHTML = `<span class="vars-cap">Переменные</span>${items.length
+      ? items.map(([c, k, v]) => chip(c, (c ? '↳ ' : '') + k, v, c + k)).join('')
+      : '<span class="vars-none">пока нет</span>'}<span class="vars-sep" aria-hidden="true"></span>${bit.join('')}`;
+    varsBox.hidden = false;
+  }
+  function hideVars() { varsBox.hidden = true; varsPrev = new Map(); }
+
+  /* Подсказка к строке: где Бит ошибся и куда на самом деле идёт дорога — относительно его взгляда, а не экрана */
+  const REL = ['прямо', 'налево', 'назад', 'направо'];
+  // Сколько клеток от каждой клетки дороги до флага (лава проходима — через неё прыгают)
+  function distToFlag(L) {
+    const d = new Map([[K(L.finish.x, L.finish.z), 0]]), q = [L.finish];
+    while (q.length) {
+      const c = q.shift(), n = d.get(K(c.x, c.z));
+      HeroWorld.DIRS.forEach(([dx, dz]) => {
+        const k = K(c.x + dx, c.z + dz);
+        if (L.floor.has(k) && !d.has(k)) { d.set(k, n + 1); q.push({ x: c.x + dx, z: c.z + dz }); }
+      });
+    }
+    return d;
+  }
+  // Куда уходит дорога от Бита (0 прямо, 1 налево, 2 назад, 3 направо) — ближе к флагу; -1 — дальше тупик
+  function roadTurn(st, dist) {
+    const h = st.hero, here = dist.get(K(h.x, h.z));
+    let best = -1, bestD = Infinity;
+    HeroWorld.DIRS.forEach(([dx, dz], d) => {
+      const n = dist.get(K(h.x + dx, h.z + dz));
+      if (n !== undefined && n < bestD && (here === undefined || n < here)) { bestD = n; best = (d - h.dir + 4) % 4; }
+    });
+    return best;
+  }
+  function lineHint(err, st) {
+    if (!st || !st.trace) return null;
+    const L = st.level, basic = L.basic, h = st.hero, line = err.line, dist = distToFlag(L);
+    const name = ru => (L.english ? `${HeroWorld.EN[ru]}()` : `${ru === 'вперед' ? 'вперёд' : ru}()`);
+    const TURN = { 1: name('налево'), 3: name('направо'), 2: `${name('налево')} два раза` };
+    const cells = n => `${n} ${plural(n, 'клетку', 'клетки', 'клеток')}`, cellsLeft = n => `${n} ${plural(n, 'клетка', 'клетки', 'клеток')}`;
+    const tr = st.trace, last = tr[tr.length - 1];
+    // сколько шагов сделала последняя команда (у шагов одного вперёд(3) общий stamp)
+    const run = last ? tr.filter(t => t.stamp === last.stamp).length : 0;
+    switch (err.kind) {
+      case 'wall': {
+        const t = roadTurn(st, dist);
+        if (t === -1) return { line, text: 'Подсказка: Бит зашёл в тупик. Ошибка раньше — пройди программу кнопкой «Шаг» и найди, где Бит свернул не туда.' };
+        if (t === 2) return { line, text: 'Подсказка: Бит упёрся в стену, а дорога у него за спиной. Похоже, на повороте раньше он повернул не в ту сторону.' };
+        if (!basic) return { line, text: `Подсказка: Бит упёрся в стену, а дорога уходит ${REL[t]} от него. Условие должно повернуть Бита раньше, чем он шагнёт в стену.` };
+        if (last && last.line === line && run > 0) return { line, text: `Подсказка: на этой строке Бит прошёл ${cells(run)} и упёрся в стену. Шагов здесь нужно ${run}, а потом поворот ${TURN[t]}.` };
+        return { line, text: `Подсказка: Бит упёрся в стену. Дорога уходит ${REL[t]} от него — перед этой строкой нужен ${TURN[t]}.` };
+      }
+      case 'lava': {
+        if (!basic) return { line, text: `Подсказка: Бит шагнул в лаву. Перед шагом нужна проверка: if ${name('лава_впереди')}: ${name('прыгнуть')}` };
+        if (run > 1) return { line, text: `Подсказка: на этой строке Бит прошёл ${cells(run - 1)}, а следующим шагом попал в лаву. Раздели команду: ${run - 1 > 1 ? `вперёд(${run - 1})` : 'вперёд()'}, потом прыгнуть().` };
+        return { line, text: 'Подсказка: здесь впереди была лава. На этой строке вместо вперёд() нужен прыгнуть() — прыжок переносит через одну клетку лавы.' };
+      }
+      case 'short': {
+        const d = dist.get(K(h.x, h.z)), t = roadTurn(st, dist);
+        if (!tr.length || d === undefined || !st.lastLine) return null;
+        const way = t === 0 ? 'дорога идёт прямо' : t > 0 ? `дорога уходит ${REL[t]}` : 'дальше тупик';
+        return { line: st.lastLine, text: `Подсказка: команды кончились после этой строки, а до флага ещё ${cellsLeft(d)}. Бит стоит, ${way}.` };
+      }
+      case 'extra': {
+        const at = tr.findIndex(p => p.x === L.finish.x && p.z === L.finish.z);
+        if (at < 0) return null;
+        const f = tr[at];
+        if (f.stamp === st.stamp) return { line, text: 'Подсказка: на этой строке Бит дошёл до флага раньше, чем кончились шаги. Число в скобках нужно поменьше.' };
+        if (line <= f.line) return { line: f.line, text: 'Подсказка: на этой строке Бит встал на флаг, а цикл пошёл на новый повтор. Повторов в range() нужно меньше.' };
+        return { line: f.line, text: 'Подсказка: на этой строке Бит встал на флаг. Всё, что ниже, — лишнее: удали эти команды.' };
+      }
+      case 'coins': {
+        if (L.need) return null;
+        const i = tr.findIndex(p => st.coins.has(K(p.x, p.z)));
+        if (i < 0) return null;
+        const p = tr[i], mid = tr[i + 1] && tr[i + 1].stamp === p.stamp;
+        if (!basic) return { line: p.line, text: `Подсказка: на этой строке Бит прошёл по монете и не взял её. После каждого шага проверяй: if ${name('есть_монета')}: ${name('взять')}` };
+        if (mid) return { line: p.line, text: 'Подсказка: на этой строке Бит прошёл по монете, не останавливаясь. Раздели шаги: остановись на монете и возьми её — взять().' };
+        return { line: p.line, text: 'Подсказка: после этой строки Бит стоял на монете, но не взял её. Следующей командой нужен взять().' };
+      }
+      case 'air': {
+        if (!basic) return null;
+        const [dx, dz] = HeroWorld.DIRS[h.dir];
+        if (st.coins.has(K(h.x + dx, h.z + dz))) return { line, text: 'Подсказка: монета на клетке впереди. Сначала шагни на неё, потом взять().' };
+        const prev = tr[tr.length - 2];
+        if (prev && st.coins.has(K(prev.x, prev.z))) return { line, text: 'Подсказка: монета осталась позади. взять() нужен на шаг раньше — сразу, как Бит встал на монету.' };
+        return null;
+      }
+    }
+    return null;
+  }
+
+  function reportError(err, mIdx, code = '', bitTalks = true, st = null) {
     const line = err.line || null;
     if (line) markLine(line, 'err'); else markLine(null);
     log(err.message, 'err', line);
@@ -1325,6 +1525,8 @@
         ? `На карте ${mIdx} всё сработало, а на карте ${mIdx + 1} — нет. Условие у тебя уже есть, но здесь оно не помогло. Нажми «Шаг» и посмотри, где герой ошибается.`
         : `На карте ${mIdx} всё сработало, а на карте ${mIdx + 1} — нет. Код должен работать на любой карте: для этого и нужны условия.`, 'tip');
     }
+    const hint = lineHint(err, st);
+    if (hint) log(hint.text, 'tip', hint.line);
   }
 
   async function runAll() {
@@ -1352,7 +1554,7 @@
       if (!r.ok) {
         dotStates[m] = 'fail'; setDots(dotStates);
         markFail(r.st);
-        reportError(r.err, m, code);
+        reportError(r.err, m, code, true, r.st);
         // для звезды «с первого запуска»: запуск нетронутого стартового кода не считается
         const id = TASKS[taskIdx].id;
         if (codeLines(code).join('\n') !== codeLines(TASKS[taskIdx].starter).join('\n')) {
@@ -1397,14 +1599,52 @@
         ? `Карта ${mapIdx + 1} пройдена. Нажми «Запуск», чтобы проверить код на всех трёх картах.`
         : 'Получилось! Нажми «Запуск», чтобы засчитать задание.', 'ok');
     }
-    else { markFail(r.st); reportError(r.err, 0); }
+    else { markFail(r.st); reportError(r.err, 0, '', true, r.st); }
   }
 
   // строки кода без пустых и комментариев
   function codeLines(code) { return code.split('\n').map(l => l.trimEnd()).filter(l => l.trim() && !l.trim().startsWith('#')); }
 
+  // Разминка пройдена: без звёзд, галочка на вкладке; дальше — следующая разминка или первое нерешённое задание
+  function finishWarm(t) {
+    save.warm[t.id] = 1;
+    outroPending = false;
+    persist();
+    renderTabs();
+    const nw = TASKS.findIndex(x => x.kind === 'warm' && !save.warm[x.id]), fo = firstOpen();
+    $('#resStars').innerHTML = '<i class="on warm">↻</i>';
+    $('#resTitle').textContent = 'Разминка пройдена!';
+    $('#resLevel').hidden = true;
+    $('#resList').innerHTML = `<li class="on">Тема «${esc(LESSONS[t.from].title)}» не забылась</li><li class="${hintsUsed() ? '' : 'on'}">Без подсказок</li>`;
+    $('#nextBtn').textContent = nw >= 0 ? `Разминка: ${TASKS[nw].short}` : `Задание ${fo + 1}: ${MAIN()[fo].short}`;
+    $('#bonusBtn').hidden = true;
+    $('#result').hidden = false;
+    Sound.play('stars', { n: 1 });
+  }
+
+  // Свой уровень пройден: звёзды показываем, но не сохраняем — иначе их можно набивать лёгкими картами
+  function finishCustom(t, code) {
+    const lines = codeLines(code).length, got = [1, hintsUsed() === 0 ? 1 : 0, lines <= t.best ? 1 : 0];
+    outroPending = false;
+    $('#resStars').innerHTML = starsHtml(got);
+    $('#resTitle').textContent = 'Уровень пройден!';
+    $('#resLevel').hidden = true;
+    $('#resList').innerHTML = `<li class="on">Бит дошёл до флага</li><li class="${got[1] ? 'on' : ''}">Решено без подсказок</li>
+      <li class="${got[2] ? 'on' : ''}">Коротко: ${lines} ${plural(lines, 'строка', 'строки', 'строк')}${got[2] ? '' : `, а можно уложиться в ${t.best}`}</li>
+      <li>За свои уровни звёзды не идут в уровень Бита — это тренировка</li>`;
+    const fo = firstOpen();
+    $('#nextBtn').textContent = `К урокам: задание ${fo + 1}`;
+    $('#bonusBtn').hidden = true;
+    $('#editLvlBtn').hidden = false;
+    $('#result').hidden = false;
+    Sound.play('stars', { n: got.reduce((a, b) => a + b, 0) });
+  }
+
   function finishTask(code) {
     const t = TASKS[taskIdx];
+    $('#editLvlBtn').hidden = true;
+    if (t.kind === 'warm') { finishWarm(t); return; }
+    if (t.kind === 'custom') { finishCustom(t, code); return; }
     const lines = codeLines(code).length;
     const first = !save.fails[t.id];
     const got = [1, hintsUsed() === 0 ? 1 : 0, (t.star3 === 'first' ? first : lines <= t.best) ? 1 : 0];
@@ -1419,7 +1659,7 @@
     $('#resLevel').textContent = `Новый уровень ${lvl}: ${LEVELS[lvl - 1].title}!`
       + (fresh.length ? ` Открыто: ${fresh.map(it => it.name.toLowerCase()).join(', ')}.` : '');
     // урок пройден целиком: на «Дальше» проводник квеста скажет прощальные слова
-    outroPending = !save.seen.outro[LESSONS[lessonIdx].id] && TASKS.every(x => (save.stars[x.id] || [])[0]);
+    outroPending = !save.seen.outro[LESSONS[lessonIdx].id] && MAIN().every(solvedTask);
     persist();
     renderTabs();
     const r = $('#result');
@@ -1433,11 +1673,15 @@
       <li class="${got[2] ? 'on' : ''}">${t.star3 === 'first'
         ? (got[2] ? 'Сработало с первого запуска' : 'С первого запуска не вышло. Совет: проверяй код кнопкой «Шаг», такие проверки не считаются')
         : `Коротко: ${lines} ${plural(lines, 'строка', 'строки', 'строк')}${got[2] ? '' : `, а можно уложиться в ${t.best}`}`}</li>`;
-    const last = taskIdx === TASKS.length - 1;
+    const bonus = t.kind === 'bonus', last = bonus || taskIdx === MAIN().length - 1;
     const nextLesson = LESSONS[lessonIdx + 1];
     const pro = LESSONS[lessonIdx].prologue;
-    const allDone = TASKS.every(x => (save.stars[x.id] || [])[0]);
-    $('#resTitle').textContent = last && allDone ? (pro ? 'Пролог пройден!' : 'Все задания урока пройдены!') : maps.length > 1 ? 'Готово! Код работает на любой карте.' : 'Готово!';
+    const allDone = MAIN().every(solvedTask);
+    $('#resTitle').textContent = bonus ? 'Задание со звёздочкой решено!'
+      : last && allDone ? (pro ? 'Пролог пройден!' : 'Все задания урока пройдены!') : maps.length > 1 ? 'Готово! Код работает на любой карте.' : 'Готово!';
+    // после последнего задания можно взяться за задание со звёздочкой
+    const bi = TASKS.findIndex(x => x.kind === 'bonus');
+    $('#bonusBtn').hidden = bonus || !last || bi < 0 || solvedTask(TASKS[bi]);
     $('#nextBtn').textContent = !last ? `Задание ${taskIdx + 2}: ${TASKS[taskIdx + 1].short}`
       : pro && outroPending ? 'Дальше' // впереди сцена со Сбоем — не выдаём её заранее
       : nextLesson ? `Урок ${lessonNo(lessonIdx + 1)}: ${nextLesson.title}` : 'К первому заданию';
@@ -1654,7 +1898,10 @@
   });
   $('#nextBtn').addEventListener('click', () => {
     const next = () => {
-      if (taskIdx < TASKS.length - 1) selectTask(taskIdx + 1);
+      const t = TASKS[taskIdx];
+      if (t.kind === 'warm') { const w = TASKS.findIndex(x => x.kind === 'warm' && !save.warm[x.id]); selectTask(w >= 0 ? w : firstOpen()); }
+      else if (t.kind === 'custom') selectTask(firstOpen());
+      else if (!t.kind && taskIdx < MAIN().length - 1) selectTask(taskIdx + 1);
       else if (LESSONS[lessonIdx + 1]) { selectLesson(lessonIdx + 1); greet(); }
       else selectTask(0);
     };
@@ -1668,6 +1915,7 @@
     if (L.prologue) cutscene(lessonStory().outro, openRecap);
     else talk(lessonStory().outro, next);
   });
+  $('#bonusBtn').addEventListener('click', () => { hideResult(); selectTask(TASKS.findIndex(t => t.kind === 'bonus')); });
   $('#lessonSel').addEventListener('change', e => {
     if (running) { e.target.value = lessonIdx; return; }
     selectLesson(+e.target.value);
@@ -1718,6 +1966,219 @@
     cutscene([...STORY.prologue, ...theft, ...(s.intro || []), ...(save.seen.outro[L.id] ? s.outro || [] : [])]);
   });
   $('#recapBtn').addEventListener('click', () => { $('#gearPanel').hidden = true; openRecap(); });
+
+  /* ---------- Карта долины вместо списка уроков: края по урокам на тропе. Пройденный край — с галочкой,
+     над текущим — «Бит здесь», дальние (дальше следующего непройденного) — в тумане, но заглянуть можно:
+     репетитору иногда нужно показать урок заранее ---------- */
+  // Центры значков в процентах карты (карта 1000 × 625) и рисунки — по порядку уроков
+  const VALLEY = [
+    { x: 11, y: 80, icon: 'house' }, { x: 27, y: 58, icon: 'sign' }, { x: 14, y: 31, icon: 'mount' }, { x: 37, y: 20, icon: 'tree' },
+    { x: 53, y: 46, icon: 'gate' }, { x: 69, y: 73, icon: 'tower' }, { x: 81, y: 45, icon: 'anvil' }, { x: 89, y: 17, icon: 'castle' },
+  ];
+  const ICONS = {
+    house: '<path d="M4 11l8-7 8 7v9H4z"/><path d="M10 20v-5h4v5"/><circle cx="17" cy="6" r="1.6"/>',
+    sign: '<path d="M12 3v18"/><path d="M5 6h11l3 3-3 3H5z"/><path d="M8 21h8"/>',
+    mount: '<path d="M2 20l7-12 4 6 3-4 6 10z"/><path d="M7.5 10.5l1.5 1.5 1.5-1.5"/>',
+    tree: '<path d="M12 3l6 8h-3.5l4.5 7H5l4.5-7H6z"/><path d="M12 18v3"/>',
+    gate: '<path d="M4 21V10a8 8 0 0 1 16 0v11"/><path d="M8.5 21v-9M12 21v-10M15.5 21v-9"/>',
+    tower: '<path d="M8 21V9h8v12"/><path d="M7 9V4h2v2h2V4h2v2h2V4h2v5"/><path d="M11 21v-4h2v4"/><path d="M11 12h2"/>',
+    anvil: '<path d="M4 8h12c0 3 2 4 4 4v2h-7l-1 3h3v3H7v-3h3l-1-3H8a4 4 0 0 1-4-4z"/>',
+    castle: '<path d="M3 21V9h3v3h3V9h2v3h2V9h2v3h3V9h3v12z"/><path d="M10 21v-4a2 2 0 0 1 4 0v4"/>',
+  };
+  // Плавная тропа через точки (Катмулл — Ром → кривые Безье)
+  function smoothPath(p) {
+    let d = `M${p[0].x},${p[0].y}`;
+    for (let i = 0; i < p.length - 1; i++) {
+      const a = p[i - 1] || p[i], b = p[i], c = p[i + 1], e = p[i + 2] || c;
+      d += ` C${(b.x + (c.x - a.x) / 6).toFixed(1)},${(b.y + (c.y - a.y) / 6).toFixed(1)} ${(c.x - (e.x - b.x) / 6).toFixed(1)},${(c.y - (e.y - b.y) / 6).toFixed(1)} ${c.x},${c.y}`;
+    }
+    return d;
+  }
+  function valleyArt(pts, reach) {
+    const trees = [[292, 118], [322, 88], [430, 104], [456, 148], [398, 66], [478, 84], [268, 160]]
+      .map(([x, y]) => `<path d="M${x} ${y - 30}l16 30h-9l11 18h-36l11-18h-9z" fill="var(--vm-tree)"/>`).join('');
+    const river = 'M-20 400 C 120 360, 230 460, 360 415 S 560 290, 650 330 S 840 440, 1020 392';
+    return `<svg class="valley-art" viewBox="0 0 1000 625" aria-hidden="true">
+      <ellipse cx="240" cy="520" rx="330" ry="170" fill="var(--vm-grass2)" opacity=".75"/>
+      <ellipse cx="760" cy="250" rx="320" ry="160" fill="var(--vm-grass2)" opacity=".6"/>
+      <path d="${river}" fill="none" stroke="var(--vm-river)" stroke-width="30" stroke-linecap="round"/>
+      <path d="${river}" fill="none" stroke="#fff" stroke-width="3" stroke-dasharray="16 28" opacity=".45"/>
+      <polygon points="36,262 132,104 228,262" fill="var(--vm-rock)"/><polygon points="132,104 110,140 154,140" fill="#fff" opacity=".9"/>
+      <polygon points="176,262 252,142 328,262" fill="var(--vm-rock)" opacity=".85"/><polygon points="252,142 234,170 270,170" fill="#fff" opacity=".85"/>
+      ${trees}
+      <ellipse cx="612" cy="372" rx="26" ry="10" fill="#ff7a2e" opacity=".85"/><ellipse cx="648" cy="392" rx="18" ry="7" fill="#ff5a1f" opacity=".8"/>
+      <rect x="744" y="410" width="22" height="70" rx="3" fill="var(--vm-rock)"/><rect x="738" y="402" width="34" height="12" rx="2" fill="var(--vm-rock)"/>
+      <circle cx="890" cy="106" r="78" fill="#ff2bd6" opacity=".14"/><circle cx="890" cy="106" r="46" fill="#ff2bd6" opacity=".12"/>
+      <path d="${smoothPath(pts)}" fill="none" stroke="var(--vm-path)" stroke-width="7" stroke-linecap="round" stroke-dasharray="1 16" opacity=".75"/>
+      ${reach > 0 ? `<path d="${smoothPath(pts.slice(0, reach + 1))}" fill="none" stroke="var(--mint)" stroke-width="7" stroke-linecap="round" opacity=".85"/>` : ''}
+    </svg>`;
+  }
+  function renderValley() {
+    const box = $('#valleyMap');
+    const pts = LESSONS.map((l, i) => VALLEY[i] || { x: 10 + (i * 80) / Math.max(1, LESSONS.length - 1), y: 50, icon: 'sign' });
+    const done = LESSONS.map(l => l.tasks.every(solvedTask));
+    const open = done.includes(false) ? done.indexOf(false) : LESSONS.length; // первый непройденный край
+    let fogCount = 0;
+    const nodes = LESSONS.map((l, i) => {
+      const place = (STORY.lessons[l.id] || {}).place || l.title, sub = l.prologue ? 'Пролог' : `Урок ${lessonNo(i)} · ${l.title}`;
+      const got = lessonStars(l), max = l.tasks.length * 3, bonus = (l.bonus || []).some(solvedTask);
+      const fog = !done[i] && i > open + 1 && i !== lessonIdx;
+      if (fog) fogCount++;
+      const cls = ['vnode', done[i] && 'done', i === lessonIdx && 'current', fog && 'fog'].filter(Boolean).join(' ');
+      return `<button type="button" class="${cls}" style="left:${pts[i].x}%;top:${pts[i].y}%" data-i="${i}"
+        aria-label="${esc(place)}: ${esc(sub)}, звёзд ${got} из ${max}${done[i] ? ', пройдено' : ''}${fog ? ', в тумане' : ''}">
+        <span class="vn-icon" aria-hidden="true">${i === lessonIdx ? '<span class="vn-here">Бит здесь</span>' : ''}<svg viewBox="0 0 24 24">${ICONS[pts[i].icon]}</svg>${done[i] ? '<span class="vn-done">✓</span>' : ''}</span>
+        <span class="vn-label" aria-hidden="true"><span class="vn-name">${esc(place)}</span><span class="vn-sub">${esc(sub)}</span><span class="vn-stars">★ ${got} из ${max}${bonus ? ' · +★' : ''}</span></span>
+      </button>`;
+    });
+    let reach = 0;
+    while (reach < LESSONS.length - 1 && done[reach]) reach++; // зелёная тропа — до первого непройденного края
+    box.innerHTML = valleyArt(pts.map(p => ({ x: p.x * 10, y: p.y * 6.25 })), reach) + nodes.join('');
+    const n = done.filter(Boolean).length;
+    $('#valleySub').textContent = `Пройдено краёв: ${n} из ${LESSONS.length} · звёзд всего: ${totalStars()}${fogCount ? ' · дальние края пока в тумане, но заглянуть можно' : ''}`;
+    box.querySelectorAll('.vnode').forEach(b => b.addEventListener('click', () => {
+      const i = +b.dataset.i;
+      closeValley();
+      if (running || i === lessonIdx) return;
+      selectLesson(i);
+      greet();
+    }));
+  }
+  function openValley() {
+    renderValley();
+    $('#valley').hidden = false;
+    document.body.classList.add('recap-open');
+    ($('#valleyMap .vnode.current') || $('#valleyMap .vnode')).focus({ preventScroll: true });
+  }
+  function closeValley() {
+    $('#valley').hidden = true;
+    document.body.classList.remove('recap-open');
+    $('#mapBtn').focus({ preventScroll: true });
+  }
+  $('#mapBtn').addEventListener('click', openValley);
+  $('#valleyClose').addEventListener('click', closeValley);
+  $('#valley').addEventListener('click', e => { if (e.target.id === 'valley') closeValley(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#valley').hidden) closeValley(); });
+
+  /* ---------- Свой уровень: редактор карты. Рисуют мышью или пальцем; карта проверяется сразу
+     (HeroWorld.checkLevel), «Играть» открывает её вкладкой «Свой уровень», ссылка несёт карту целиком ---------- */
+  const TOOLS = [
+    { id: 'floor', ch: '.', name: 'Дорога' }, { id: 'wall', ch: ' ', name: 'Стена' }, { id: 'lava', ch: '~', name: 'Лава' },
+    { id: 'coin', ch: '$', name: 'Монета' }, { id: 'start', ch: '>', name: 'Старт' }, { id: 'flag', ch: 'F', name: 'Флаг' },
+  ];
+  const CELL_CLASS = { ' ': 't-wall', '.': 't-floor', '~': 't-lava', '$': 't-coin', F: 't-flag', '>': 't-start', '^': 't-start', '<': 't-start', v: 't-start' };
+  const CELL_NAME = { ' ': 'стена', '.': 'дорога', '~': 'лава', '$': 'монета', F: 'флаг', '>': 'старт, Бит смотрит вправо', '^': 'старт, Бит смотрит вверх', '<': 'старт, Бит смотрит влево', v: 'старт, Бит смотрит вниз' };
+  const START_ARROW = { '>': '→', '^': '↑', '<': '←', v: '↓' }, TURN_CW = { '>': 'v', v: '<', '<': '^', '^': '>' };
+  const FLAG_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 21V4" stroke="#1B1E3C" stroke-width="2" stroke-linecap="round"/><path d="M6 4h11l-3 4 3 4H6z" fill="#1FA88F"/></svg>';
+  const NEW_LEVEL = { title: 'Мой уровень', rows: ['', '', ' >..$..F', '', '', ''], w: 10, h: 6 };
+  let ed = null; // { grid: [[символ]], tool, w, h }
+  const edRows = () => ed.grid.map(r => r.join('').replace(/\s+$/, ''));
+  function edLoad(level) {
+    const rows = level.rows, clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    const h = clamp(level.h || rows.length, 3, 10), w = clamp(level.w || Math.max(8, ...rows.map(r => r.length)), 4, 14); // размер поля запоминается
+    ed = { tool: ed ? ed.tool : 'floor', w, h, grid: Array.from({ length: h }, (_, z) => Array.from({ length: w }, (_, x) => (rows[z] || '')[x] || ' ')) };
+    $('#lvlName').value = cleanTitle(level.title);
+  }
+  function edSave() {
+    save.custom = { title: cleanTitle($('#lvlName').value) || 'Мой уровень', rows: edRows(), w: ed.w, h: ed.h };
+    persist();
+  }
+  function edRender() {
+    const g = $('#lvlGrid');
+    g.style.setProperty('--w', ed.w);
+    g.innerHTML = ed.grid.map((row, z) => row.map((ch, x) =>
+      `<button type="button" class="lc ${CELL_CLASS[ch]}" data-x="${x}" data-z="${z}" aria-label="${x + 1}, ${z + 1}: ${CELL_NAME[ch]}">${START_ARROW[ch] || (ch === 'F' ? FLAG_SVG : '')}</button>`).join('')).join('');
+    $('#lvlW').textContent = ed.w;
+    $('#lvlH').textContent = ed.h;
+    $('#lvlTools').innerHTML = TOOLS.map(t => `<button type="button" class="lvl-tool" role="radio" data-tool="${t.id}" aria-checked="${t.id === ed.tool}"><span class="sw ${CELL_CLASS[t.ch]}" aria-hidden="true">${t.id === 'start' ? '→' : t.id === 'flag' ? FLAG_SVG : ''}</span>${t.name}</button>`).join('');
+    const chk = HeroWorld.checkLevel(edRows()), st = $('#lvlStatus');
+    st.className = 'lvl-status ' + (chk.ok ? 'ok' : 'bad');
+    st.textContent = chk.ok ? `Карта готова: путь до флага есть${chk.L.coins.size ? `, монет: ${chk.L.coins.size}` : ''}. Жми «Играть».` : chk.msg;
+    $('#lvlPlay').disabled = $('#lvlLink').disabled = !chk.ok;
+    return chk;
+  }
+  // Рисование: дорога, стена, лава и монета — протягиванием; старт и флаг — по одному, щелчок по старту поворачивает Бита
+  function edPaint(x, z, first) {
+    const cur = ed.grid[z][x], tool = TOOLS.find(t => t.id === ed.tool);
+    if (tool.id === 'start') {
+      if (!first) return;
+      if (START_ARROW[cur]) ed.grid[z][x] = TURN_CW[cur];
+      else { ed.grid.forEach(r => r.forEach((c, i) => { if (START_ARROW[c]) r[i] = '.'; })); ed.grid[z][x] = '>'; }
+    } else if (tool.id === 'flag') {
+      if (!first) return;
+      ed.grid.forEach(r => r.forEach((c, i) => { if (c === 'F') r[i] = '.'; }));
+      ed.grid[z][x] = 'F';
+    } else if (cur === tool.ch) return;
+    else ed.grid[z][x] = tool.ch;
+    edRender();
+    edSave();
+  }
+  function edResize(axis, d) {
+    if (axis === 'w') ed.w = Math.max(4, Math.min(14, ed.w + d));
+    else ed.h = Math.max(3, Math.min(10, ed.h + d));
+    ed.grid = Array.from({ length: ed.h }, (_, z) => Array.from({ length: ed.w }, (_, x) => (ed.grid[z] || [])[x] || ' '));
+    edRender();
+    edSave();
+  }
+  function openEditor() {
+    $('#valley').hidden = true;
+    edLoad(save.custom || NEW_LEVEL);
+    $('#lvlUrl').hidden = true;
+    edRender();
+    edSave();
+    $('#lvlEd').hidden = false;
+    document.body.classList.add('recap-open');
+    $('#lvlTools [aria-checked="true"]').focus({ preventScroll: true });
+  }
+  function closeEditor() {
+    $('#lvlEd').hidden = true;
+    document.body.classList.remove('recap-open');
+    const ci = TASKS.findIndex(t => t.kind === 'custom');
+    TASKS = lessonTasks(lessonIdx); // карта могла измениться — вкладка «Свой уровень» обновится
+    if (TASKS[taskIdx] && ci === taskIdx) selectTask(Math.max(0, TASKS.findIndex(t => t.kind === 'custom'))); else renderTabs();
+  }
+  (function editorEvents() {
+    const g = $('#lvlGrid');
+    let painting = false;
+    const at = e => { const c = document.elementFromPoint(e.clientX, e.clientY); return c && c.classList.contains('lc') && g.contains(c) ? c : null; };
+    g.addEventListener('pointerdown', e => { const c = at(e); if (!c) return; e.preventDefault(); painting = true; edPaint(+c.dataset.x, +c.dataset.z, true); });
+    g.addEventListener('pointermove', e => { if (!painting) return; const c = at(e); if (c) edPaint(+c.dataset.x, +c.dataset.z, false); });
+    addEventListener('pointerup', () => { painting = false; });
+    g.addEventListener('keydown', e => { // с клавиатуры: Enter или пробел на клетке
+      const c = e.target.closest('.lc');
+      if (c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); edPaint(+c.dataset.x, +c.dataset.z, true); g.querySelector(`[data-x="${c.dataset.x}"][data-z="${c.dataset.z}"]`).focus(); }
+    });
+    $('#lvlTools').addEventListener('click', e => { const b = e.target.closest('.lvl-tool'); if (b) { ed.tool = b.dataset.tool; edRender(); $(`#lvlTools [data-tool="${ed.tool}"]`).focus(); } });
+    document.querySelectorAll('.lvl-size [data-size]').forEach(b => b.addEventListener('click', () => { const [a, d] = b.dataset.size.split(','); edResize(a, +d); }));
+    $('#lvlName').addEventListener('input', edSave);
+    $('#lvlClear').addEventListener('click', () => { ed.grid = ed.grid.map(r => r.map(() => ' ')); $('#lvlUrl').hidden = true; edRender(); edSave(); });
+    $('#lvlClose').addEventListener('click', closeEditor);
+    $('#lvlEd').addEventListener('click', e => { if (e.target.id === 'lvlEd') closeEditor(); });
+    addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#lvlEd').hidden) closeEditor(); });
+    $('#lvlPlay').addEventListener('click', () => {
+      if (!edRender().ok) return;
+      edSave();
+      $('#lvlEd').hidden = true;
+      document.body.classList.remove('recap-open');
+      if (running) stopRun();
+      TASKS = lessonTasks(lessonIdx);
+      selectTask(TASKS.findIndex(t => t.kind === 'custom'));
+    });
+    $('#lvlLink').addEventListener('click', async () => {
+      if (!edRender().ok) return;
+      edSave();
+      const url = `${location.href.split(/[?#]/)[0]}#level=${b64enc(JSON.stringify({ t: save.custom.title, r: save.custom.rows }))}`;
+      const box = $('#lvlUrl'), st = $('#lvlStatus');
+      box.value = url;
+      box.hidden = false;
+      box.select();
+      try { await navigator.clipboard.writeText(url); st.textContent = 'Ссылка скопирована. Отправь её другу или репетитору — уровень откроется у него сразу.'; }
+      catch (e) { st.textContent = 'Скопируй ссылку из поля ниже и отправь её другу или репетитору.'; }
+      st.className = 'lvl-status ok';
+    });
+    $('#valleyEdit').addEventListener('click', openEditor);
+    $('#editLvlBtn').addEventListener('click', () => { hideResult(); openEditor(); });
+  })();
 
   /* ---------- Итог пролога: карточка для ученика и родителя после пробного занятия ---------- */
   const PRO = LESSONS.findIndex(l => l.prologue);
@@ -1874,6 +2335,10 @@
   /* ---------- Старт ---------- */
   resize();
   selectTask(taskIdx);
+  if (openOwn) { // уровень по ссылке — сразу его вкладка
+    const ci = TASKS.findIndex(t => t.kind === 'custom');
+    if (ci >= 0) { selectTask(ci); log(`Тебе прислали уровень «${TASKS[ci].title}». Реши его!`, 'tip'); }
+  }
   requestAnimationFrame(t => { last = t; frame(t); });
   if (SHOW) startReel();
 })();

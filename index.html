@@ -22,7 +22,13 @@
   <header class="top">
     <div class="brand">
       <h1>Долина Эникей</h1>
-      <label class="lesson-pick"><span class="sr-only">Урок</span><select id="lessonSel"></select></label>
+      <!-- Карта долины вместо списка уроков: кнопка открывает карту (js/app.js, renderValley) -->
+      <button type="button" class="map-btn" id="mapBtn" aria-haspopup="dialog" aria-controls="valley">
+        <span class="mb-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg></span>
+        <span class="mb-text" id="mbText"></span>
+        <span class="mb-stars" id="mbStars"></span>
+      </button>
+      <select id="lessonSel" hidden aria-hidden="true" tabindex="-1"></select>
       <button type="button" class="hero-badge" id="heroBtn" aria-controls="gearPanel">
         <span class="hb-lvl" id="hbLvl">1</span>
         <span class="hb-text"><b>Бит</b> <span id="hbTitle">Новичок</span></span>
@@ -57,6 +63,9 @@
           </div>
         </div>
       </div>
+
+      <!-- Переменные программы и что знает Бит: обновляется на каждой строке при запуске и в режиме «Шаг» -->
+      <div class="vars" id="vars" aria-live="off" hidden></div>
 
       <div class="controls">
         <button type="button" class="btn primary" id="runBtn">Запуск</button>
@@ -112,6 +121,8 @@
           <div class="res-actions">
             <button type="button" class="btn primary" id="nextBtn">Дальше</button>
             <button type="button" class="btn secondary" id="againBtn">Новые карты</button>
+            <button type="button" class="btn secondary bonus-btn" id="bonusBtn" hidden>★ Задание со звёздочкой</button>
+            <button type="button" class="btn secondary" id="editLvlBtn" hidden>✎ Изменить уровень</button>
           </div>
         </div>
       </div>
@@ -156,6 +167,44 @@
     <p class="reel-cta" id="reelCta" hidden></p>
   </div>
   <p class="reel-hint" id="reelHint"></p>
+</div>
+<!-- Карта долины: края по урокам (заполняет js/app.js, renderValley) -->
+<div class="valley" id="valley" hidden>
+  <div class="valley-card" role="dialog" aria-modal="true" aria-labelledby="valleyTitle">
+    <div class="valley-head">
+      <div><h2 id="valleyTitle">Карта долины</h2><p id="valleySub"></p></div>
+      <div class="valley-tools">
+        <button type="button" class="btn secondary" id="valleyEdit">✎ Свой уровень</button>
+        <button type="button" class="gear-close" id="valleyClose" aria-label="Закрыть">×</button>
+      </div>
+    </div>
+    <div class="valley-map" id="valleyMap"></div>
+  </div>
+</div>
+<!-- Свой уровень: редактор карты, проверка и ссылка (js/app.js, openEditor) -->
+<div class="valley" id="lvlEd" hidden>
+  <div class="valley-card lvl-card" role="dialog" aria-modal="true" aria-labelledby="lvlHead">
+    <div class="valley-head">
+      <div><h2 id="lvlHead">Свой уровень</h2><p>Нарисуй карту, реши её своей программой и отправь ссылку другу — или репетитору.</p></div>
+      <button type="button" class="gear-close" id="lvlClose" aria-label="Закрыть">×</button>
+    </div>
+    <div class="lvl-bar">
+      <div class="lvl-tools" id="lvlTools" role="radiogroup" aria-label="Что рисуем"></div>
+      <div class="lvl-size">
+        <span>Ширина</span><button type="button" data-size="w,-1" aria-label="Уже">−</button><output id="lvlW"></output><button type="button" data-size="w,1" aria-label="Шире">+</button>
+        <span>Высота</span><button type="button" data-size="h,-1" aria-label="Ниже">−</button><output id="lvlH"></output><button type="button" data-size="h,1" aria-label="Выше">+</button>
+      </div>
+    </div>
+    <div class="lvl-grid" id="lvlGrid" aria-label="Карта уровня"></div>
+    <label class="lvl-name"><span>Название</span><input id="lvlName" maxlength="40" autocomplete="off" spellcheck="false"></label>
+    <p class="lvl-status" id="lvlStatus" role="status"></p>
+    <div class="lvl-actions">
+      <button type="button" class="btn primary" id="lvlPlay">Играть</button>
+      <button type="button" class="btn secondary" id="lvlLink">Ссылка на уровень</button>
+      <button type="button" class="btn ghost" id="lvlClear">Очистить</button>
+    </div>
+    <input class="lvl-url" id="lvlUrl" readonly hidden aria-label="Ссылка на уровень">
+  </div>
 </div>
 <!-- Итог пролога: карточка для ученика и родителя после пробного занятия (заполняет js/app.js) -->
 <div class="recap" id="recap" hidden>

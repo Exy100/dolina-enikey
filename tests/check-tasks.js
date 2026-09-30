@@ -130,6 +130,19 @@ Object.assign(WRONG, {
   'l-left': [[RIGHT_EN_COINS, 'coins']], // правая рука пропускает монету
   'l-broken': [['STARTER', 'broken']],
   'l-boss': [[RIGHT_RU, 'english']],
+  // задания со звёздочкой
+  'k-star': [['вперёд()\nпрыгнуть()\nвперёд(2)\nналево()\nвперёд(3)\nвзять()\nналево()\nвперёд()\nпрыгнуть()\nвперёд()\n', 'coins'], // забыл первую монету
+    ['вперёд()\nпрыгнуть()\nвперёд(2)\nвзять()\nнаправо()\nвперёд(3)\n', 'wall']],
+  'c-star': [['for j in range(3):\n    for i in range(3):\n        вперёд()\n        налево()\n        вперёд()\n        направо()\nпрыгнуть()\n', 'lava'], // прыжок вне внешнего цикла: после первой лестницы — лава
+    ['for j in range(3):\n    for i in range(3):\n        вперёд()\n        налево()\n        вперёд()\n        направо()\n        прыгнуть()\n', 'nojump']], // прыжок внутри внутреннего
+  'u-star': [['STARTER', 'full']],
+  'p-star': [['STARTER', 'loop'], ['while not на_финише():\n    if ворота_впереди():\n        открыть()\n    elif стена_впереди():\n        налево()\n        налево()\n        налево()\n    else:\n        вперёд()\n', 'loop']], // всегда направо
+  'v-star': [['STARTER', 'answer'],
+    ['длина = 0\nwhile not на_финише():\n    if стена_впереди():\n        налево()\n        длина = 0\n    else:\n        вперёд()\n        длина = длина + 1\nсказать(длина)\n', 'answer'], // длина последнего участка
+    ['длина = 0\nлучшая = 0\nwhile not на_финише():\n    if стена_впереди():\n        налево()\n    else:\n        вперёд()\n        длина = длина + 1\n        if длина > лучшая:\n            лучшая = длина\nсказать(лучшая)\n', 'answer']], // не обнулил на повороте
+  'f-star': [['STARTER', 'lava'],
+    ['def шаг():\n    if лава_впереди():\n        прыгнуть()\n    else:\n        вперёд()\nwhile not на_финише():\n    if not стена_справа():\n        направо()\n        шаг()\n    elif not стена_впереди():\n        шаг()\n    else:\n        налево()\n', 'coins']], // монеты забыты
+  'l-star': [['STARTER', 'lava']],
 });
 
 let errors = 0;
@@ -137,7 +150,13 @@ const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
 lessonFiles.forEach(f => {
   if (!html.includes(`src="js/lessons/${f}"`)) { console.log(`✗ урок ${f} не подключён в index.html`); errors++; }
 });
-const TASKS = W.LESSONS.flatMap(l => l.tasks);
+const TASKS = W.LESSONS.flatMap(l => [...l.tasks, ...(l.bonus || [])]); // с заданиями со звёздочкой
+// Разминка: только задания прошлых уроков
+W.LESSONS.forEach((l, li) => (l.warmup || []).forEach(id => {
+  const from = W.LESSONS.findIndex(x => x.tasks.some(t => t.id === id));
+  if (from < 0) { console.log(`✗ ${l.id}: в разминке задание «${id}», которого нет`); errors++; }
+  else if (from >= li) { console.log(`✗ ${l.id}: в разминке задание «${id}» не из прошлого урока`); errors++; }
+}));
 const ids = new Set();
 TASKS.forEach(t => { if (ids.has(t.id)) { console.log(`✗ id «${t.id}» повторяется`); errors++; } ids.add(t.id); });
 const codeLines = code => code.split('\n').filter(l => l.trim() && !l.trim().startsWith('#')).length;
@@ -161,6 +180,16 @@ TASKS.forEach(t => {
   }
   console.log(`${t.id}: проверено`);
 });
+// Свой уровень (редактор): решение, которое строит checkLevel, проходит карту; битые карты отклоняются с понятной причиной
+[
+  [['>..$.F'], true], [[' F.~.$', '     .', '     .', '>.~..$'], true], [['v....', '.   F', '.....'], true],
+  [['>.~~.F'], false], [['>...'], false], [['>.F.$'], false], [['   $', '>..F.'], false], [['>F', 'x'], false],
+].forEach(([rows, ok]) => {
+  const c = W.checkLevel(rows);
+  if (c.ok !== ok) { console.log(`✗ свой уровень ${JSON.stringify(rows)}: ждали ${ok ? 'годится' : 'не годится'}, а вышло ${c.ok ? 'годится' : c.msg}`); errors++; }
+  else if (ok && !W.runSilent(c.sol, c.L).ok) { console.log(`✗ свой уровень ${JSON.stringify(rows)}: построенное решение не проходит`); errors++; }
+});
+
 // Ролик для Авито (?show): задания из REEL есть в курсе, эталон проходит карты ролика (seed REEL)
 const app = fs.readFileSync(path.join(__dirname, '../js/app.js'), 'utf8');
 const reel = app.match(/const REEL = \{[\s\S]*?items: \[([\s\S]*?)\n {4}\],[\s\S]*?seed: (\d+)/);
