@@ -42,6 +42,11 @@
     <section class="code-pane" aria-label="Задание и код">
       <!-- Режим показа (?show): подпись к уровню вместо задания -->
       <div class="reel-cap" id="reelCap"><p class="reel-lesson" id="reelLesson"></p><h2 id="reelTitle"></h2><p class="reel-what" id="reelWhat"></p></div>
+      <!-- Домашка по ссылке (#hw=…): какие задания задал репетитор и какие уже готовы -->
+      <div class="hw" id="hw" hidden>
+        <div class="hw-head"><b id="hwTitle">Домашка</b><span id="hwCount"></span><button type="button" class="hw-x" id="hwHide" aria-label="Скрыть домашку" title="Скрыть домашку">×</button></div>
+        <div class="hw-list" id="hwList"></div>
+      </div>
       <article class="task">
         <p class="num-line" id="taskNum"></p>
         <h2 id="taskTitle"></h2>
@@ -174,11 +179,29 @@
     <div class="valley-head">
       <div><h2 id="valleyTitle">Карта долины</h2><p id="valleySub"></p></div>
       <div class="valley-tools">
+        <button type="button" class="btn secondary" id="valleyHw">Задать домашку</button>
         <button type="button" class="btn secondary" id="valleyEdit">✎ Свой уровень</button>
         <button type="button" class="gear-close" id="valleyClose" aria-label="Закрыть">×</button>
       </div>
     </div>
     <div class="valley-map" id="valleyMap"></div>
+  </div>
+</div>
+<!-- Задать домашку: репетитор отмечает задания и получает ссылку (js/app.js, openHwBuilder) -->
+<div class="valley" id="hwEd" hidden>
+  <div class="valley-card hw-card" role="dialog" aria-modal="true" aria-labelledby="hwEdTitle">
+    <div class="valley-head">
+      <div><h2 id="hwEdTitle">Задать домашку</h2><p>Отметь задания и отправь ссылку: первое задание откроется сразу, над ним будет список домашки, а прогресс ученика сохранится.</p></div>
+      <button type="button" class="gear-close" id="hwEdClose" aria-label="Закрыть">×</button>
+    </div>
+    <div class="hw-lessons" id="hwLessons"></div>
+    <p class="hw-sum" id="hwSum" role="status"></p>
+    <label class="hw-field"><span>Ссылка</span><input id="hwUrl" readonly></label>
+    <label class="hw-field"><span>Сообщение</span><textarea id="hwMsg" rows="3" readonly></textarea></label>
+    <div class="lvl-actions">
+      <button type="button" class="btn primary" id="hwCopyMsg">Скопировать сообщение</button>
+      <button type="button" class="btn secondary" id="hwCopyUrl">Скопировать ссылку</button>
+    </div>
   </div>
 </div>
 <!-- Свой уровень: редактор карты, проверка и ссылка (js/app.js, openEditor) -->

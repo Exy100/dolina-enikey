@@ -67,6 +67,7 @@ button:disabled { cursor: default; opacity: .45; }
 .tab.warm .num { background: color-mix(in srgb, var(--mint) 18%, var(--panel)); color: var(--mint); font-size: 15px; }
 .tab.warm.active .num { background: var(--mint); color: #fff; }
 .tab .tick { color: var(--mint); font-weight: 700; }
+.tab.hwmark .num { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent); } /* задано на дом */
 .tab.bonus { border-color: color-mix(in srgb, var(--gold-star) 70%, var(--line)); }
 .tab.bonus .num { background: var(--gold-star); color: #5A3A00; font-size: 14px; }
 .tab.bonus.active { background: color-mix(in srgb, var(--gold-star) 18%, var(--panel)); border-color: var(--gold-star); }
@@ -199,6 +200,7 @@ body.is-running .ed-code textarea { cursor: default; }
 .dot.ok { background: var(--mint); border-color: var(--mint); color: #fff; }
 .dot.fail { background: var(--danger); border-color: var(--danger); color: #fff; }
 .coins { font-weight: 600; }
+@media (max-width: 560px) { .coins .c-word { display: none; } } /* на телефоне просто «2 из 3» */
 .coins::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--gold-star); margin-right: 8px; vertical-align: -1px; box-shadow: inset 0 0 0 2px rgba(0,0,0,.12); }
 
 .bubble { position: absolute; left: 0; top: 0; z-index: 4; pointer-events: none; opacity: 0; transition: opacity .15s;
@@ -269,10 +271,17 @@ body.is-running .ed-code textarea { cursor: default; }
   .hud.tr { top: auto; bottom: 14px; right: 14px; }
   .hud.tl { left: 10px; top: 10px; }
   .hud.bl { left: 10px; bottom: 14px; }
+  .hud.tr { max-width: calc(100% - 110px); flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; } /* не наезжать на монеты */
   .hud-btn { padding: 6px 10px; font-size: 13px; }
   .hud-box { padding: 5px 8px; }
   .guess-box { font-size: 13px; }
   .guess-opt { width: 30px; height: 30px; font-size: 14px; border-width: 2px; }
+}
+/* узкий мир рядом с кодом (планшет боком): кнопки справа не наезжают на номера карт */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .map-label { display: none; }
+  .hud-btn { padding: 6px 10px; font-size: 13px; }
+  .hud.tr { max-width: calc(100% - 150px); flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; }
 }
 /* Заставка */
 .splash { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px;
@@ -468,6 +477,35 @@ body.show-mode .reel-toast:not([hidden]) { display: block; position: absolute; t
   .valley-tools .btn { padding: 7px 10px; font-size: 13px; }
   .lvl-grid { --cs: min(40px, calc((100vw - 64px) / var(--w))); padding: 8px; gap: 2px; }
 }
+
+/* Домашка: полоска над заданием у ученика и окно «Задать домашку» у репетитора */
+.hw { background: var(--panel); border: 1.5px solid color-mix(in srgb, var(--accent) 45%, var(--line)); border-radius: 16px; padding: 10px 12px; flex-shrink: 0; }
+.hw[hidden] { display: none; }
+.hw.done { border-color: var(--mint); background: color-mix(in srgb, var(--mint) 10%, var(--panel)); }
+.hw-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 14px; }
+.hw-head b { font-weight: 700; }
+.hw-head span { color: var(--muted); }
+.hw.done .hw-head b { color: var(--mint); }
+.hw-x { margin-left: auto; border: 0; background: none; color: var(--muted); font-size: 20px; line-height: 1; padding: 0 4px; }
+.hw-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.hw-item { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px 4px 4px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--panel); color: var(--ink); font-size: 13px; }
+.hw-item i { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--panel-2); font: 700 11px var(--display); font-style: normal; color: var(--muted); }
+.hw-item.ok i { background: var(--mint); color: #fff; }
+.hw-item.cur { border-color: var(--accent); background: var(--accent-soft); }
+.hw-card { width: min(760px, 100%); }
+.hw-lessons { display: grid; gap: 10px; max-height: min(46vh, 420px); overflow-y: auto; padding-right: 4px; }
+.hw-lesson { border: 1.5px solid var(--line); border-radius: 14px; padding: 10px 12px; }
+.hw-lesson-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; font-weight: 700; font-size: 14px; }
+.hw-lesson-head .hw-quick { margin-left: auto; display: flex; gap: 6px; }
+.hw-quick button { border: 1.5px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
+.hw-quick button:hover { color: var(--accent); border-color: var(--accent); }
+.hw-tasks { display: flex; flex-wrap: wrap; gap: 6px; }
+.hw-check { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; border: 1.5px solid var(--line); font-size: 13px; cursor: pointer; }
+.hw-check:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.hw-check input { accent-color: var(--accent); margin: 0; }
+.hw-sum { margin: 12px 0 0; font-size: 14px; color: var(--muted); }
+.hw-field { display: grid; gap: 4px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+.hw-field input, .hw-field textarea { width: 100%; font: 13px/1.45 var(--mono); padding: 8px 10px; border-radius: 10px; border: 1.5px solid var(--line); background: var(--panel-2); color: var(--ink); resize: none; }
 
 /* Итог пролога: карточка для ученика и родителя, её удобно показать или сфотографировать экран */
 body.recap-open { overflow: hidden; }

@@ -86,16 +86,37 @@
   // Уровень по ссылке (#level=…): становится своим уровнем и открывается сразу
   const b64enc = str => btoa(String.fromCharCode(...new TextEncoder().encode(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
   const b64dec = str => new TextDecoder().decode(Uint8Array.from(atob(str.replace(/-/g, '+').replace(/_/g, '/')), ch => ch.charCodeAt(0)));
-  let openOwn = false;
-  (function levelFromLink() {
+  function levelFromLink() {
     const m = location.hash.match(/^#level=([A-Za-z0-9_-]{4,2000})$/);
-    if (!m || SHOW) return;
+    if (!m || SHOW) return false;
+    let ok = false;
     try {
       const d = JSON.parse(b64dec(m[1]));
-      if (HeroWorld.checkLevel(d.r).ok) { save.custom = { title: cleanTitle(d.t), rows: d.r }; openOwn = true; persist(); }
+      if (HeroWorld.checkLevel(d.r).ok) { save.custom = { title: cleanTitle(d.t), rows: d.r }; ok = true; persist(); }
     } catch (e) { /* битая ссылка — просто откроется игра */ }
     history.replaceState(null, '', location.href.split('#')[0]);
-  })();
+    return ok;
+  }
+  const openOwn = levelFromLink();
+  // Домашка по ссылке (#hw=id,id… или #task=id): список запоминается в save.hw, первое нерешённое задание открывается сразу
+  function findTask(id) {
+    for (let li = 0; li < LESSONS.length; li++) {
+      const t = [...LESSONS[li].tasks, ...(LESSONS[li].bonus || [])].find(x => x.id === id);
+      if (t) return { li, t };
+    }
+    return null;
+  }
+  function hwFromLink() {
+    const m = location.hash.match(/^#(?:hw|task)=([\w,-]{1,600})$/);
+    if (!m || SHOW) return false;
+    history.replaceState(null, '', location.href.split('#')[0]);
+    const ids = [...new Set(m[1].split(','))].filter(findTask).slice(0, 24);
+    if (!ids.length) return false;
+    save.hw = { ids, at: Date.now() };
+    persist();
+    return true;
+  }
+  const openHw = hwFromLink();
   const MAIN = () => LESSONS[lessonIdx].tasks;
   const solvedTask = t => !!(save.stars[t.id] || [])[0];
   const firstOpen = () => Math.max(0, MAIN().findIndex(t => !solvedTask(t)));
@@ -1200,7 +1221,7 @@
     const el = $('#coins');
     if (!t) { el.hidden = true; return; }
     el.hidden = false;
-    el.textContent = `Монеты: ${c} из ${t}`;
+    el.innerHTML = `<span class="c-word">Монеты: </span>${c} из ${t}`;
   }
 
   function starsHtml(n) { return [0, 1, 2].map(i => `<i class="${n[i] ? 'on' : ''}">★</i>`).join(''); }
@@ -1255,9 +1276,11 @@
         b.title = `Свой уровень «${t.title}»`;
         b.innerHTML = `<span class="num" aria-hidden="true">✎</span><span class="nm">${t.short}</span>`;
       } else b.innerHTML = `<span class="num">${i + 1}</span><span class="nm">${t.short}</span><span class="stars">${starsHtml(st)}</span>`;
+      if (save.hw && save.hw.ids && save.hw.ids.includes(t.id)) { b.classList.add('hwmark'); b.title = (b.title ? b.title + '. ' : '') + 'Задано на дом'; }
       b.addEventListener('click', () => { if (!running) selectTask(i); });
       nav.append(b);
     });
+    renderHw();
   }
 
   function hintsUsed() { return save.hints[TASKS[taskIdx].id] || 0; }
@@ -1686,7 +1709,15 @@
       : pro && outroPending ? 'Дальше' // впереди сцена со Сбоем — не выдаём её заранее
       : nextLesson ? `Урок ${lessonNo(lessonIdx + 1)}: ${nextLesson.title}` : 'К первому заданию';
     if (maps.length > 1) log('Все три карты пройдены.', 'ok');
+    // задание из домашки: «Дальше» ведёт к следующему нерешённому заданию домашки
+    hwNextId = null;
+    if (save.hw && save.hw.ids && save.hw.ids.includes(t.id)) {
+      const nx = nextHw(t.id);
+      if (nx) { hwNextId = nx.id; $('#nextBtn').textContent = `Домашка: ${nx.short}`; }
+      else log('Вся домашка готова! Её увидят на следующем занятии — звёзды сохранились.', 'ok');
+    }
   }
+  let hwNextId = null;
   function hideResult() { $('#result').hidden = true; }
   function plural(n, a, b, c) { const m10 = n % 10, m100 = n % 100; if (m10 === 1 && m100 !== 11) return a; if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return b; return c; }
 
@@ -1899,6 +1930,7 @@
   $('#nextBtn').addEventListener('click', () => {
     const next = () => {
       const t = TASKS[taskIdx];
+      if (hwNextId) { const id = hwNextId; hwNextId = null; goTask(id); return; }
       if (t.kind === 'warm') { const w = TASKS.findIndex(x => x.kind === 'warm' && !save.warm[x.id]); selectTask(w >= 0 ? w : firstOpen()); }
       else if (t.kind === 'custom') selectTask(firstOpen());
       else if (!t.kind && taskIdx < MAIN().length - 1) selectTask(taskIdx + 1);
@@ -2180,6 +2212,122 @@
     $('#editLvlBtn').addEventListener('click', () => { hideResult(); openEditor(); });
   })();
 
+  /* ---------- Домашка: полоска над заданием у ученика (что задано и что готово) и окно «Задать домашку» у репетитора ---------- */
+  const hwItems = () => (save.hw && save.hw.ids ? save.hw.ids.map(findTask).filter(Boolean) : []);
+  function renderHw() {
+    const box = $('#hw'), items = hwItems();
+    if (!items.length || SHOW) { box.hidden = true; return; }
+    const done = items.filter(x => solvedTask(x.t)).length, cur = TASKS[taskIdx], all = done === items.length;
+    box.hidden = false;
+    box.classList.toggle('done', all);
+    $('#hwTitle').textContent = all ? 'Домашка готова!' : 'Домашка';
+    $('#hwCount').textContent = `${done} из ${items.length}`;
+    $('#hwList').innerHTML = items.map(({ li, t }) => {
+      const n = LESSONS[li].tasks.indexOf(t), ok = solvedTask(t);
+      return `<button type="button" class="hw-item${ok ? ' ok' : ''}${cur && cur.id === t.id ? ' cur' : ''}" data-id="${t.id}" title="${esc(lessonName(li))}: ${esc(t.title)}">`
+        + `<i>${ok ? '✓' : n >= 0 ? n + 1 : '★'}</i>${esc(t.short)}</button>`;
+    }).join('');
+  }
+  // Открыть задание по id — в любом уроке; вступление урока покажется, если его ещё не видели
+  function goTask(id, withGreet = true) {
+    const f = findTask(id);
+    if (!f || running) return;
+    const other = f.li !== lessonIdx;
+    if (other) { lessonIdx = f.li; TASKS = lessonTasks(f.li); }
+    selectTask(TASKS.findIndex(t => t.id === id));
+    if (other && withGreet) greet();
+  }
+  // Следующее нерешённое задание домашки после текущего (по кругу)
+  function nextHw(fromId) {
+    const items = hwItems(), i = items.findIndex(x => x.t.id === fromId);
+    if (i < 0) return null;
+    for (let k = 1; k < items.length; k++) { const x = items[(i + k) % items.length]; if (!solvedTask(x.t)) return x.t; }
+    return null;
+  }
+  $('#hwList').addEventListener('click', e => { const b = e.target.closest('.hw-item'); if (b) goTask(b.dataset.id); });
+  $('#hwHide').addEventListener('click', () => { delete save.hw; persist(); renderTabs(); });
+
+  // Окно «Задать домашку»: по умолчанию — задания 5–8 текущего урока (из пролога — весь урок «Команды»)
+  let hwPick = new Set();
+  const hwBase = () => location.href.split(/[?#]/)[0];
+  function hwRanges(nums) { // [5,6,7,8,10] → «5–8, 10»
+    const out = [];
+    nums.forEach(n => { const r = out[out.length - 1]; if (r && n === r[1] + 1) r[1] = n; else out.push([n, n]); });
+    return out.map(([a, b]) => (a === b ? `${a}` : b === a + 1 ? `${a}, ${b}` : `${a}–${b}`)).join(', ');
+  }
+  function renderHwBuilder() {
+    $('#hwLessons').innerHTML = LESSONS.map((l, li) => {
+      const all = [...l.tasks, ...(l.bonus || [])], quick = l.tasks.length >= 8
+        ? `<button type="button" data-q="1-4" data-li="${li}">1–4</button><button type="button" data-q="5-8" data-li="${li}">5–8</button>` : '';
+      return `<div class="hw-lesson"><div class="hw-lesson-head">${esc(lessonName(li))}<span class="hw-quick">${quick}<button type="button" data-q="all" data-li="${li}">все</button><button type="button" data-q="none" data-li="${li}">снять</button></span></div>
+        <div class="hw-tasks">${all.map(t => {
+          const n = l.tasks.indexOf(t);
+          return `<label class="hw-check"><input type="checkbox" data-id="${t.id}"${hwPick.has(t.id) ? ' checked' : ''}>${n >= 0 ? n + 1 : '★'} · ${esc(t.short)}</label>`;
+        }).join('')}</div></div>`;
+    }).join('');
+    hwOutput();
+  }
+  function hwOutput() {
+    const ids = LESSONS.flatMap(l => [...l.tasks, ...(l.bonus || [])]).map(t => t.id).filter(id => hwPick.has(id)); // в порядке курса
+    const url = ids.length ? `${hwBase()}#hw=${ids.join(',')}` : '';
+    const parts = LESSONS.map((l, li) => {
+      const nums = l.tasks.map((t, i) => (hwPick.has(t.id) ? i + 1 : 0)).filter(Boolean), bonus = (l.bonus || []).some(t => hwPick.has(t.id));
+      if (!nums.length && !bonus) return '';
+      const name = l.prologue ? 'пролог' : `урок ${lessonNo(li)} «${l.title}»`;
+      const what = [nums.length ? `${plural(nums.length, 'задание', 'задания', 'задания')} ${hwRanges(nums)}` : '', bonus ? 'задание со звёздочкой' : ''].filter(Boolean).join(' и ');
+      return `${name}: ${what}`;
+    }).filter(Boolean);
+    $('#hwSum').textContent = ids.length ? `Выбрано: ${ids.length} ${plural(ids.length, 'задание', 'задания', 'заданий')}.` : 'Отметь хотя бы одно задание.';
+    $('#hwUrl').value = url;
+    $('#hwMsg').value = ids.length ? `Домашка по Python (Долина Эникей): ${parts.join('; ')}. Открой ссылку — задания откроются сразу: ${url}` : '';
+    $('#hwCopyMsg').disabled = $('#hwCopyUrl').disabled = !ids.length;
+  }
+  function openHwBuilder() {
+    $('#valley').hidden = true;
+    const li = LESSONS[lessonIdx].prologue && LESSONS[lessonIdx + 1] ? lessonIdx + 1 : lessonIdx, tasks = LESSONS[li].tasks;
+    hwPick = new Set((tasks.length >= 8 ? tasks.slice(4) : tasks).map(t => t.id));
+    renderHwBuilder();
+    $('#hwEd').hidden = false;
+    document.body.classList.add('recap-open');
+    const block = $('#hwLessons').children[li];
+    if (block) block.scrollIntoView({ block: 'nearest' });
+    $('#hwCopyMsg').focus({ preventScroll: true });
+  }
+  function closeHwBuilder() { $('#hwEd').hidden = true; document.body.classList.remove('recap-open'); }
+  async function copyField(sel, okText) {
+    const f = $(sel);
+    f.select();
+    try { await navigator.clipboard.writeText(f.value); $('#hwSum').textContent = okText; }
+    catch (e) { $('#hwSum').textContent = 'Скопируй текст из поля вручную: он уже выделен.'; }
+  }
+  $('#hwLessons').addEventListener('change', e => {
+    const c = e.target.closest('input[data-id]');
+    if (!c) return;
+    if (c.checked) hwPick.add(c.dataset.id); else hwPick.delete(c.dataset.id);
+    hwOutput();
+  });
+  $('#hwLessons').addEventListener('click', e => {
+    const b = e.target.closest('button[data-q]');
+    if (!b) return;
+    const l = LESSONS[+b.dataset.li], all = [...l.tasks, ...(l.bonus || [])], q = b.dataset.q;
+    all.forEach(t => hwPick.delete(t.id));
+    const on = q === 'all' ? all : q === '1-4' ? l.tasks.slice(0, 4) : q === '5-8' ? l.tasks.slice(4, 8) : [];
+    on.forEach(t => hwPick.add(t.id));
+    renderHwBuilder();
+  });
+  $('#hwCopyMsg').addEventListener('click', () => copyField('#hwMsg', 'Сообщение скопировано — вставь его в чат с учеником или родителем.'));
+  $('#hwCopyUrl').addEventListener('click', () => copyField('#hwUrl', 'Ссылка скопирована.'));
+  $('#valleyHw').addEventListener('click', openHwBuilder);
+  $('#hwEdClose').addEventListener('click', closeHwBuilder);
+  $('#hwEd').addEventListener('click', e => { if (e.target.id === 'hwEd') closeHwBuilder(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#hwEd').hidden) closeHwBuilder(); });
+  // Ссылку на уровень или домашку открыли, когда игра уже открыта (например, вставили в адресную строку)
+  addEventListener('hashchange', () => {
+    if (running || SHOW) return;
+    if (hwFromLink()) { const x = hwItems().find(y => !solvedTask(y.t)) || hwItems()[0]; goTask(x.t.id); log('Домашка обновлена: список — над заданием.', 'tip'); }
+    else if (levelFromLink()) { TASKS = lessonTasks(lessonIdx); selectTask(TASKS.findIndex(t => t.kind === 'custom')); }
+  });
+
   /* ---------- Итог пролога: карточка для ученика и родителя после пробного занятия ---------- */
   const PRO = LESSONS.findIndex(l => l.prologue);
   const solved = t => !!(save.stars[t.id] || [])[0];
@@ -2335,6 +2483,11 @@
   /* ---------- Старт ---------- */
   resize();
   selectTask(taskIdx);
+  if (openHw) { // домашка по ссылке — сразу первое нерешённое задание (вступление урока покажет заставка)
+    const items = hwItems(), first = items.find(x => !solvedTask(x.t)) || items[0];
+    goTask(first.t.id, false);
+    log(`Домашка от репетитора: ${items.length} ${plural(items.length, 'задание', 'задания', 'заданий')}. Список — над заданием, «Дальше» ведёт по нему.`, 'tip');
+  }
   if (openOwn) { // уровень по ссылке — сразу его вкладка
     const ci = TASKS.findIndex(t => t.kind === 'custom');
     if (ci >= 0) { selectTask(ci); log(`Тебе прислали уровень «${TASKS[ci].title}». Реши его!`, 'tip'); }
