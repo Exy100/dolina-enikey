@@ -347,14 +347,14 @@ const MiniPy = (() => {
       if (best && bd <= limit) {
         const v = hasVar(best) ? getVar(best) : builtins[best];
         const shown = isFn(v) ? v.name + '()' : best;
-        return new PyError(`Не знаю, что такое «${node.raw}». Может быть, ты имел в виду ${shown}?`, node.line);
+        return new PyError(`Не знаю, что такое «${node.raw}». Может быть, нужно ${shown}?`, node.line);
       }
       return new PyError(`Не знаю, что такое «${node.raw}». Проверь, нет ли опечатки.`, node.line);
     }
 
     function cond(node, v, where) {
       if (isFn(v)) {
-        throw new PyError(`В ${where} ты написал «${node.raw || v.name}» без скобок. Нужно так: ${v.name}()`, node.line);
+        throw new PyError(`В ${where} написано «${node.raw || v.name}» без скобок. Нужно так: ${v.name}()`, node.line);
       }
       return truthy(v);
     }

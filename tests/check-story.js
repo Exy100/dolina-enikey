@@ -3,6 +3,7 @@
 //  - реплики ссылаются на существующих персонажей и не слишком длинные — их читают вслух на занятии;
 //  - эффект реплики (третий элемент), если есть, описан в STORY.fx;
 //  - у урока-пролога прощание — сцена, где Сбой крадёт Ключ-код (эффекты key, sboy, steal по порядку);
+//  - тексты обращаются к ученику без мужского рода: не «ты прошёл», не «пиши сам» — учатся и мальчики, и девочки;
 //  - уровни идут по возрастанию, последний достижим звёздами курса (js/gear.js);
 //  - у вещей уникальные id, известные слоты, уровни в пределах списка, и каждая собирается в three.js.
 const fs = require('fs');
@@ -46,6 +47,24 @@ else {
 }
 Object.keys(STORY.lessons).forEach(id => {
   if (!W.LESSONS.some(l => l.id === id)) fail(`в js/story.js есть сюжет для несуществующего урока «${id}»`);
+});
+
+// Мужской род в обращении к ученику: «ты (не) сделал» и «сам» в текстах заданий.
+// Проверяем реплики, тексты уроков и строки с сообщениями в коде (комментарии пропускаем).
+const MASC = /(^|[^а-яё])ты\s+(?:[а-яё]+\s+)?[а-яё]+(?:л|лся)(?![а-яё])/i, SAM = /(^|[^а-яё])сам(?![а-яё])/i;
+const texts = [];
+[STORY.prologue, ...Object.values(STORY.lessons).flatMap(s => [s.intro, s.outro])].forEach(ls => (ls || []).forEach(([, t]) => texts.push(['сюжет', t, false])));
+W.LESSONS.forEach(l => {
+  texts.push([l.id, l.intro || '', true]);
+  l.tasks.forEach(t => [t.goal, t.news, ...t.hints.slice(0, 2)].forEach(x => texts.push([t.id, x || '', true])));
+});
+['world.js', 'minipy.js', 'app.js'].forEach(f => fs.readFileSync(path.join(__dirname, '../js', f), 'utf8').split('\n').forEach((line, i) => {
+  if (/^\s*(\/\/|\/\*|\*)/.test(line)) return;
+  texts.push([`${f}:${i + 1}`, line.replace(/\/\/.*$/, ''), false]);
+}));
+texts.forEach(([where, t, lessonText]) => {
+  const m = t.match(MASC) || (lessonText && t.match(SAM));
+  if (m) fail(`${where}: мужской род в обращении к ученику — «${m[0].trim()}». Перепиши нейтрально`);
 });
 
 const maxStars = W.LESSONS.reduce((n, l) => n + l.tasks.length * 3, 0);
