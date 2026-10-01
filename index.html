@@ -53,10 +53,14 @@
         <p class="goal" id="taskGoal"></p>
         <p class="new"><b>Новое:</b> <span id="taskNew"></span></p>
         <div class="chips" id="chips" aria-label="Команды для этого задания"></div>
+        <!-- Задание в консоли Python: как должно получиться (ввод и вывод первой проверки) -->
+        <div class="py-sample" id="pySample" hidden></div>
       </article>
 
       <div class="editor">
-        <div class="ed-bar"><span class="file">герой.py</span><button type="button" id="resetBtn">Вернуть исходный код</button></div>
+        <div class="ed-bar"><span class="file" id="edFile">герой.py</span><span class="ed-tools">
+          <button type="button" id="bigBtn" aria-pressed="false" title="Крупный шрифт — удобно показывать экран на занятии">A+</button>
+          <button type="button" id="resetBtn">Вернуть исходный код</button></span></div>
         <div class="ed-scroll" id="edScroll">
           <div class="ed-inner">
             <div class="gutter" id="gutter" aria-hidden="true"></div>
@@ -89,6 +93,23 @@
     </section>
 
     <section class="world" aria-label="Игровой мир">
+      <!-- Мост к Python: вместо мира — карточка «у Бита → в Python», план для репетитора и консоль (js/app.js, runConsole) -->
+      <div class="pyw" id="pyw" hidden>
+        <section class="bridge" aria-labelledby="brTitle">
+          <h3 id="brTitle">Мост к Python</h3>
+          <p id="brText"></p>
+          <div class="br-cols">
+            <div class="br-col"><span class="br-cap">У Бита</span><pre class="br-code" id="brBit"></pre></div>
+            <div class="br-arrow" aria-hidden="true">→</div>
+            <div class="br-col"><span class="br-cap">В обычном Python</span><pre class="br-code" id="brPy"></pre></div>
+          </div>
+          <details class="tutor" id="tutor"><summary>Для репетитора: план на 15 минут</summary><ol id="tutorList"></ol></details>
+        </section>
+        <div class="pyc" role="region" aria-label="Консоль Python">
+          <div class="pyc-bar"><span class="pyc-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>Консоль Python</span></div>
+          <pre class="pyc-out" id="pycOut" aria-live="polite"></pre>
+        </div>
+      </div>
       <div id="stage">
         <div class="bubble" id="bubble" aria-hidden="true"></div>
       </div>
@@ -352,6 +373,8 @@
 <script src="js/gear.js"></script>
 <!-- Достижения для страницы героя -->
 <script src="js/awards.js"></script>
+<!-- Мост к Python: консоль обычного Python в каждом уроке -->
+<script src="js/bridge.js"></script>
 <!-- Звуки: синтез в браузере, без файлов -->
 <script src="js/sound.js"></script>
 <!-- Интерфейс, 3D-сцена и анимации -->
