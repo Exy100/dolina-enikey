@@ -57,7 +57,7 @@
     const l = LESSONS[li];
     (l.bonus || []).forEach(t => { t.kind = 'bonus'; });
     const own = customTask();
-    return [...l.tasks, ...(l.bonus || []), ...(l.warmup || []).map(warmTask).filter(Boolean), ...(own ? [own] : [])];
+    return [...l.tasks, ...(l.bonus || []), ...(l.warmup || []).map(warmTask).filter(Boolean), ...HeroBridge.tasksOf(l.id), ...(own ? [own] : [])];
   }
   /* Свой уровень (редактор или ссылка #level=…) — вкладка «Свой уровень» в конце любого урока. Решение строит
      HeroWorld.checkLevel (для «Показать решение» и третьей звезды); звёзды за свои уровни в уровень Бита не идут */
@@ -101,7 +101,7 @@
   // Домашка по ссылке (#hw=id,id… или #task=id): список запоминается в save.hw, первое нерешённое задание открывается сразу
   function findTask(id) {
     for (let li = 0; li < LESSONS.length; li++) {
-      const t = [...LESSONS[li].tasks, ...(LESSONS[li].bonus || [])].find(x => x.id === id);
+      const t = [...LESSONS[li].tasks, ...(LESSONS[li].bonus || []), ...HeroBridge.tasksOf(LESSONS[li].id)].find(x => x.id === id);
       if (t) return { li, t };
     }
     return null;
@@ -118,7 +118,7 @@
   }
   const openHw = hwFromLink();
   const MAIN = () => LESSONS[lessonIdx].tasks;
-  const solvedTask = t => !!(save.stars[t.id] || [])[0];
+  const solvedTask = t => (t.kind === 'py' ? !!(save.py || {})[t.id] : !!(save.stars[t.id] || [])[0]); // в консоли звёзд нет — только «решено»
   const firstOpen = () => Math.max(0, MAIN().findIndex(t => !solvedTask(t)));
 
   /* ---------- Состояние ---------- */
@@ -1136,7 +1136,7 @@
       else if (num) out += `<span class="t-num">${num}</span>`;
       else if (KWS.includes(name)) out += `<span class="t-kw">${name}</span>`;
       else if (HERO_CMDS.includes(name)) out += `<span class="t-hero">${name}</span>`;
-      else if (['print', 'range', 'len', 'str', 'int', 'abs'].includes(name)) out += `<span class="t-fn">${name}</span>`;
+      else if (['print', 'input', 'range', 'len', 'str', 'int', 'abs'].includes(name)) out += `<span class="t-fn">${name}</span>`;
       else out += esc(name);
       lastI = off + m.length;
       return m;
@@ -1267,7 +1267,7 @@
     const nav = $('#tabs');
     nav.innerHTML = '';
     // порядок на вкладках: разминка, основные задания, задание со звёздочкой
-    const rank = t => ({ warm: 0, bonus: 2, custom: 3 }[t.kind] ?? 1);
+    const rank = t => ({ warm: 0, bonus: 2, py: 2.5, custom: 3 }[t.kind] ?? 1);
     [...TASKS.keys()].sort((a, b) => rank(TASKS[a]) - rank(TASKS[b]) || a - b).forEach(i => {
       const t = TASKS[i], b = document.createElement('button');
       b.type = 'button';
@@ -1281,6 +1281,11 @@
       } else if (t.kind === 'bonus') {
         b.title = 'Задание со звёздочкой — для тех, кто решил урок быстро';
         b.innerHTML = `<span class="num" aria-hidden="true">★</span><span class="nm">${t.short}</span><span class="stars">${starsHtml(st)}</span>`;
+      } else if (t.kind === 'py') {
+        const k = TASKS.filter(x => x.kind === 'py').indexOf(t) + 1, ok = solvedTask(t);
+        b.title = `Python в консоли: ${t.title}`;
+        b.setAttribute('aria-label', `Python, задание ${k}: ${t.title}${ok ? ', решено' : ''}`);
+        b.innerHTML = `<span class="num" aria-hidden="true">›_</span><span class="nm">${k}</span>${ok ? '<span class="tick" aria-hidden="true">✓</span>' : ''}`;
       } else if (t.kind === 'custom') {
         b.title = `Свой уровень «${t.title}»`;
         b.innerHTML = `<span class="num" aria-hidden="true">✎</span><span class="nm">${t.short}</span>`;
@@ -1327,14 +1332,18 @@
     hideVars();
     taskIdx = i;
     save.lesson = LESSONS[lessonIdx].id;
-    const t = TASKS[i];
+    const t = TASKS[i], py = t.kind === 'py';
     if (!t.kind) save.pos[save.lesson] = i; // номер запоминаем только у основных заданий
-    if (!save.seeds[t.id]) save.seeds[t.id] = 1000 + Math.floor(Math.random() * 90000);
-    maps = makeMaps(t, save.seeds[t.id]);
+    if (py) maps = []; // в консоли Python карт нет — вместо мира консоль
+    else {
+      if (!save.seeds[t.id]) save.seeds[t.id] = 1000 + Math.floor(Math.random() * 90000);
+      maps = makeMaps(t, save.seeds[t.id]);
+    }
     persist();
-    const place = lessonStory().place || lessonName(lessonIdx);
+    const place = lessonStory().place || lessonName(lessonIdx), pys = TASKS.filter(x => x.kind === 'py');
     $('#taskNum').textContent = t.kind === 'custom' ? 'Свой уровень · нарисован в редакторе'
       : t.kind === 'warm' ? `Разминка · задание из урока «${LESSONS[t.from].title}»`
+      : py ? `${place} · Python в консоли · ${pys.indexOf(t) + 1} из ${pys.length}`
       : t.kind === 'bonus' ? `${place} · задание со звёздочкой` : `${place} · задание ${i + 1} из ${MAIN().length}`;
     $('#taskTitle').textContent = t.title;
     $('#taskGoal').textContent = t.goal;
@@ -1354,6 +1363,11 @@
     renderHints();
     hideResult();
     clearLog();
+    showConsole(py ? t : null);
+    if (py) {
+      log('Консоль Python: Бита здесь нет — программа печатает текст и спрашивает ввод. «Запуск» запустит её, а потом проверит на нескольких вводах.', 'tip');
+      return;
+    }
     if (t.kind === 'custom') log('Свой уровень. Изменить карту или получить ссылку — на карте долины, кнопка «Свой уровень».', 'tip');
     else if (t.kind === 'warm') log('Разминка: реши с нуля задание из прошлого урока, на свежей карте. Звёзд за неё нет — это проверка, что тема не забылась.', 'tip');
     else if (t.kind === 'bonus') log('Задание со звёздочкой: необязательное и потруднее. Звёзды за него идут в уровень Бита.', 'tip');
@@ -1395,6 +1409,7 @@
     runToken++;
     stepMode = false;
     if (stepResolve) { stepResolve(); stepResolve = null; }
+    if (pyCancel) pyCancel(); // консоль ждала ввод
     for (const tw of [...tweens]) { tweens.delete(tw); tw.res(); }
     setRunning(false);
   }
@@ -1449,12 +1464,14 @@
       varsPrev.set(key, val);
       return `<span class="var ${cls}${changed ? ' changed' : ''}"><b>${esc(name)}</b> = ${esc(val)}</span>`;
     };
-    const en = st.level.english;
-    const bit = [`<span class="var bit">Бит смотрит <b>${ARROW[st.hero.dir]}</b></span>`];
-    if (st.total) bit.push(chip('bit', `${en ? 'coins_taken' : 'монет_собрано'}()`, String(st.collected), '#coins'));
+    const bit = [];
+    if (st) { // в консоли Python Бита нет
+      bit.push(`<span class="var bit">Бит смотрит <b>${ARROW[st.hero.dir]}</b></span>`);
+      if (st.total) bit.push(chip('bit', `${st.level.english ? 'coins_taken' : 'монет_собрано'}()`, String(st.collected), '#coins'));
+    }
     varsBox.innerHTML = `<span class="vars-cap">Переменные</span>${items.length
       ? items.map(([c, k, v]) => chip(c, (c ? '↳ ' : '') + k, v, c + k)).join('')
-      : '<span class="vars-none">пока нет</span>'}<span class="vars-sep" aria-hidden="true"></span>${bit.join('')}`;
+      : '<span class="vars-none">пока нет</span>'}${bit.length ? `<span class="vars-sep" aria-hidden="true"></span>${bit.join('')}` : ''}`;
     varsBox.hidden = false;
   }
   function hideVars() { varsBox.hidden = true; varsPrev = new Map(); }
@@ -1566,6 +1583,7 @@
       if (stepMode) { stepMode = false; setRunning(true); if (stepResolve) stepResolve(); }
       return;
     }
+    if (isPy()) { runPy(); return; }
     const code = ta.value;
     cancelGuess();
     clearLog(); hideResult(); markLine(null);
@@ -1610,6 +1628,7 @@
   async function stepRun() {
     if (running && stepMode) { if (stepResolve) stepResolve(); return; }
     if (running) return;
+    if (isPy()) { stepPy(); return; }
     const code = ta.value;
     cancelGuess();
     clearLog(); hideResult(); markLine(null);
@@ -1633,6 +1652,188 @@
         : 'Получилось! Нажми «Запуск», чтобы засчитать задание.', 'ok');
     }
     else { markFail(r.st); reportError(r.err, 0, '', true, r.st); }
+  }
+
+  /* ---------- Мост к Python: консоль обычного Python вместо мира (js/bridge.js). Программа печатает (print)
+     и спрашивает (input); «Запуск» — сначала вживую, ответы печатают прямо в консоли, потом тихая проверка
+     на нескольких вводах (HeroBridge.check) — как код Бита на трёх картах ---------- */
+  const isPy = () => !!TASKS[taskIdx] && TASKS[taskIdx].kind === 'py';
+  const pycOut = $('#pycOut');
+  let pyCancel = null; // отменить ожидание ввода: «Стоп», другое задание
+  function pyWrite(text, cls) {
+    const span = document.createElement('span');
+    if (cls) span.className = cls;
+    span.textContent = text;
+    pycOut.append(span);
+    pycOut.scrollTop = pycOut.scrollHeight;
+  }
+  const pyClear = () => { pycOut.textContent = ''; };
+  function showConsole(t) {
+    const on = !!t;
+    $('.world').classList.toggle('py', on);
+    $('#pyw').hidden = !on;
+    $('#pySample').hidden = !on;
+    $('#guessBtn').hidden = on;
+    $('#edFile').textContent = on ? 'main.py' : 'герой.py';
+    if (!on) return;
+    const b = HeroBridge.LESSONS[t.lesson] || {}, L = LESSONS.find(l => l.id === t.lesson);
+    $('#brTitle').textContent = `Мост к Python${L && L.topic ? `: ${L.topic.name.toLowerCase()}` : ''}`;
+    $('#brText').textContent = b.text || '';
+    $('#brBit').innerHTML = highlight(b.bit || '').replace(/\n $/, '');
+    $('#brPy').innerHTML = highlight(b.py || '').replace(/\n $/, '');
+    $('#tutorList').innerHTML = (b.tutor || []).map(x => `<li>${esc(x)}</li>`).join('');
+    // как должно получиться: ввод и вывод первой проверки
+    const test = t.tests[0], shown = HeroBridge.expected(t, 0).replace(/\n+$/, '');
+    $('#pySample').innerHTML = '<span class="cap">Как должно получиться</span><div class="ps-io">'
+      + (test.in && test.in.length ? `<div><b>Ввод</b><pre>${esc(test.in.join('\n'))}</pre></div>` : '')
+      + `<div><b>Вывод</b><pre>${esc(shown)}</pre></div></div>`
+      + (t.tests.length > 1 ? '<p class="ps-more">Программу проверят и на других вводах — как код Бита на трёх картах.</p>' : '');
+    $('#againBtn').hidden = true;
+    pyClear();
+    pyWrite('Python 3 · консоль Долины\nНажми «Запуск» — здесь появится то, что напечатает программа.\n', 'pyc-hello');
+  }
+  // Ответ на input(): поле прямо в консоли, Enter — отправить. null — запуск остановили
+  function pyAsk(prompt) {
+    if (prompt) pyWrite(prompt);
+    return new Promise(res => {
+      const inp = document.createElement('input');
+      inp.className = 'pyc-in';
+      inp.type = 'text';
+      inp.autocomplete = 'off';
+      inp.spellcheck = false;
+      inp.placeholder = 'ответ и Enter';
+      inp.setAttribute('aria-label', prompt.trim() ? `Ответ: ${prompt.trim()}` : 'Ввод для программы');
+      pycOut.append(inp);
+      pycOut.scrollTop = pycOut.scrollHeight;
+      inp.focus(); // с прокруткой: на телефоне консоль выше кнопки «Запуск»
+      const done = v => {
+        pyCancel = null;
+        inp.remove();
+        if (v !== null) pyWrite(v + '\n', 'pyc-typed');
+        res(v);
+      };
+      inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); done(inp.value); } });
+      pyCancel = () => done(null);
+    });
+  }
+  // Живой прогон: печать в консоль, ввод с клавиатуры, подсветка строк (первые 150 — с паузой, дальше быстро)
+  async function runConsole(code, token) {
+    pyClear();
+    $('.pyc').scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' }); // на телефоне консоль выше кода
+    varsPrev = new Map();
+    const g = MiniPy.execute(code, MiniPy.stdlib({ console: true }), { maxSteps: 6000 });
+    let send, lines = 0;
+    for (;;) {
+      if (token !== runToken) return { aborted: true };
+      let r;
+      try { r = g.next(send); } catch (e) { return { ok: false, err: e }; }
+      send = undefined;
+      if (r.done) return { ok: true };
+      const ev = r.value;
+      if (ev.type === 'line') {
+        lines++;
+        showVars(ev, null);
+        if (stepMode) {
+          markLine(ev.line);
+          await new Promise(res => { stepResolve = res; });
+          stepResolve = null;
+        } else if (lines <= 150) {
+          markLine(ev.line);
+          await wait(110);
+        }
+      } else if (ev.type === 'print') {
+        pyWrite(ev.text + ev.end);
+        Sound.play('type');
+      } else if (ev.type === 'input') {
+        const v = await pyAsk(ev.prompt);
+        if (v === null || token !== runToken) return { aborted: true };
+        send = v;
+      }
+    }
+  }
+  function pyError(err) {
+    reportError(err, 0);
+    pyWrite(`\n${err.line ? `Ошибка в строке ${err.line}: ` : 'Ошибка: '}${err.message}\n`, 'pyc-err');
+  }
+  const fmtIn = a => a.map(v => `«${v}»`).join(', ');
+  // Проверка не прошла: на каком вводе и какая строка вывода не та
+  function pyFail(t, c) {
+    Sound.play('fail');
+    if (c.use) { log(c.use, 'err'); return; }
+    const where = c.test.in && c.test.in.length ? `на вводе ${fmtIn(c.test.in)} ` : '';
+    const cap = x => x[0].toUpperCase() + x.slice(1);
+    if (c.err) {
+      if (c.err.line) markLine(c.err.line, 'err');
+      log(cap(`${where}программа сломалась: ${c.err.message}`), 'err', c.err.line || null);
+      return;
+    }
+    const msg = c.got === undefined ? `${where}программа напечатала меньше строк, чем нужно: нет строки ${c.line} «${c.want}».`
+      : c.want === undefined ? `${where}программа напечатала лишнюю строку ${c.line}: «${c.got}».`
+      : `${where}строка ${c.line} должна быть «${c.want}», а программа напечатала «${c.got}».`;
+    log(cap(msg) + (c.unused > 0 ? ` Программа спросила не все ответы: ${c.unused} ${plural(c.unused, 'остался', 'осталось', 'осталось')}.` : ''), 'err');
+    if (t.tests.length > 1 && c.j > 0) log('На первом вводе всё верно, а на этом — нет. Программа должна работать для любого ввода: проверь условия и границы цикла.', 'tip');
+  }
+  async function runPy() {
+    const t = TASKS[taskIdx], code = ta.value;
+    clearLog(); hideResult(); markLine(null);
+    try { MiniPy.parse(code); } catch (e) { pyClear(); pyError(e); return; }
+    markDay();
+    const token = ++runToken;
+    stepMode = false;
+    setRunning(true);
+    const r = await runConsole(code, token);
+    if (r.aborted || token !== runToken) return;
+    markLine(null);
+    if (!r.ok) { setRunning(false); pyError(r.err); return; }
+    pyWrite('\n— программа закончилась —\n', 'pyc-end');
+    log(t.tests.length > 1 ? `Проверка на ${t.tests.length} вводах…` : 'Проверка…', 'map');
+    await wait(350);
+    if (token !== runToken) return;
+    const c = HeroBridge.check(t, code);
+    setRunning(false);
+    if (!c.ok) { pyFail(t, c); return; }
+    if (t.tests.length > 1) t.tests.forEach((x, j) => log(`Ввод ${fmtIn(x.in || [])} — верно.`, 'ok'));
+    else log('Вывод совпал с нужным.', 'ok');
+    finishPy(t);
+  }
+  async function stepPy() {
+    const code = ta.value;
+    clearLog(); hideResult(); markLine(null);
+    try { MiniPy.parse(code); } catch (e) { pyClear(); pyError(e); return; }
+    const token = ++runToken;
+    stepMode = true;
+    setRunning(true);
+    log('Пошаговый режим. Нажимай «Шаг», чтобы выполнить следующую строку, — напечатанное появится в консоли.', 'map');
+    const r = await runConsole(code, token);
+    if (r.aborted || token !== runToken) return;
+    stepMode = false;
+    setRunning(false);
+    markLine(null);
+    if (r.ok) {
+      pyWrite('\n— программа закончилась —\n', 'pyc-end');
+      log('Программа закончилась. Нажми «Запуск», чтобы проверить её на всех вводах.', 'ok');
+    } else pyError(r.err);
+  }
+  // Задание в консоли решено: без звёзд — отметка на вкладке; «Дальше» — следующее задание в консоли или урок
+  function finishPy(t) {
+    save.py = save.py || {};
+    save.py[t.id] = 1;
+    outroPending = false;
+    persist();
+    renderTabs();
+    const nx = TASKS.find(x => x.kind === 'py' && !solvedTask(x)), fo = firstOpen();
+    $('#resStars').innerHTML = '<i class="on py">›_</i>';
+    $('#resTitle').textContent = 'Программа работает!';
+    $('#resLevel').hidden = true;
+    $('#resList').innerHTML = `<li class="on">${t.tests.length > 1 ? `Проверено на ${t.tests.length} вводах` : 'Вывод совпал с нужным'}</li>`
+      + `<li class="${hintsUsed() ? '' : 'on'}">Без подсказок</li><li>Этот код работает и в обычном Python — например, в Thonny</li>`;
+    $('#nextBtn').textContent = nx ? `Python: ${nx.short}` : `К заданиям урока: ${MAIN()[fo].short}`;
+    $('#bonusBtn').hidden = true;
+    $('#againBtn').hidden = true;
+    $('#editLvlBtn').hidden = true;
+    $('#result').hidden = false;
+    Sound.play('right');
+    afterSolve(t);
   }
 
   // строки кода без пустых и комментариев
@@ -1722,14 +1923,17 @@
       : pro && outroPending ? 'Дальше' // впереди сцена со Сбоем — не выдаём её заранее
       : nextLesson ? `Урок ${lessonNo(lessonIdx + 1)}: ${nextLesson.title}` : 'К первому заданию';
     if (maps.length > 1) log('Все три карты пройдены.', 'ok');
-    // задание из домашки: «Дальше» ведёт к следующему нерешённому заданию домашки
+    afterSolve(t);
+  }
+  // После решения: задание из домашки — «Дальше» ведёт к следующему нерешённому; новые достижения и кристаллы — строкой в карточке
+  function afterSolve(t) {
     hwNextId = null;
     if (save.hw && save.hw.ids && save.hw.ids.includes(t.id)) {
       const nx = nextHw(t.id);
       if (nx) { hwNextId = nx.id; $('#nextBtn').textContent = `Домашка: ${nx.short}`; }
       else {
         if (!save.hw.done) { save.hw.done = 1; save.hwDone = (save.hwDone || 0) + 1; persist(); }
-        log('Вся домашка готова! Её увидят на следующем занятии — звёзды сохранились.', 'ok');
+        log('Вся домашка готова! Её увидят на следующем занятии — всё сохранилось.', 'ok');
       }
     }
     // новые достижения и кристаллы — ещё и строкой в карточке результата
@@ -1903,6 +2107,14 @@
   }
 
   /* ---------- Кнопки ---------- */
+  // Крупный шрифт (кнопка A+ над кодом): удобно показывать экран на занятии
+  function applyBig() {
+    document.body.classList.toggle('big', !!save.big);
+    $('#bigBtn').setAttribute('aria-pressed', String(!!save.big));
+    markLine(markedLine, markedKind); // полоса подсветки строки — под новый размер
+  }
+  $('#bigBtn').addEventListener('click', () => { save.big = !save.big; persist(); applyBig(); });
+  if (!SHOW) applyBig();
   $('#runBtn').addEventListener('click', runAll);
   $('#stepBtn').addEventListener('click', stepRun);
   $('#guessBtn').addEventListener('click', startGuess);
@@ -1915,7 +2127,10 @@
     const i = ['1', '2', '3'].indexOf(e.key) >= 0 ? ['1', '2', '3'].indexOf(e.key) : LETTERS.indexOf(e.key.toUpperCase());
     if (i >= 0 && guess && guess.options[i]) { e.preventDefault(); chooseGuess(i); }
   });
-  $('#stopBtn').addEventListener('click', () => { stopRun(); cancelGuess(); markLine(null); log('Остановлено.', 'info'); showMap(mapIdx); });
+  $('#stopBtn').addEventListener('click', () => {
+    stopRun(); cancelGuess(); markLine(null); log('Остановлено.', 'info');
+    if (isPy()) pyWrite('\n— остановлено —\n', 'pyc-end'); else showMap(mapIdx);
+  });
   $('#speed').addEventListener('input', e => { speed = parseFloat(e.target.value); $('#speedVal').textContent = speed.toFixed(1).replace('.', ',') + '×'; });
   $('#topBtn').addEventListener('click', () => {
     cam.top = !cam.top; fitCamera();
@@ -1958,6 +2173,7 @@
       if (hwNextId) { const id = hwNextId; hwNextId = null; goTask(id); return; }
       if (t.kind === 'warm') { const w = TASKS.findIndex(x => x.kind === 'warm' && !save.warm[x.id]); selectTask(w >= 0 ? w : firstOpen()); }
       else if (t.kind === 'custom') selectTask(firstOpen());
+      else if (t.kind === 'py') { const nx = TASKS.findIndex(x => x.kind === 'py' && !solvedTask(x)); selectTask(nx >= 0 ? nx : firstOpen()); }
       else if (!t.kind && taskIdx < MAIN().length - 1) selectTask(taskIdx + 1);
       else if (LESSONS[lessonIdx + 1]) { selectLesson(lessonIdx + 1); greet(); }
       else selectTask(0);
@@ -2003,6 +2219,7 @@
       k: won.reduce((n, t) => n + codeLines(save.code[t.id] ?? t.hints[2]).length, 0),
       p: [save.predict.hits || 0, save.predict.tries || 0, save.predict.best || 0],
       q: Object.keys(save.guessed || {}).length, // задания с верной догадкой — за них кристаллы
+      y: Object.keys(save.py || {}).filter(id => HeroBridge.find(id)).length, // решено в консоли Python
       b: HeroGear.SHOP.filter(isOpen).map(it => it.id), // куплено в лавке Ады
       c: lt ? [lt.id, clipCode(save.code[lt.id] ?? lt.hints[2])] : null,
       at: Date.now(),
@@ -2026,7 +2243,7 @@
       first: D.f, noHints: flat.filter(x => x.st[1]).length, short: flat.filter(x => x.st[2]).length,
       fixes: flat.filter(x => x.st[0] && FIX_IDS.has(x.t.id)).length, streak: D.p[2], bonus: per.reduce((n, p) => n + p.bonus, 0),
       warm: D.w, hw: D.h, built: D.u, days: D.d, lines: D.k, perfect: per.filter(p => p.perfect).length,
-      lessons: per.filter(p => p.done && !p.l.prologue).length, course: per.every(p => p.done) ? 1 : 0, guessed: D.q,
+      lessons: per.filter(p => p.done && !p.l.prologue).length, course: per.every(p => p.done) ? 1 : 0, guessed: D.q, py: D.y || 0,
     };
     // кристаллы: заработано всего (js/awards.js) минус потрачено в лавке Ады
     const earned = HeroAwards.gemsEarned(A), spent = D.b.reduce((n, id) => n + (HeroGear.SHOP.find(it => it.id === id) || {}).price, 0);
@@ -2041,7 +2258,7 @@
     const D = {
       v: 1, n: cleanName(d.n), r: Math.min(int(d.r), LESSONS.length - 1), g: {}, t: typeof d.t === 'string' ? d.t.slice(0, 20) : '', s,
       f: int(d.f), w: int(d.w), h: int(d.h), u: int(d.u, 1), d: int(d.d), k: int(d.k), p: [0, 1, 2].map(i => int((d.p || [])[i])),
-      q: int(d.q), b: Array.isArray(d.b) ? HeroGear.SHOP.filter(it => d.b.includes(it.id)).map(it => it.id) : [],
+      q: int(d.q), y: int(d.y), b: Array.isArray(d.b) ? HeroGear.SHOP.filter(it => d.b.includes(it.id)).map(it => it.id) : [],
       c: null, at: int(d.at, 4102444800000) || Date.now(),
     };
     const lvl = heroSummary(D).level;
@@ -2849,9 +3066,9 @@
     $('#hwTitle').textContent = all ? 'Домашка готова!' : 'Домашка';
     $('#hwCount').textContent = `${done} из ${items.length}`;
     $('#hwList').innerHTML = items.map(({ li, t }) => {
-      const n = LESSONS[li].tasks.indexOf(t), ok = solvedTask(t);
+      const n = LESSONS[li].tasks.indexOf(t), ok = solvedTask(t), mark = t.kind === 'py' ? '›_' : n >= 0 ? n + 1 : '★';
       return `<button type="button" class="hw-item${ok ? ' ok' : ''}${cur && cur.id === t.id ? ' cur' : ''}" data-id="${t.id}" title="${esc(lessonName(li))}: ${esc(t.title)}">`
-        + `<i>${ok ? '✓' : n >= 0 ? n + 1 : '★'}</i>${esc(t.short)}</button>`;
+        + `<i>${ok ? '✓' : mark}</i>${esc(t.short)}</button>`;
     }).join('');
   }
   // Открыть задание по id — в любом уроке; вступление урока покажется, если его ещё не видели
@@ -2883,24 +3100,28 @@
   }
   function renderHwBuilder() {
     $('#hwLessons').innerHTML = LESSONS.map((l, li) => {
-      const all = [...l.tasks, ...(l.bonus || [])], quick = l.tasks.length >= 8
-        ? `<button type="button" data-q="1-4" data-li="${li}">1–4</button><button type="button" data-q="5-8" data-li="${li}">5–8</button>` : '';
+      const pys = HeroBridge.tasksOf(l.id), all = [...l.tasks, ...(l.bonus || []), ...pys], quick = (l.tasks.length >= 8
+        ? `<button type="button" data-q="1-4" data-li="${li}">1–4</button><button type="button" data-q="5-8" data-li="${li}">5–8</button>` : '')
+        + (pys.length ? `<button type="button" data-q="py" data-li="${li}">Python</button>` : '');
       return `<div class="hw-lesson"><div class="hw-lesson-head">${esc(lessonName(li))}<span class="hw-quick">${quick}<button type="button" data-q="all" data-li="${li}">все</button><button type="button" data-q="none" data-li="${li}">снять</button></span></div>
         <div class="hw-tasks">${all.map(t => {
-          const n = l.tasks.indexOf(t);
-          return `<label class="hw-check"><input type="checkbox" data-id="${t.id}"${hwPick.has(t.id) ? ' checked' : ''}>${n >= 0 ? n + 1 : '★'} · ${esc(t.short)}</label>`;
+          const n = l.tasks.indexOf(t), mark = t.kind === 'py' ? `›_${pys.indexOf(t) + 1}` : n >= 0 ? n + 1 : '★';
+          return `<label class="hw-check${t.kind === 'py' ? ' py' : ''}"><input type="checkbox" data-id="${t.id}"${hwPick.has(t.id) ? ' checked' : ''}>${mark} · ${esc(t.short)}</label>`;
         }).join('')}</div></div>`;
     }).join('');
     hwOutput();
   }
   function hwOutput() {
-    const ids = LESSONS.flatMap(l => [...l.tasks, ...(l.bonus || [])]).map(t => t.id).filter(id => hwPick.has(id)); // в порядке курса
+    const ids = LESSONS.flatMap(l => [...l.tasks, ...(l.bonus || []), ...HeroBridge.tasksOf(l.id)]).map(t => t.id).filter(id => hwPick.has(id)); // в порядке курса
     const url = ids.length ? `${hwBase()}#hw=${ids.join(',')}` : '';
     const parts = LESSONS.map((l, li) => {
       const nums = l.tasks.map((t, i) => (hwPick.has(t.id) ? i + 1 : 0)).filter(Boolean), bonus = (l.bonus || []).some(t => hwPick.has(t.id));
-      if (!nums.length && !bonus) return '';
+      const pyNums = HeroBridge.tasksOf(l.id).map((t, i) => (hwPick.has(t.id) ? i + 1 : 0)).filter(Boolean);
+      if (!nums.length && !bonus && !pyNums.length) return '';
       const name = l.prologue ? 'пролог' : `урок ${lessonNo(li)} «${l.title}»`;
-      const what = [nums.length ? `${plural(nums.length, 'задание', 'задания', 'задания')} ${hwRanges(nums)}` : '', bonus ? 'задание со звёздочкой' : ''].filter(Boolean).join(' и ');
+      const items = [nums.length ? `${plural(nums.length, 'задание', 'задания', 'задания')} ${hwRanges(nums)}` : '', bonus ? 'задание со звёздочкой' : '',
+        pyNums.length ? `Python в консоли ${hwRanges(pyNums)}` : ''].filter(Boolean);
+      const what = items.length > 1 ? `${items.slice(0, -1).join(', ')} и ${items[items.length - 1]}` : items[0];
       return `${name}: ${what}`;
     }).filter(Boolean);
     $('#hwSum').textContent = ids.length ? `Выбрано: ${ids.length} ${plural(ids.length, 'задание', 'задания', 'заданий')}.` : 'Отметь хотя бы одно задание.';
@@ -2935,9 +3156,10 @@
   $('#hwLessons').addEventListener('click', e => {
     const b = e.target.closest('button[data-q]');
     if (!b) return;
-    const l = LESSONS[+b.dataset.li], all = [...l.tasks, ...(l.bonus || [])], q = b.dataset.q;
-    all.forEach(t => hwPick.delete(t.id));
-    const on = q === 'all' ? all : q === '1-4' ? l.tasks.slice(0, 4) : q === '5-8' ? l.tasks.slice(4, 8) : [];
+    const l = LESSONS[+b.dataset.li], pys = HeroBridge.tasksOf(l.id), all = [...l.tasks, ...(l.bonus || []), ...pys], q = b.dataset.q;
+    // быстрые кнопки заданий Бита не трогают отмеченное в консоли, и наоборот: «5–8» + «Python» — обычная домашка
+    (q === 'all' || q === 'none' ? all : q === 'py' ? pys : [...l.tasks, ...(l.bonus || [])]).forEach(t => hwPick.delete(t.id));
+    const on = q === 'all' ? all : q === '1-4' ? l.tasks.slice(0, 4) : q === '5-8' ? l.tasks.slice(4, 8) : q === 'py' ? pys : [];
     on.forEach(t => hwPick.add(t.id));
     renderHwBuilder();
   });

@@ -59,11 +59,17 @@ const MASC = /(^|[^а-яё])ты\s+(?:[а-яё]+\s+)?[а-яё]+(?:л|лся)(?![
 const texts = [];
 [STORY.prologue, ...Object.values(STORY.lessons).flatMap(s => [s.intro, s.outro])].forEach(ls => (ls || []).forEach(([, t]) => texts.push(['сюжет', t, false])));
 AW.LIST.forEach(a => [a.name, a.desc].forEach(x => texts.push([`достижение ${a.id}`, x || '', true])));
+// мост к Python: карточка урока, план репетитора и задания в консоли
+const BR = require('../js/bridge.js');
+Object.entries(BR.LESSONS).forEach(([id, b]) => {
+  [b.text, ...(b.tutor || [])].forEach(x => texts.push([`мост ${id}`, x || '', true]));
+  b.tasks.forEach(t => [t.goal, t.news, ...t.hints.slice(0, 2)].forEach(x => texts.push([t.id, x || '', true])));
+});
 W.LESSONS.forEach(l => {
   texts.push([l.id, l.intro || '', true]);
   l.tasks.forEach(t => [t.goal, t.news, ...t.hints.slice(0, 2)].forEach(x => texts.push([t.id, x || '', true])));
 });
-['world.js', 'minipy.js', 'app.js'].forEach(f => fs.readFileSync(path.join(__dirname, '../js', f), 'utf8').split('\n').forEach((line, i) => {
+['world.js', 'minipy.js', 'app.js', 'bridge.js'].forEach(f => fs.readFileSync(path.join(__dirname, '../js', f), 'utf8').split('\n').forEach((line, i) => {
   if (/^\s*(\/\/|\/\*|\*)/.test(line)) return;
   texts.push([`${f}:${i + 1}`, line.replace(/\/\/.*$/, ''), false]);
 }));
@@ -116,6 +122,7 @@ const reach = {
   warm: new Set(W.LESSONS.flatMap(l => l.warmup || [])).size,
   lessons: W.LESSONS.filter(l => !l.prologue).length, perfect: W.LESSONS.length,
   prolog: 1, course: 1, hw: Infinity, built: 1, days: Infinity, lines: Infinity, streak: Infinity,
+  py: Object.values(require('../js/bridge.js').LESSONS).reduce((n, b) => n + b.tasks.length, 0),
 };
 const HUES = ['violet', 'mint', 'gold', 'coral', 'sky', 'pink'];
 const aIds = new Set();

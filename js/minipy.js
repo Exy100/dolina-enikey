@@ -57,8 +57,12 @@ const MiniPy = (() => {
         reName.lastIndex = p;
         if ((m = reName.exec(line))) {
           const v = m[0];
+          if (/^[fF]$/.test(v) && (line[p + 1] === '"' || line[p + 1] === "'"))
+            throw new PyError('f-строки здесь пока не работают. Пиши через запятую: print("Привет,", name)', ln);
           toks.push({ t: KW.has(v) ? 'KW' : 'NAME', v, line: ln }); p += v.length; continue;
         }
+        if (ch === '.')
+          throw new PyError('Методы через точку, например .upper() или .append(), здесь пока не работают. Обойдись без них: текст склеивают через +.', ln);
         const op = ops.find(o => line.startsWith(o, p));
         if (op) {
           if (op === '(' || op === '[') depth++;
@@ -244,12 +248,21 @@ const MiniPy = (() => {
       let e = atom();
       while (is('OP', '(')) {
         const t = next();
-        const args = [];
+        const args = [], kw = [];
         if (!is('OP', ')')) {
-          do { args.push(expr()); } while (accept('OP', ','));
+          do {
+            // именованный параметр: print(i, end=" ")
+            if (is('NAME') && toks[i + 1].t === 'OP' && toks[i + 1].v === '=') {
+              const nm = next(); next();
+              kw.push({ name: nm.v, value: expr(), line: nm.line });
+            } else {
+              if (kw.length) throw new PyError('Именованные значения (вроде end=" ") пишут в скобках последними.', peek().line);
+              args.push(expr());
+            }
+          } while (accept('OP', ','));
         }
         if (!accept('OP', ')')) throw new PyError('Не хватает закрывающей скобки «)».', t.line);
-        e = { k: 'Call', fn: e, args, line: t.line };
+        e = { k: 'Call', fn: e, args, kw, line: t.line };
       }
       return e;
     }
@@ -404,9 +417,13 @@ const MiniPy = (() => {
         }
         case 'Call': {
           const f = yield* ev(node.fn);
-          const args = [];
+          const args = [], kw = {};
           for (const a of node.args) args.push(yield* ev(a));
           if (!isFn(f)) throw new PyError(`«${repr(f)}» — это ${typeName(f)}, а не команда. Скобки после него не нужны.`, node.line);
+          for (const k of node.kw || []) {
+            if (!(f.kw || []).includes(k.name)) throw new PyError(`У ${f.name}() нет параметра «${k.name}».`, k.line);
+            kw[k.name] = yield* ev(k.value);
+          }
           if (f.arity !== undefined) {
             const [mn, mx] = Array.isArray(f.arity) ? f.arity : [f.arity, f.arity];
             if (args.length < mn || args.length > mx) {
@@ -415,7 +432,7 @@ const MiniPy = (() => {
             }
           }
           if (f.user) return yield* callUser(f, args, node.line);
-          const res = f.fn(args, node.line);
+          const res = f.fn(args, node.line, kw);
           if (res && typeof res.next === 'function') return yield* res;
           return res === undefined ? null : res;
         }
@@ -562,10 +579,19 @@ const MiniPy = (() => {
   }
 
   /* ---------- Стандартные функции ---------- */
-  function fn(name, arity, f) { return { __fn: true, name, arity, fn: f }; }
-  function stdlib(onPrint) {
-    return {
-      print: fn('print', [0, 20], function* (args) { yield { type: 'print', text: args.map(a => repr(a)).join(' ') }; return null; }),
+  function fn(name, arity, f, kw) { return { __fn: true, name, arity, fn: f, kw }; }
+  // opts.console — консоль Python (мост к обычному Python): есть input(), а событие input ждёт ответ через next(ответ)
+  function stdlib(opts = {}) {
+    const textArg = (v, what, line) => {
+      if (v !== undefined && typeof v !== 'string') throw new PyError(`${what} — это текст в кавычках, например " ".`, line);
+      return v;
+    };
+    const lib = {
+      print: fn('print', [0, 20], function* (args, line, kw = {}) {
+        const sep = textArg(kw.sep, 'sep', line) ?? ' ', end = textArg(kw.end, 'end', line) ?? '\n';
+        yield { type: 'print', text: args.map(a => repr(a)).join(sep), end };
+        return null;
+      }, ['sep', 'end']),
       range: fn('range', [1, 3], (a, line) => {
         if (!a.every(x => typeof x === 'number' && Number.isInteger(x))) throw new PyError('В range(...) нужны целые числа.', line);
         let [s, e, st] = a.length === 1 ? [0, a[0], 1] : [a[0], a[1], a[2] ?? 1];
@@ -587,6 +613,13 @@ const MiniPy = (() => {
       }),
       abs: fn('abs', 1, (a, line) => { if (typeof a[0] !== 'number') throw new PyError('abs() работает только с числами.', line); return Math.abs(a[0]); }),
     };
+    if (opts.console) {
+      lib.input = fn('input', [0, 1], function* (args) {
+        const v = yield { type: 'input', prompt: args.length ? repr(args[0]) : '' };
+        return v === undefined || v === null ? '' : String(v);
+      });
+    }
+    return lib;
   }
 
   return { parse, execute, stdlib, fn, PyError, norm, repr };
