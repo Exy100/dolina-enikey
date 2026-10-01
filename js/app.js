@@ -7,7 +7,7 @@
 
   /* ---------- Сохранение ---------- */
   const STORE = 'mir-geroya-usloviya-v1';
-  const blankSave = () => ({ lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} }, predict: { tries: 0, hits: 0 }, warm: {} });
+  const blankSave = () => ({ lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} }, predict: { tries: 0, hits: 0 }, warm: {}, first: {} });
   let save = blankSave();
   try { const raw = localStorage.getItem(STORE); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* без сохранения */ }
   // Режим показа для видео (?show): свой Бит — в шляпе, шарфе и с рюкзаком; прогресс ученика не читаем и не пишем
@@ -228,14 +228,17 @@
     return LESSONS.reduce((n, l) => n + [...l.tasks, ...(l.bonus || [])].reduce((m, t) => m + (save.stars[t.id] || []).reduce((a, b) => a + b, 0), 0), 0);
   }
   const heroLevel = () => HeroGear.levelFor(totalStars());
-  const isOpen = it => it.level <= heroLevel();
+  const isOpen = it => (it.price ? !!(save.shop || {})[it.id] : it.level <= heroLevel()); // вещь из лавки — если куплена
   function applyGear() {
     Object.keys(gearOn).forEach(slot => { hero.remove(gearOn[slot]); delete gearOn[slot]; });
     let colors = HeroGear.DEFAULT_COLORS;
     ITEMS.forEach(it => {
       if (save.gear[it.slot] !== it.id || !isOpen(it)) return;
       if (it.colors) colors = it.colors;
-      else hero.add(gearOn[it.slot] = HeroGear.build(it.id, THREE));
+      else {
+        hero.add(gearOn[it.slot] = HeroGear.build(it.id, THREE));
+        gearOn[it.slot].userData.gear = it.slot; // для копий героя (страница героя): эти вещи снимаются
+      }
     });
     heroParts.violet.color.setHex(colors[0]);
     heroParts.violetLight.color.setHex(colors[1]);
@@ -544,7 +547,7 @@
         c.position.y = 0.5 + (reduceMotion ? 0 : Math.abs(Math.sin(time * 4)) * 0.45);
       } else c.position.y = 0.42 + Math.sin(time * 2.4 + c.userData.phase) * 0.05;
     });
-    if (gearOn.pet) { const a = time * 1.7; gearOn.pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); }
+    if (gearOn.pet) { const a = time * 1.7; gearOn.pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); gearOn.pet.rotation.y = -a; }
     M.lava.emissiveIntensity = 0.75 + Math.sin(time * 3) * 0.25;
     if (flag) flag.rotation.y = Math.sin(time * 2.2) * 0.25;
     if (finishRing) finishRing.material.opacity = 0.35 + Math.sin(time * 3) * 0.2;
@@ -818,6 +821,10 @@
     const answer = guess.options.find(p => p.x === h.x && p.z === h.z);
     save.predict.tries++;
     if (right) save.predict.hits++;
+    save.predict.streak = right ? (save.predict.streak || 0) + 1 : 0; // серия верных догадок — для достижения «Провидец»
+    save.predict.best = Math.max(save.predict.best || 0, save.predict.streak);
+    // верная догадка в новом задании — кристаллы (свои уровни не считаются: их можно рисовать без конца)
+    if (right && TASKS[taskIdx].kind !== 'custom') { save.guessed = save.guessed || {}; save.guessed[TASKS[taskIdx].id] = 1; }
     persist();
     // верный вариант — зелёный, неверный выбор — оранжевый, остальные гаснут
     guess.options.forEach(p => paintOption(p,
@@ -836,6 +843,7 @@
     // почему Бит встал именно там; где он стоит, и так видно по зелёному значку — без красного кольца
     if (!r.ok) reportError(r.err, 0, '', !right, r.st); // угадал — пусть в облачке останется «Верно!»
     if (r.ok) log(maps.length > 1 ? 'Программа дошла до флага на этой карте. Нажми «Запуск», чтобы проверить все три.' : 'Программа дошла до флага. Нажми «Запуск», чтобы засчитать задание.', 'info');
+    checkAwards();
   }
 
   /* ---------- Сцена конца пролога: Ада показывает Ключ-код, Сбой его крадёт.
@@ -1249,7 +1257,8 @@
     $('#hbLvl').textContent = n;
     $('#hbTitle').textContent = cur.title;
     $('#hbBar').style.width = next ? `${Math.round(((stars - cur.stars) / (next.stars - cur.stars)) * 100)}%` : '100%';
-    $('#heroBtn').setAttribute('aria-label', `${STORY.hero}, уровень ${n}: ${cur.title}. Снаряжение`);
+    $('#heroBtn').setAttribute('aria-label', `${STORY.hero}, уровень ${n}: ${cur.title}. Страница героя${save.awardsNew ? ', там есть новое' : ''}`);
+    $('#heroBtn').classList.toggle('new', !!save.awardsNew);
   }
 
   function renderTabs() {
@@ -1561,6 +1570,7 @@
     cancelGuess();
     clearLog(); hideResult(); markLine(null);
     try { MiniPy.parse(code); } catch (e) { reportError(e, 0); return; }
+    markDay();
     const token = ++runToken;
     stepMode = false;
     setRunning(true);
@@ -1643,6 +1653,7 @@
     $('#bonusBtn').hidden = true;
     $('#result').hidden = false;
     Sound.play('stars', { n: 1 });
+    checkAwards();
   }
 
   // Свой уровень пройден: звёзды показываем, но не сохраняем — иначе их можно набивать лёгкими картами
@@ -1674,6 +1685,8 @@
     const prev = save.stars[t.id] || [0, 0, 0];
     const lvlBefore = heroLevel();
     save.stars[t.id] = prev.map((v, i) => (v || got[i] ? 1 : 0));
+    if (first && !prev[0]) save.first[t.id] = 1; // решено с первого запуска — для достижения «С первого раза»
+    save.lastWin = t.id; // последняя программа — на странице героя
     // новый уровень: открытые вещи сразу надеваются, чтобы их было видно на герое
     const lvl = heroLevel(), fresh = ITEMS.filter(it => it.level > lvlBefore && it.level <= lvl);
     fresh.forEach(it => { save.gear[it.slot] = it.id; });
@@ -1714,7 +1727,19 @@
     if (save.hw && save.hw.ids && save.hw.ids.includes(t.id)) {
       const nx = nextHw(t.id);
       if (nx) { hwNextId = nx.id; $('#nextBtn').textContent = `Домашка: ${nx.short}`; }
-      else log('Вся домашка готова! Её увидят на следующем занятии — звёзды сохранились.', 'ok');
+      else {
+        if (!save.hw.done) { save.hw.done = 1; save.hwDone = (save.hwDone || 0) + 1; persist(); }
+        log('Вся домашка готова! Её увидят на следующем занятии — звёзды сохранились.', 'ok');
+      }
+    }
+    // новые достижения и кристаллы — ещё и строкой в карточке результата
+    const ch = checkAwards(), bits = [];
+    if (ch.awards.length) bits.push(`${ch.awards.length > 1 ? 'Достижения' : 'Достижение'}: ${ch.awards.map(a => `«${a.name}»`).join(', ')}!`);
+    if (ch.gems) bits.push(`+${ch.gems} ${plural(ch.gems, 'кристалл', 'кристалла', 'кристаллов')}.`);
+    if (bits.length) {
+      const rl = $('#resLevel'), was = rl.hidden ? '' : rl.textContent + ' ';
+      rl.textContent = was + bits.join(' ');
+      rl.hidden = false;
     }
   }
   let hwNextId = null;
@@ -1955,17 +1980,301 @@
   });
   $('#againBtn').addEventListener('click', () => { hideResult(); $('#newMapsBtn').click(); });
 
-  /* ---------- Снаряжение героя ---------- */
+  /* ---------- Страница героя: Бит на острове своего края, звание, темы курса, достижения, снаряжение.
+     Всё рисуется по сводке D: свою собирает heroData() из сохранения, чужая приходит в ссылке #hero=… ---------- */
+  const courseTasks = l => [...l.tasks, ...(l.bonus || [])];
+  const MAX_STARS = LESSONS.reduce((n, l) => n + courseTasks(l).length * 3, 0);
+  const FIX_IDS = new Set(LESSONS.flatMap(l => l.tasks).filter(t => /(^|-)fix$/.test(t.id)).map(t => t.id)); // «Почини программу»
+  const cleanName = s => cleanTitle(s).slice(0, 24);
+  // Код в ссылке — не длиннее 24 строк и 900 знаков, чтобы ссылка помещалась в любой мессенджер
+  const clipCode = code => String(code).split('\n').slice(0, 24).join('\n').slice(0, 900);
+  function heroData() {
+    const s = {};
+    LESSONS.forEach(l => { s[l.id] = courseTasks(l).map(t => { const st = save.stars[t.id] || [0, 0, 0]; return st[0] | st[1] << 1 | st[2] << 2; }).join(''); });
+    const won = LESSONS.flatMap(courseTasks).filter(solvedTask);
+    const lastId = save.lastWin && findTask(save.lastWin) && solvedTask(findTask(save.lastWin).t) ? save.lastWin : (won[won.length - 1] || {}).id;
+    const lt = lastId ? findTask(lastId).t : null, g = {};
+    ITEMS.forEach(it => { if (save.gear[it.slot] === it.id && isOpen(it)) g[it.slot] = it.id; });
+    return {
+      v: 1, n: cleanName(save.name), r: lessonIdx, g, t: save.badge || '', s,
+      f: won.filter(t => (save.first || {})[t.id] || !save.fails[t.id]).length, // решено с первого запуска
+      w: Object.keys(save.warm || {}).length, h: save.hwDone || 0, u: save.built ? 1 : 0,
+      d: Math.max((save.days || {}).n || 0, won.length ? 1 : 0),
+      k: won.reduce((n, t) => n + codeLines(save.code[t.id] ?? t.hints[2]).length, 0),
+      p: [save.predict.hits || 0, save.predict.tries || 0, save.predict.best || 0],
+      q: Object.keys(save.guessed || {}).length, // задания с верной догадкой — за них кристаллы
+      b: HeroGear.SHOP.filter(isOpen).map(it => it.id), // куплено в лавке Ады
+      c: lt ? [lt.id, clipCode(save.code[lt.id] ?? lt.hints[2])] : null,
+      at: Date.now(),
+    };
+  }
+  // Сводка D → по урокам (звёзды, пройден ли) и счётчики A для достижений
+  function heroSummary(D) {
+    const per = LESSONS.map(l => {
+      const digits = D.s[l.id] || '';
+      const st = courseTasks(l).map((t, i) => { const b = +digits[i] || 0; return [b & 1, b >> 1 & 1, b >> 2 & 1]; });
+      const main = st.slice(0, l.tasks.length), bon = st.slice(l.tasks.length);
+      return {
+        l, st, solved: main.filter(x => x[0]).length, stars: st.reduce((n, x) => n + x[0] + x[1] + x[2], 0), bonus: bon.filter(x => x[0]).length,
+        done: main.every(x => x[0]), perfect: main.every(x => x[0] && x[1] && x[2]),
+      };
+    });
+    const flat = per.flatMap(p => courseTasks(p.l).map((t, i) => ({ t, st: p.st[i] })));
+    const stars = per.reduce((n, p) => n + p.stars, 0);
+    const A = {
+      solved: flat.filter(x => x.st[0]).length, prolog: per.some(p => p.l.prologue && p.done) ? 1 : 0,
+      first: D.f, noHints: flat.filter(x => x.st[1]).length, short: flat.filter(x => x.st[2]).length,
+      fixes: flat.filter(x => x.st[0] && FIX_IDS.has(x.t.id)).length, streak: D.p[2], bonus: per.reduce((n, p) => n + p.bonus, 0),
+      warm: D.w, hw: D.h, built: D.u, days: D.d, lines: D.k, perfect: per.filter(p => p.perfect).length,
+      lessons: per.filter(p => p.done && !p.l.prologue).length, course: per.every(p => p.done) ? 1 : 0, guessed: D.q,
+    };
+    // кристаллы: заработано всего (js/awards.js) минус потрачено в лавке Ады
+    const earned = HeroAwards.gemsEarned(A), spent = D.b.reduce((n, id) => n + (HeroGear.SHOP.find(it => it.id === id) || {}).price, 0);
+    return { per, stars, A, awards: HeroAwards.evaluate(A), level: HeroGear.levelFor(stars), gems: { earned, spent, left: Math.max(0, earned - spent) } };
+  }
+  // Ссылка #hero=…: данные проверяются — в ссылке может оказаться что угодно
+  function cleanHero(d) {
+    if (!d || typeof d !== 'object' || d.v !== 1) return null;
+    const int = (x, max = 99999) => Math.max(0, Math.min(max, Math.floor(+x) || 0));
+    const s = {};
+    LESSONS.forEach(l => { const v = d.s && d.s[l.id]; if (typeof v === 'string' && /^[0-7]{0,40}$/.test(v)) s[l.id] = v; });
+    const D = {
+      v: 1, n: cleanName(d.n), r: Math.min(int(d.r), LESSONS.length - 1), g: {}, t: typeof d.t === 'string' ? d.t.slice(0, 20) : '', s,
+      f: int(d.f), w: int(d.w), h: int(d.h), u: int(d.u, 1), d: int(d.d), k: int(d.k), p: [0, 1, 2].map(i => int((d.p || [])[i])),
+      q: int(d.q), b: Array.isArray(d.b) ? HeroGear.SHOP.filter(it => d.b.includes(it.id)).map(it => it.id) : [],
+      c: null, at: int(d.at, 4102444800000) || Date.now(),
+    };
+    const lvl = heroSummary(D).level;
+    ITEMS.forEach(it => { if (d.g && d.g[it.slot] === it.id && (it.price ? D.b.includes(it.id) : it.level <= lvl)) D.g[it.slot] = it.id; });
+    if (Array.isArray(d.c) && typeof d.c[1] === 'string' && findTask(d.c[0])) D.c = [d.c[0], clipCode(d.c[1])];
+    return D;
+  }
+  function heroFromLink() {
+    const m = location.hash.match(/^#hero=([A-Za-z0-9_-]{8,8000})$/);
+    if (!m || SHOW) return null;
+    history.replaceState(null, '', location.href.split('#')[0]);
+    try { return cleanHero(JSON.parse(b64dec(m[1]))); } catch (e) { return null; }
+  }
+
+  // Новые достижения и кристаллы: поздравление в журнале и точка на кнопке героя. silent — запомнить молча
+  // (первый запуск: всё полученное раньше просто запоминается, кристаллы за него уже лежат в лавке)
+  function checkAwards(silent = false) {
+    if (SHOW) return { awards: [], gems: 0 };
+    if (!save.awards) save.awards = {};
+    const S = heroSummary(heroData());
+    const fresh = S.awards.filter(a => a.done && !save.awards[a.id]);
+    fresh.forEach(a => { save.awards[a.id] = Date.now(); });
+    const plus = silent || save.gemsSeen === undefined ? 0 : S.gems.earned - save.gemsSeen;
+    const changed = fresh.length || save.gemsSeen !== S.gems.earned;
+    save.gemsSeen = S.gems.earned;
+    if (!silent && (fresh.length || plus > 0)) {
+      save.awardsNew = true;
+      fresh.forEach(a => log(`Новое достижение: «${a.name}». Оно уже на странице героя — кнопка с уровнем Бита наверху.`, 'ok'));
+      if (plus > 0) log(`+${plus} ${plural(plus, 'кристалл', 'кристалла', 'кристаллов')} — их тратят в лавке Ады на странице героя.`, 'ok');
+      if (fresh.length) Sound.play('award');
+      renderBadge();
+    }
+    if (changed) persist();
+    return silent ? { awards: [], gems: 0 } : { awards: fresh, gems: Math.max(0, plus) };
+  }
+  // День занятий: считаем дни, когда программа запускалась
+  function markDay() {
+    const d = new Date(), today = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`, days = save.days || { n: 0, last: '' };
+    if (days.last !== today) { save.days = { n: days.n + 1, last: today }; persist(); }
+  }
+
+  let hpShared = null; // чужая страница по ссылке — только смотреть
+  function renderHeroPage() {
+    const shared = !!hpShared, D = hpShared || heroData(), S = heroSummary(D);
+    const n = S.level, cur = LEVELS[n - 1], next = LEVELS[n];
+    const title = S.awards.find(a => a.id === D.t && a.done);
+    const date = new Date(D.at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    const L = LESSONS[D.r], place = (STORY.lessons[L.id] || {}).place || L.title;
+    $('#hpKicker').textContent = `Долина Эникей · страница героя · ${date}`;
+    $('#hpTitle').textContent = `${STORY.hero} · уровень ${n}`;
+    $('#hpLvl').textContent = n;
+    $('#hpGems').innerHTML = `${GEM_SVG}<b>${S.gems.left}</b>`;
+    $('#hpGems').title = `Кристаллы: ${S.gems.left}. Всего заработано: ${S.gems.earned}`;
+    $('#hpGemsTab').innerHTML = `${GEM_SVG}${S.gems.left}`;
+    $('#hpTabs').hidden = shared; // по ссылке — только прогресс
+    $('#hpPlace').textContent = shared ? place : `${place} · Бит здесь`;
+    $('#hpRank').innerHTML = `<b>${esc(cur.title)}</b>${title ? ` · <span class="hp-title">«${esc(title.name)}»</span>` : ''}`;
+    $('#hpName').hidden = !D.n;
+    $('#hpName').textContent = D.n ? `Пишет код: ${D.n}` : '';
+    $('#hpLevelText').textContent = next ? `До уровня ${n + 1}` : 'Высший уровень';
+    $('#hpLevelStars').textContent = next ? `★ ${S.stars} из ${next.stars}` : `★ ${S.stars}`;
+    $('#hpBar').style.width = next ? `${Math.round(((S.stars - cur.stars) / (next.stars - cur.stars)) * 100)}%` : '100%';
+    const nextItem = ITEMS.find(it => it.level === n + 1), left = next ? next.stars - S.stars : 0;
+    $('#hpNext').textContent = next
+      ? `Ещё ${left} ${plural(left, 'звезда', 'звезды', 'звёзд')} — и уровень «${next.title}»${nextItem ? `. Откроется: ${nextItem.name.toLowerCase()}` : ''}.`
+      : 'Все уровни открыты — выше только небо.';
+    const got = S.awards.filter(a => a.done).length;
+    $('#hpStats').innerHTML = [
+      [`${S.stars}<small> из ${MAX_STARS}</small>`, plural(S.stars, 'звезда', 'звезды', 'звёзд')],
+      [S.A.solved, `${plural(S.A.solved, 'задание решено', 'задания решено', 'заданий решено')}`],
+      [D.k, `${plural(D.k, 'строка', 'строки', 'строк')} кода`],
+      [D.p[1] ? `${D.p[0]}<small> из ${D.p[1]}</small>` : '—', 'верных догадок'],
+      [D.d, `${plural(D.d, 'день', 'дня', 'дней')} занятий`],
+      [`${got}<small> из ${S.awards.length}</small>`, 'достижений'],
+    ].map(([v, k]) => `<li><b>${v}</b><span>${k}</span></li>`).join('');
+    // темы курса: путь по урокам с тем, как тема выглядит в коде
+    $('#hpTopics').innerHTML = S.per.map((p, i) => {
+      const l = p.l, pl = (STORY.lessons[l.id] || {}).place || l.title, icon = (VALLEY[i] || {}).icon || 'sign';
+      const max = l.tasks.length, state = p.done ? 'done' : p.solved ? 'now' : '';
+      return `<li class="hp-topic ${state}">
+        <span class="hp-t-ico" aria-hidden="true"><svg viewBox="0 0 24 24">${ICONS[icon]}</svg>${p.done ? '<i>✓</i>' : ''}</span>
+        <span class="hp-t-main"><b>${esc(l.topic ? l.topic.name : l.title)}</b> <span>${l.prologue ? 'Пролог' : `Урок ${lessonNo(i)}`} · ${esc(pl)}</span></span>
+        <span class="hp-t-prog">${l.topic ? `<code>${esc(l.topic.code)}</code>` : ''}<span class="hp-t-bar"><i style="width:${Math.round((p.solved / max) * 100)}%"></i></span><span class="hp-t-num">${p.solved} из ${max} · ★ ${p.stars}${p.bonus ? ' · +★' : ''}</span></span>
+      </li>`;
+    }).join('');
+    // достижения: полученные — цветные (своё можно сделать титулом), остальные — серые, с прогрессом
+    $('#hpAchCount').textContent = `${got} из ${S.awards.length}`;
+    $('#hpAchTip').hidden = shared || !got;
+    $('#hpAch').innerHTML = S.awards.map(a => {
+      const isTitle = !!title && title.id === a.id;
+      const state = a.done ? `<span class="hp-a-state">${isTitle ? 'титул' : 'получено'}</span>`
+        : a.goal > 1 ? `<span class="hp-a-prog"><i style="width:${Math.round((a.value / a.goal) * 100)}%"></i></span><span class="hp-a-state">${a.value} из ${a.goal}</span>` : '';
+      const inner = `<span class="hp-medal hue-${a.hue}" aria-hidden="true"><svg viewBox="0 0 24 24">${a.icon}</svg></span><span class="hp-a-text"><b>${esc(a.name)}</b><span>${esc(a.desc)}</span>${state}</span>`;
+      const cls = `hp-a${a.done ? ' done' : ''}${isTitle ? ' title' : ''}`;
+      return `<li>${a.done && !shared ? `<button type="button" class="${cls}" data-id="${a.id}" aria-pressed="${isTitle}">${inner}</button>` : `<div class="${cls}">${inner}</div>`}</li>`;
+    }).join('');
+    if (!shared) { renderGear(); renderShop(S); }
+    const c = D.c && findTask(D.c[0]);
+    $('#hpCodeSec').hidden = !c;
+    if (c) {
+      $('#hpCodeTitle').textContent = `Последняя программа · «${c.t.title}»`;
+      $('#hpCode').innerHTML = highlight(D.c[1]).replace(/\n $/, '');
+    }
+    $('#hpSharedNote').hidden = !shared;
+    $('#hpShareBtn').hidden = shared;
+    $('#hpOpenGame').hidden = !shared;
+    $('#storyBtn').hidden = shared;
+    $('#recapBtn').hidden = shared || !prologueDone();
+    if (!shared && !$('#hpShare').hidden) hpOutput(); // сменили титул или снаряжение — ссылка тоже меняется
+  }
+  function openHeroPage(shared = null) {
+    hpShared = shared;
+    hpTry = null;
+    $('#hpShopMsg').textContent = '';
+    showTab('Prog');
+    if (!shared && save.awardsNew) { save.awardsNew = false; persist(); renderBadge(); }
+    $('#hpShare').hidden = true;
+    renderHeroPage();
+    const p = $('#heroPage');
+    p.classList.toggle('over', !!shared); // по ссылке — поверх заставки
+    p.hidden = false;
+    p.scrollTop = 0;
+    document.body.classList.add('recap-open');
+    startIsland();
+    (shared ? $('#hpOpenGame') : $('#hpShareBtn')).focus({ preventScroll: true });
+  }
+  function closeHeroPage() {
+    const shared = hpShared;
+    $('#heroPage').hidden = true;
+    document.body.classList.remove('recap-open');
+    stopIsland();
+    hpShared = null;
+    hpTry = null;
+    if (!shared) $('#heroBtn').focus({ preventScroll: true });
+  }
+  // Вкладки справа от острова: прогресс, лавка Ады, снаряжение. Остров всегда виден — на нём и примерка
+  function showTab(name) {
+    ['Prog', 'Shop', 'Gear'].forEach(n => {
+      const t = $(`#hpTab${n}`);
+      t.setAttribute('aria-selected', String(n === name));
+      t.tabIndex = n === name ? 0 : -1;
+      $(`#hpPanel${n}`).hidden = n !== name;
+    });
+    if (name !== 'Shop' && hpTry) { tryOn(null); renderTry(heroSummary(heroData())); }
+  }
+  $('#hpTabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); });
+  $('#hpTabs').addEventListener('keydown', e => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const tabs = $$('#hpTabs [role="tab"]'), i = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true');
+    const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+    showTab(next.dataset.tab);
+    next.focus();
+    e.preventDefault();
+  });
+
+  /* Лавка Ады: вещи за кристаллы, отдельно от вещей за уровни. Нажатие — примерка на острове, «Купить» — в рамке острова */
+  const GEM_SVG = '<svg class="gem" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10l5 6-10 12L2 9z" fill="#7FE0FF"/><path d="M2 9h20L12 21z" fill="#38B6E6"/>'
+    + '<path d="M7 3l3 6h4l3-6z" fill="#C9F3FF"/><path d="M7 3h10l5 6-10 12L2 9zM2 9h20M10 9l2 12 2-12M7 3l3 6M17 3l-3 6" fill="none" stroke="#1C7FB5" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+  const SLOT_ICON = {
+    head: '<path d="M3 17h18"/><path d="M6 17v-6a6 6 0 0 1 12 0v6"/>',
+    face: '<circle cx="7" cy="13" r="3.5"/><circle cx="17" cy="13" r="3.5"/><path d="M10.5 13h3"/>',
+    neck: '<path d="M12 12L4 7v10zM12 12l8-5v10z"/>',
+    back: '<path d="M8 21V9a4 4 0 0 1 8 0v12z"/><path d="M8 14h8M10 21v2M14 21v2"/>',
+    pet: '<path d="M4 14c3 0 5-5 9-5a5 5 0 0 1 5 5c0 3-3 5-7 5H8"/><path d="M18 12l3 1-3 1"/><circle cx="15" cy="12.5" r=".9"/>',
+  };
+  const hexColor = c => '#' + c.toString(16).padStart(6, '0');
+  let hpTry = null; // вещь из лавки на примерке
+  function tryOn(id) {
+    hpTry = id;
+    if (!island) return;
+    const g = { ...heroData().g }, it = id && HeroGear.SHOP.find(x => x.id === id);
+    if (it) g[it.slot] = it.id;
+    island.setGear(g);
+    island.turn(it && it.slot === 'back' ? Math.PI : 0); // вещь на спину — показать Бита со спины
+  }
+  function renderShop(S) {
+    const left = S.gems.left, R = HeroAwards.GEMS;
+    $('#hpShopTip').textContent = `Ада мастерит для Бита обновки. Кристаллы дают за задание со звёздочкой (${R.bonus}), сделанную домашку (${R.hw}), `
+      + `достижения (от 10 до 50) и верную догадку в «Угадай» в новом задании (${R.guess}). Нажми на вещь — Бит её примерит.`;
+    $('#hpShop').innerHTML = HeroGear.SHOP.map(it => {
+      const own = isOpen(it), on = own && save.gear[it.slot] === it.id, tr = hpTry === it.id;
+      const ico = it.colors ? `<span class="si-sw" style="background:linear-gradient(135deg, ${hexColor(it.colors[0])} 50%, ${hexColor(it.colors[1])} 50%)"></span>`
+        : `<svg viewBox="0 0 24 24">${SLOT_ICON[it.slot] || ''}</svg>`;
+      const cls = ['hp-si', own && 'own', on && 'on', tr && 'try', !own && it.price > left && 'dear'].filter(Boolean).join(' ');
+      return `<li><button type="button" class="${cls}" data-id="${it.id}" aria-pressed="${own ? on : tr}" title="${esc(it.name)}${own ? '' : `: ${it.price} ${plural(it.price, 'кристалл', 'кристалла', 'кристаллов')}`}">
+        <span class="si-ico" aria-hidden="true">${ico}</span><span class="si-text"><b>${esc(it.name)}</b><span>${SLOTS[it.slot]}</span></span>
+        <span class="si-state">${on ? 'надето' : own ? 'куплено' : `${GEM_SVG}${it.price}`}</span></button></li>`;
+    }).join('');
+    renderTry(S);
+  }
+  function renderTry(S) {
+    const it = hpTry && HeroGear.SHOP.find(x => x.id === hpTry);
+    $('#hpTry').hidden = !it;
+    if (!it) return;
+    const can = S.gems.left >= it.price;
+    $('#hpTryName').textContent = `Примерка: ${it.name}`;
+    $('#hpTryPrice').innerHTML = can ? `${GEM_SVG}${it.price}` : `не хватает ${GEM_SVG}${it.price - S.gems.left}`;
+    $('#hpBuy').disabled = !can;
+  }
+  $('#hpShop').addEventListener('click', e => {
+    const b = e.target.closest('button[data-id]');
+    if (!b || hpShared) return;
+    const it = HeroGear.SHOP.find(x => x.id === b.dataset.id);
+    $('#hpShopMsg').textContent = '';
+    if (isOpen(it)) { // уже куплено — надеть или снять, как в снаряжении
+      save.gear[it.slot] = save.gear[it.slot] === it.id ? null : it.id;
+      persist(); applyGear(); tryOn(null);
+    } else tryOn(hpTry === it.id ? null : it.id);
+    renderHeroPage();
+    const again = $(`#hpShop button[data-id="${it.id}"]`);
+    if (again) again.focus({ preventScroll: true });
+    // на телефоне остров над вкладками: показать примерку
+    if (hpTry && matchMedia('(max-width: 760px)').matches) $('#hpStage').scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+  $('#hpBuy').addEventListener('click', () => {
+    const it = HeroGear.SHOP.find(x => x.id === hpTry);
+    if (!it || hpShared || heroSummary(heroData()).gems.left < it.price) return;
+    save.shop = save.shop || {};
+    save.shop[it.id] = 1;
+    save.gear[it.slot] = it.id; // купленное сразу надевается
+    persist(); applyGear(); tryOn(null);
+    Sound.play('award');
+    renderHeroPage();
+    $('#hpShopMsg').textContent = `Куплено: «${it.name}». Бит уже в обновке — снять можно во вкладке «Снаряжение».`;
+  });
+  $('#hpTryOff').addEventListener('click', () => { tryOn(null); renderHeroPage(); });
+
+  // Снаряжение на странице героя: вещи за уровни и купленные в лавке, нажатие — надеть или снять
   function renderGear() {
-    const stars = totalStars(), n = HeroGear.levelFor(stars), next = LEVELS[n];
-    $('#recapBtn').hidden = !prologueDone();
-    $('#gearTitle').textContent = `${STORY.hero} · уровень ${n}, ${LEVELS[n - 1].title.toLowerCase()}`;
-    $('#gearSub').textContent = next
-      ? `Звёзд: ${stars}. До уровня ${n + 1} — ещё ${next.stars - stars}. За уровни открываются вещи.`
-      : `Звёзд: ${stars}. Это высший уровень!`;
+    $('#gearSub').textContent = 'Вещи открываются за уровни, а в лавке Ады их покупают за кристаллы. Нажми на вещь, чтобы надеть её или снять.';
     const list = $('#gearList');
     list.innerHTML = '';
-    ITEMS.forEach(it => {
+    ITEMS.filter(it => !it.price || isOpen(it)).forEach(it => {
       const on = save.gear[it.slot] === it.id, open = isOpen(it);
       const b = document.createElement('button');
       b.type = 'button';
@@ -1978,26 +2287,341 @@
       state.className = 'gi-state';
       state.textContent = !open ? `уровень ${it.level}` : on ? 'надето' : SLOTS[it.slot];
       b.append(name, state);
-      b.addEventListener('click', () => { save.gear[it.slot] = on ? null : it.id; persist(); applyGear(); renderGear(); });
+      b.addEventListener('click', () => {
+        save.gear[it.slot] = on ? null : it.id;
+        persist(); applyGear(); tryOn(null);
+        renderHeroPage();
+        const again = $$('#gearList .gear-item').find(x => x.firstChild.textContent === it.name);
+        if (again) again.focus({ preventScroll: true });
+      });
       const li = document.createElement('li');
       li.append(b);
       list.append(li);
     });
   }
-  $('#heroBtn').addEventListener('click', () => {
-    const p = $('#gearPanel');
-    p.hidden = !p.hidden;
-    if (!p.hidden) renderGear();
+
+  /* 3D-остров для страницы героя: своя маленькая сцена. Земля — низкие многогранники, на ней то, что стоит
+     в этом краю (по значку на карте долины), монеты, облака; Бит в своём снаряжении. Остров можно крутить мышью или пальцем */
+  // Бит для другой сцены: копия героя со своим снаряжением и своими цветами корпуса
+  function makeHeroModel(gear) {
+    const bot = hero.clone(true);
+    bot.children.filter(o => o.userData.gear).forEach(o => bot.remove(o));
+    bot.position.set(0, 0, 0); bot.rotation.set(0, 0, 0); bot.scale.set(1, 1, 1);
+    bot.getObjectByName('arrow').visible = false;
+    let colors = HeroGear.DEFAULT_COLORS, onHead = false;
+    ITEMS.forEach(it => {
+      if (gear[it.slot] !== it.id) return;
+      if (it.colors) { colors = it.colors; return; }
+      const g = HeroGear.build(it.id, THREE);
+      g.userData.gear = it.slot;
+      bot.add(g);
+      if (it.slot === 'head') onHead = true;
+    });
+    const at = part => bot.children[hero.children.indexOf(part)];
+    at(heroParts.body).material = new THREE.MeshStandardMaterial({ color: colors[0], flatShading: true, roughness: 0.55 });
+    at(heroParts.head).material = new THREE.MeshStandardMaterial({ color: colors[1], roughness: 0.45 });
+    at(heroParts.ant).visible = at(heroParts.bulb).visible = !onHead;
+    return bot;
+  }
+  function buildIsland(icon, done) {
+    const g = new THREE.Group(), anim = [];
+    const mat = (color, extra) => new THREE.MeshStandardMaterial(Object.assign({ color, flatShading: true, roughness: 0.85 }, extra));
+    const add = (geo, m, x, y, z, parent = g) => {
+      const o = new THREE.Mesh(geo, m);
+      o.position.set(x, y, z);
+      o.castShadow = true; o.receiveShadow = true;
+      parent.add(o);
+      return o;
+    };
+    const tree = (x, z, s = 1) => {
+      add(new THREE.CylinderGeometry(0.07 * s, 0.09 * s, 0.36 * s, 6), M.trunk, x, 0.18 * s, z);
+      add(new THREE.ConeGeometry(0.36 * s, 0.8 * s, 7), M.leaf, x, 0.74 * s, z);
+      add(new THREE.ConeGeometry(0.27 * s, 0.55 * s, 7), M.leaf, x, 1.08 * s, z);
+    };
+    const stone = (x, z, s = 1) => { const o = add(new THREE.DodecahedronGeometry(0.2 * s, 0), M.stoneB, x, 0.08 * s, z); o.rotation.set(x * 3, z * 5, 0); return o; };
+    const glow = (c, e) => mat(c, { emissive: e, emissiveIntensity: 0.8 });
+    // земля: трава, под ней земля и скала острым концом вниз — остров парит
+    add(new THREE.CylinderGeometry(2.5, 2.35, 0.36, 11), M.grassA, 0, -0.18, 0);
+    add(new THREE.CylinderGeometry(2.35, 1.85, 0.55, 11), M.dirt, 0, -0.63, 0);
+    add(new THREE.ConeGeometry(1.85, 1.9, 11), M.rock, 0, -1.85, 0).rotation.x = Math.PI;
+    [[-2.1, -1.5, 0.55, 0.3], [2.0, -1.8, 0.4, 1.7]].forEach(([x, y, s, ph]) => {
+      const r = add(new THREE.DodecahedronGeometry(s, 0), M.rock, x, y, 0.4);
+      anim.push(t => { r.position.y = y + Math.sin(t * 1.3 + ph) * 0.08; r.rotation.y = t * 0.3 + ph; });
+    });
+    // дорожка из плиток: к Биту и дальше, к тому, что стоит в краю
+    [[0.3, 2.1], [-0.05, 0.4], [0.05, -0.15]].forEach(([x, z]) => add(new THREE.BoxGeometry(0.44, 0.06, 0.44), M.stoneA, x, 0.03, z));
+    const P = {
+      house() { // мастерская Ады: домик, верстак с шестерёнкой
+        add(new THREE.BoxGeometry(1.2, 0.85, 1.0), mat(0xf3e2bf), -0.75, 0.42, -1.05);
+        add(new THREE.ConeGeometry(0.98, 0.65, 4), mat(0xd9573a), -0.75, 1.17, -1.05).rotation.y = Math.PI / 4;
+        add(new THREE.BoxGeometry(0.28, 0.48, 0.05), mat(0x6b4220), -0.75, 0.24, -0.53);
+        add(new THREE.BoxGeometry(0.22, 0.2, 0.05), glow(0xffd76a, 0xffb02e), -0.33, 0.55, -0.53);
+        add(new THREE.BoxGeometry(0.16, 0.42, 0.16), M.rock, -0.4, 1.3, -1.25);
+        add(new THREE.BoxGeometry(0.8, 0.08, 0.45), M.trunk, 1.1, 0.42, -0.75);
+        [-0.33, 0.33].forEach(dx => add(new THREE.BoxGeometry(0.06, 0.4, 0.4), M.trunk, 1.1 + dx, 0.2, -0.75));
+        const cog = add(new THREE.TorusGeometry(0.14, 0.05, 6, 8), mat(0xb8c0d8, { metalness: 0.5, roughness: 0.4 }), 1.1, 0.64, -0.75);
+        anim.push(t => { cog.rotation.z = t * 1.2; });
+        tree(1.75, -1.45, 0.9); tree(-1.85, 0.35, 0.75); stone(1.6, 0.6);
+      },
+      sign() { // дорога за мастерской: указатель, деревья вдоль дороги
+        add(new THREE.CylinderGeometry(0.05, 0.05, 1.3, 6), M.trunk, 1.4, 0.65, -0.75);
+        add(new THREE.BoxGeometry(0.75, 0.2, 0.06), mat(0xf3e2bf), 1.65, 1.1, -0.75).rotation.y = -0.2;
+        add(new THREE.BoxGeometry(0.65, 0.2, 0.06), mat(0xe4c58f), 1.17, 0.8, -0.75).rotation.y = 0.35;
+        tree(-1.3, -0.9, 1.1); tree(-0.6, -1.7, 0.85); tree(0.55, -1.6, 0.95); tree(-1.9, 0.5, 0.7);
+        stone(1.7, 0.4); stone(-0.9, 1.4, 0.7);
+      },
+      mount() { // Эховы горы: острые вершины в снегу
+        [[-0.85, -1.05, 0.95, 2.0], [0.55, -1.45, 0.72, 1.5], [1.5, -0.55, 0.52, 1.05], [-1.75, 0.05, 0.45, 0.85]].forEach(([x, z, r, h]) => {
+          add(new THREE.ConeGeometry(r, h, 6), M.stoneA, x, h / 2, z);
+          add(new THREE.ConeGeometry(r * 0.38, h * 0.38, 6), mat(0xffffff), x, h * 0.81, z);
+        });
+        stone(1.3, 0.8); stone(-1.2, 1.3, 0.8);
+      },
+      tree() { // меняющийся лес: много деревьев и грибы
+        [[-1.4, -1.1, 1.15], [-0.6, -1.75, 0.9], [0.45, -1.6, 1.05], [1.3, -1.1, 0.9], [1.8, -0.2, 0.75], [-1.95, -0.1, 0.8], [-1.1, 0.0, 0.65]].forEach(([x, z, s]) => tree(x, z, s));
+        [[0.9, -0.5], [1.3, 0.55], [-1.5, 0.9]].forEach(([x, z]) => {
+          add(new THREE.CylinderGeometry(0.04, 0.05, 0.16, 6), mat(0xf3e2bf), x, 0.08, z);
+          add(new THREE.SphereGeometry(0.11, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2), mat(0xe4572e), x, 0.15, z);
+        });
+      },
+      gate() { // ворота Стража: каменная арка, приоткрытые створки, факелы
+        [-0.8, 0.8].forEach(x => {
+          add(new THREE.BoxGeometry(0.4, 1.6, 0.4), M.stoneA, x, 0.8, -1.1);
+          add(new THREE.CylinderGeometry(0.04, 0.05, 0.3, 6), M.trunk, x, 1.75, -0.88);
+          const f = add(new THREE.SphereGeometry(0.09, 6, 5), glow(0xffb36b, 0xff6a00), x, 1.95, -0.88);
+          anim.push(t => f.scale.setScalar(1 + Math.sin(t * 9 + x) * 0.15));
+        });
+        add(new THREE.BoxGeometry(2.1, 0.32, 0.5), M.stoneB, 0, 1.75, -1.1);
+        add(new THREE.BoxGeometry(0.62, 1.1, 0.12), M.gate, -0.32, 0.55, -1.0).rotation.y = 0.5;
+        add(new THREE.BoxGeometry(0.62, 1.1, 0.12), M.gate, 0.32, 0.55, -1.0).rotation.y = -0.5;
+        tree(-1.85, -0.6, 0.8); tree(1.85, -0.5, 0.75); stone(1.4, 0.9);
+      },
+      tower() { // башня чисел: высокая башня с зубцами и табличка с числом
+        add(new THREE.CylinderGeometry(0.55, 0.68, 2.3, 8), M.stoneA, -0.65, 1.15, -1.05);
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          add(new THREE.BoxGeometry(0.2, 0.22, 0.2), M.stoneB, -0.65 + Math.cos(a) * 0.5, 2.4, -1.05 + Math.sin(a) * 0.5);
+        }
+        add(new THREE.ConeGeometry(0.42, 0.7, 8), mat(0x5b45e0), -0.65, 2.85, -1.05);
+        add(new THREE.BoxGeometry(0.2, 0.3, 0.05), glow(0xffd76a, 0xffb02e), -0.65, 1.5, -0.45);
+        add(new THREE.CylinderGeometry(0.04, 0.04, 0.8, 6), M.trunk, 1.5, 0.4, -0.55);
+        const cv = document.createElement('canvas');
+        cv.width = cv.height = 64;
+        const c = cv.getContext('2d');
+        c.fillStyle = '#f3e2bf'; c.fillRect(0, 0, 64, 64);
+        c.strokeStyle = '#8a5a2b'; c.lineWidth = 6; c.strokeRect(3, 3, 58, 58);
+        c.fillStyle = '#1b1e3c'; c.font = 'bold 40px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText('42', 32, 35);
+        add(new THREE.BoxGeometry(0.5, 0.5, 0.04), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(cv) }), 1.5, 0.95, -0.52);
+        tree(1.7, -1.3, 0.85); stone(-1.6, 0.6); stone(1.5, 0.7, 0.8);
+      },
+      anvil() { // кузница приёмов: наковальня, горн с огнём, молот
+        add(new THREE.BoxGeometry(0.34, 0.3, 0.3), mat(0x3d4060, { metalness: 0.5, roughness: 0.5 }), 1.45, 0.15, -0.75);
+        add(new THREE.BoxGeometry(0.7, 0.2, 0.34), mat(0x4a4f6a, { metalness: 0.6, roughness: 0.4 }), 1.45, 0.4, -0.75);
+        add(new THREE.ConeGeometry(0.12, 0.35, 6), mat(0x4a4f6a, { metalness: 0.6, roughness: 0.4 }), 1.96, 0.42, -0.75).rotation.z = -Math.PI / 2;
+        const hammer = new THREE.Group();
+        add(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), M.trunk, 0, 0.25, 0, hammer);
+        add(new THREE.BoxGeometry(0.22, 0.12, 0.12), mat(0x3d4060, { metalness: 0.6 }), 0, 0.5, 0, hammer);
+        hammer.position.set(1.45, 0.5, -0.75);
+        g.add(hammer);
+        anim.push(t => { hammer.rotation.z = -0.6 + Math.max(0, Math.sin(t * 3)) * 0.9; });
+        add(new THREE.BoxGeometry(1.1, 0.9, 0.9), M.stoneA, -0.85, 0.45, -1.05);
+        add(new THREE.BoxGeometry(0.55, 0.35, 0.1), M.lava, -0.85, 0.42, -0.58);
+        add(new THREE.BoxGeometry(0.3, 0.9, 0.3), M.stoneB, -1.1, 1.3, -1.2);
+        tree(1.75, -1.3, 0.8); stone(-1.7, 0.7); stone(1.6, 0.6, 0.8);
+      },
+      castle() { // замок Сбоя: стены, башни, над ними сам Сбой (починенный — когда долина пройдена)
+        add(new THREE.BoxGeometry(2.2, 0.9, 0.35), M.stoneB, 0, 0.45, -1.35);
+        for (let i = 0; i < 6; i++) add(new THREE.BoxGeometry(0.2, 0.2, 0.36), M.stoneB, -1.0 + i * 0.4, 1.0, -1.35);
+        add(new THREE.BoxGeometry(0.5, 0.6, 0.38), mat(0x2b2f5c), 0, 0.3, -1.33);
+        [-1.2, 1.2].forEach(x => {
+          add(new THREE.CylinderGeometry(0.36, 0.4, 1.6, 8), M.stoneA, x, 0.8, -1.3);
+          add(new THREE.ConeGeometry(0.45, 0.65, 8), mat(done ? 0x5b45e0 : 0x3a2e8c), x, 1.92, -1.3);
+        });
+        const sb = makeSboy();
+        sb.position.set(0, 1.85, -1.3);
+        if (done) { sb.userData.fixed = true; sb.children.forEach(m => { m.material = M.bossFixed; }); }
+        g.add(sb);
+        anim.push((t, dt) => animateSboy(sb, t, dt));
+        stone(1.6, 0.5); stone(-1.6, 0.8, 0.8);
+      },
+    };
+    (P[icon] || P.sign)();
+    // монеты по краю острова
+    const coinGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.05, 16);
+    [[-1.6, 1.2], [1.75, 0.6], [-0.6, 1.95]].forEach(([x, z], i) => {
+      const c = new THREE.Group();
+      add(coinGeo, M.coin, 0, 0, 0, c).rotation.x = Math.PI / 2;
+      c.position.set(x, 0.42, z);
+      g.add(c);
+      anim.push(t => { c.rotation.y = t * 2 + i; c.position.y = 0.42 + Math.sin(t * 2.4 + i * 2) * 0.05; });
+    });
+    // долина пройдена — над островом Ключ-код
+    if (done) {
+      const key = new THREE.Group(), gold = mat(0xffc83d, { emissive: 0x6b4500, emissiveIntensity: 0.5, metalness: 0.5, roughness: 0.3 });
+      add(new THREE.TorusGeometry(0.16, 0.05, 6, 14), gold, -0.25, 0, 0, key);
+      add(new THREE.BoxGeometry(0.42, 0.07, 0.07), gold, 0.13, 0, 0, key);
+      add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gold, 0.25, -0.08, 0, key);
+      add(new THREE.BoxGeometry(0.06, 0.09, 0.07), gold, 0.33, -0.06, 0, key);
+      key.position.set(1.4, 2.3, 0.2);
+      g.add(key);
+      anim.push(t => { key.rotation.y = t * 1.5; key.position.y = 2.3 + Math.sin(t * 2) * 0.1; });
+    }
+    // облака
+    const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1, transparent: true, opacity: 0.92 });
+    [[-2.6, 2.4, -1.2, 0], [2.8, 1.8, -0.6, 2.5]].forEach(([x, y, z, ph]) => {
+      const cl = new THREE.Group();
+      [[0, 0, 0, 0.42], [0.42, -0.05, 0.05, 0.32], [-0.4, -0.06, 0, 0.3]].forEach(([dx, dy, dz, r]) => {
+        const m = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 0), cloudMat);
+        m.position.set(dx, dy, dz);
+        cl.add(m);
+      });
+      cl.position.set(x, y, z);
+      g.add(cl);
+      anim.push(t => { cl.position.x = x + Math.sin(t * 0.3 + ph) * 0.25; cl.position.y = y + Math.sin(t * 0.7 + ph) * 0.06; });
+    });
+    return {
+      group: g,
+      tick: (t, dt) => { if (!reduceMotion) anim.forEach(f => f(t, dt)); },
+      dispose: () => g.traverse(o => { if (o.geometry && o.geometry !== coinGeo) o.geometry.dispose(); }),
+    };
+  }
+  let island = null;
+  function startIsland() {
+    stopIsland();
+    const box = $('#hpStage');
+    let r;
+    try { r = new THREE.WebGLRenderer({ antialias: true, alpha: true }); } catch (e) { return; }
+    r.setPixelRatio(Math.min(devicePixelRatio, 2));
+    r.shadowMap.enabled = true;
+    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    r.domElement.className = 'hp-canvas';
+    r.domElement.setAttribute('role', 'img');
+    box.prepend(r.domElement);
+    const D = hpShared || heroData(), S = heroSummary(D);
+    r.domElement.setAttribute('aria-label', `Бит на острове: ${$('#hpPlace').textContent}`);
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight(0xdff0ff, 0x6b5a4a, 0.78));
+    const sunL = new THREE.DirectionalLight(0xfff1dc, 0.85);
+    sunL.position.set(4, 9, 6);
+    sunL.castShadow = true;
+    sunL.shadow.mapSize.set(1024, 1024);
+    Object.assign(sunL.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 1, far: 30 });
+    sunL.shadow.bias = -0.002;
+    sc.add(sunL);
+    const spin = new THREE.Group();
+    sc.add(spin);
+    const land = buildIsland((VALLEY[D.r] || {}).icon || 'sign', !!S.A.course);
+    spin.add(land.group);
+    let bot = null;
+    const setGear = gear => {
+      if (bot) spin.remove(bot);
+      bot = makeHeroModel(gear);
+      bot.scale.setScalar(1.35);
+      bot.position.set(0.35, 0, 1.05);
+      bot.traverse(o => { if (o.isMesh) o.castShadow = true; });
+      spin.add(bot);
+    };
+    setGear(D.g);
+    const cam = new THREE.PerspectiveCamera(30, 1, 0.1, 80);
+    const fit = () => {
+      const w = box.clientWidth || 320, h = box.clientHeight || 300;
+      r.setSize(w, h, false);
+      cam.aspect = w / h;
+      const dist = 12.2 * (cam.aspect < 1.15 ? Math.pow(1.15 / cam.aspect, 0.85) : 1);
+      cam.position.set(0, dist * 0.45, dist);
+      cam.lookAt(0, 0.15, 0);
+      cam.updateProjectionMatrix();
+    };
+    fit();
+    // крутить остров: мышь или палец по горизонтали; сам он покачивается, чтобы Бит был виден спереди
+    let drag = null, userRot = 0;
+    const cv = r.domElement;
+    cv.addEventListener('pointerdown', e => { drag = { x: e.clientX, rot: userRot }; cv.setPointerCapture(e.pointerId); });
+    cv.addEventListener('pointermove', e => { if (drag) userRot = drag.rot + (e.clientX - drag.x) * 0.012; });
+    const up = () => { drag = null; };
+    cv.addEventListener('pointerup', up);
+    cv.addEventListener('pointercancel', up);
+    let raf = 0, prev = 0;
+    const loop = now => {
+      const t = now / 1000, dt = Math.min(0.05, prev ? t - prev : 0);
+      prev = t;
+      const goal = userRot + (reduceMotion || drag ? 0 : Math.sin(t / 2.6) * 0.5);
+      spin.rotation.y += (goal - spin.rotation.y) * (drag ? 0.35 : 0.05);
+      if (!reduceMotion) {
+        bot.position.y = Math.max(0, Math.sin(t * 2.2)) * 0.05; // Бит пританцовывает
+        const pet = bot.children.find(o => o.userData.gear === 'pet');
+        if (pet) { const a = t * 1.7; pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); pet.rotation.y = -a; }
+      }
+      land.tick(t, dt);
+      r.render(sc, cam);
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    addEventListener('resize', fit);
+    island = { r, land, fit, setGear, raf: () => raf, turn: a => { userRot = a; } };
+  }
+  function stopIsland() {
+    if (!island) return;
+    cancelAnimationFrame(island.raf());
+    removeEventListener('resize', island.fit);
+    island.land.dispose();
+    island.r.dispose();
+    island.r.forceContextLoss();
+    island.r.domElement.remove();
+    island = null;
+  }
+
+  // Поделиться: ссылка на страницу героя и готовое сообщение; имя — по желанию, хранится только здесь
+  function hpOutput() {
+    const D = heroData(), S = heroSummary(D);
+    const url = `${location.href.split(/[?#]/)[0]}#hero=${b64enc(JSON.stringify(D))}`;
+    const n = S.level, got = S.awards.filter(a => a.done).length, total = LESSONS.filter(l => !l.prologue).length;
+    $('#hpUrl').value = url;
+    $('#hpMsg').value = `${D.n ? `${D.n} и робот Бит` : 'Робот Бит'} в Долине Эникей: уровень ${n} «${LEVELS[n - 1].title}», ★ ${S.stars}, `
+      + `пройдено уроков: ${S.A.lessons} из ${total}, достижений: ${got} из ${S.awards.length}. Страница героя: ${url}`;
+  }
+  $('#heroBtn').addEventListener('click', () => openHeroPage());
+  $('#hpClose').addEventListener('click', closeHeroPage);
+  $('#hpOpenGame').addEventListener('click', closeHeroPage);
+  $('#heroPage').addEventListener('click', e => { if (e.target.id === 'heroPage') closeHeroPage(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#heroPage').hidden) closeHeroPage(); });
+  $('#hpAch').addEventListener('click', e => {
+    const b = e.target.closest('button[data-id]');
+    if (!b || hpShared) return;
+    save.badge = save.badge === b.dataset.id ? '' : b.dataset.id;
+    persist();
+    renderHeroPage();
+    const again = $(`#hpAch button[data-id="${b.dataset.id}"]`);
+    if (again) again.focus({ preventScroll: true });
   });
-  $('#gearClose').addEventListener('click', () => { $('#gearPanel').hidden = true; });
+  $('#hpShareBtn').addEventListener('click', () => {
+    const box = $('#hpShare');
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+    $('#hpNameInput').value = save.name || '';
+    $('#hpShareSum').textContent = '';
+    hpOutput();
+    box.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+    $('#hpCopyMsg').focus({ preventScroll: true });
+  });
+  $('#hpNameInput').addEventListener('input', e => {
+    save.name = cleanName(e.target.value);
+    persist();
+    $('#hpName').hidden = !save.name;
+    $('#hpName').textContent = save.name ? `Пишет код: ${save.name}` : '';
+    hpOutput();
+  });
+  $('#hpCopyMsg').addEventListener('click', () => copyField('#hpMsg', 'Сообщение скопировано — вставь его в чат.', '#hpShareSum'));
+  $('#hpCopyUrl').addEventListener('click', () => copyField('#hpUrl', 'Ссылка скопирована.', '#hpShareSum'));
   $('#storyBtn').addEventListener('click', () => {
-    $('#gearPanel').hidden = true;
+    closeHeroPage();
     const L = LESSONS[lessonIdx], s = lessonStory();
     // после пролога в историю входит и кража Ключ-кода — с тем же представлением в 3D
     const theft = !L.prologue && PRO >= 0 && save.seen.outro[LESSONS[PRO].id] ? STORY.lessons[LESSONS[PRO].id].outro : [];
     cutscene([...STORY.prologue, ...theft, ...(s.intro || []), ...(save.seen.outro[L.id] ? s.outro || [] : [])]);
   });
-  $('#recapBtn').addEventListener('click', () => { $('#gearPanel').hidden = true; openRecap(); });
+  $('#recapBtn').addEventListener('click', () => { closeHeroPage(); openRecap(); });
 
   /* ---------- Карта долины вместо списка уроков: края по урокам на тропе. Пройденный край — с галочкой,
      над текущим — «Бит здесь», дальние (дальше следующего непройденного) — в тумане, но заглянуть можно:
@@ -2113,7 +2737,9 @@
   }
   function edSave() {
     save.custom = { title: cleanTitle($('#lvlName').value) || 'Мой уровень', rows: edRows(), w: ed.w, h: ed.h };
+    save.built = 1; // для достижения «Строитель»
     persist();
+    checkAwards();
   }
   function edRender() {
     const g = $('#lvlGrid');
@@ -2294,11 +2920,11 @@
     $('#hwCopyMsg').focus({ preventScroll: true });
   }
   function closeHwBuilder() { $('#hwEd').hidden = true; document.body.classList.remove('recap-open'); }
-  async function copyField(sel, okText) {
+  async function copyField(sel, okText, out = '#hwSum') {
     const f = $(sel);
     f.select();
-    try { await navigator.clipboard.writeText(f.value); $('#hwSum').textContent = okText; }
-    catch (e) { $('#hwSum').textContent = 'Скопируй текст из поля вручную: он уже выделен.'; }
+    try { await navigator.clipboard.writeText(f.value); $(out).textContent = okText; }
+    catch (e) { $(out).textContent = 'Скопируй текст из поля вручную: он уже выделен.'; }
   }
   $('#hwLessons').addEventListener('change', e => {
     const c = e.target.closest('input[data-id]');
@@ -2326,6 +2952,7 @@
     if (running || SHOW) return;
     if (hwFromLink()) { const x = hwItems().find(y => !solvedTask(y.t)) || hwItems()[0]; goTask(x.t.id); log('Домашка обновлена: список — над заданием.', 'tip'); }
     else if (levelFromLink()) { TASKS = lessonTasks(lessonIdx); selectTask(TASKS.findIndex(t => t.kind === 'custom')); }
+    else { const D = heroFromLink(); if (D) openHeroPage(D); }
   });
 
   /* ---------- Итог пролога: карточка для ученика и родителя после пробного занятия ---------- */
@@ -2473,6 +3100,7 @@
     };
     const onKey = e => {
       if (['Tab', 'Shift', 'Alt', 'Control', 'Meta'].includes(e.key)) return;
+      if (!$('#heroPage').hidden) return; // поверх заставки открыта страница героя по ссылке
       e.preventDefault(); e.stopPropagation(); go();
     };
     addEventListener('keydown', onKey, true);
@@ -2483,6 +3111,8 @@
   /* ---------- Старт ---------- */
   resize();
   selectTask(taskIdx);
+  if (!save.awards || save.gemsSeen === undefined) checkAwards(true); // полученное до появления достижений и кристаллов — без поздравлений
+  const openHero = heroFromLink();
   if (openHw) { // домашка по ссылке — сразу первое нерешённое задание (вступление урока покажет заставка)
     const items = hwItems(), first = items.find(x => !solvedTask(x.t)) || items[0];
     goTask(first.t.id, false);
@@ -2492,6 +3122,7 @@
     const ci = TASKS.findIndex(t => t.kind === 'custom');
     if (ci >= 0) { selectTask(ci); log(`Тебе прислали уровень «${TASKS[ci].title}». Реши его!`, 'tip'); }
   }
+  if (openHero) openHeroPage(openHero); // страница героя по ссылке — поверх заставки, только смотреть
   requestAnimationFrame(t => { last = t; frame(t); });
   if (SHOW) startReel();
 })();
