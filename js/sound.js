@@ -91,6 +91,10 @@ const Sound = (() => {
     right() { tone({ f: 784, type: 'triangle', dur: 0.1, vol: 0.13 }); tone({ f: 1175, type: 'triangle', dur: 0.28, vol: 0.13, at: 0.1 }); },
     wrong() { tone({ f: 330, f2: 300, type: 'triangle', dur: 0.26, vol: 0.11 }); },
     type() { noise({ dur: 0.018, vol: 0.045, type: 'highpass', f: 2500 }); tone({ f: 1800 + Math.random() * 300, type: 'square', dur: 0.012, vol: 0.008 }); },
+    award() { // новое достижение: звонкое арпеджио и искры
+      notes([784, 988, 1175, 1568], { type: 'triangle', dur: 0.12, last: 0.45, vol: 0.1, step: 0.08, at: 0.25 });
+      for (let i = 0; i < 5; i++) tone({ f: 2400 + Math.random() * 1600, dur: 0.18, vol: 0.022, at: 0.55 + i * 0.06 });
+    },
   };
   // Минимальный промежуток между одинаковыми звуками, с
   const GAP = { tick: 0.08, step: 0.05, type: 0.02, turn: 0.05 };

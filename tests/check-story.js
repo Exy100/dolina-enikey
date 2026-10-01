@@ -6,7 +6,9 @@
 //  - тексты обращаются к ученику без мужского рода: не «ты прошёл», не «пиши сам» — учатся и мальчики, и девочки;
 //  - каждый звук, который вызывает app.js (Sound.play('…')), есть в js/sound.js;
 //  - уровни идут по возрастанию, последний достижим звёздами курса (js/gear.js);
-//  - у вещей уникальные id, известные слоты, уровни в пределах списка, и каждая собирается в three.js.
+//  - у вещей уникальные id, известные слоты, уровни в пределах списка, и каждая собирается в three.js;
+//  - у каждого урока есть тема для страницы героя (topic: name, code);
+//  - достижения (js/awards.js): уникальные id, счётчик есть в сводке app.js, цель достижима в курсе, тексты без мужского рода.
 const fs = require('fs');
 const path = require('path');
 global.MiniPy = require('../js/minipy.js');
@@ -16,6 +18,7 @@ fs.readdirSync(LESSON_DIR).filter(f => f.endsWith('.js')).sort().forEach(f => re
 const STORY = require('../js/story.js');
 const G = require('../js/gear.js');
 const THREE = require('../js/three.min.js');
+const AW = require('../js/awards.js');
 
 let errors = 0;
 const fail = msg => { console.log('✗ ' + msg); errors++; };
@@ -55,6 +58,7 @@ Object.keys(STORY.lessons).forEach(id => {
 const MASC = /(^|[^а-яё])ты\s+(?:[а-яё]+\s+)?[а-яё]+(?:л|лся)(?![а-яё])/i, SAM = /(^|[^а-яё])сам(?![а-яё])/i;
 const texts = [];
 [STORY.prologue, ...Object.values(STORY.lessons).flatMap(s => [s.intro, s.outro])].forEach(ls => (ls || []).forEach(([, t]) => texts.push(['сюжет', t, false])));
+AW.LIST.forEach(a => [a.name, a.desc].forEach(x => texts.push([`достижение ${a.id}`, x || '', true])));
 W.LESSONS.forEach(l => {
   texts.push([l.id, l.intro || '', true]);
   l.tasks.forEach(t => [t.goal, t.news, ...t.hints.slice(0, 2)].forEach(x => texts.push([t.id, x || '', true])));
@@ -95,5 +99,37 @@ G.ITEMS.forEach(it => {
   }
 });
 
-console.log(errors ? `Ошибок: ${errors}` : `Сюжет и прокачка в порядке: уроков ${W.LESSONS.length}, уровней ${G.LEVELS.length}, вещей ${G.ITEMS.length}.`);
+// Темы курса на странице героя
+W.LESSONS.forEach(l => {
+  if (!l.topic || !l.topic.name || !l.topic.code) fail(`${l.id}: нет темы для страницы героя — topic: { name, code }`);
+});
+
+// Достижения: счётчик key считает app.js (heroSummary, объект A), цель должна быть достижима
+const aBlock = (appSrc.match(/const A = \{([\s\S]*?)\n\s*\};/) || [])[1] || '';
+const allTasks = W.LESSONS.flatMap(l => [...l.tasks, ...(l.bonus || [])]);
+const reach = {
+  solved: allTasks.length, noHints: allTasks.length, short: allTasks.length, first: allTasks.length,
+  fixes: W.LESSONS.flatMap(l => l.tasks).filter(t => /(^|-)fix$/.test(t.id)).length,
+  bonus: W.LESSONS.reduce((n, l) => n + (l.bonus || []).length, 0),
+  warm: new Set(W.LESSONS.flatMap(l => l.warmup || [])).size,
+  lessons: W.LESSONS.filter(l => !l.prologue).length, perfect: W.LESSONS.length,
+  prolog: 1, course: 1, hw: Infinity, built: 1, days: Infinity, lines: Infinity, streak: Infinity,
+};
+const HUES = ['violet', 'mint', 'gold', 'coral', 'sky', 'pink'];
+const aIds = new Set();
+AW.LIST.forEach(a => {
+  if (aIds.has(a.id)) fail(`достижение «${a.id}» повторяется`);
+  aIds.add(a.id);
+  if (!a.name || !a.desc || !a.icon) fail(`достижение ${a.id}: нужны name, desc и icon`);
+  if (!HUES.includes(a.hue)) fail(`достижение ${a.id}: неизвестный цвет «${a.hue}»`);
+  if (!new RegExp(`(^|[\\s,{])${a.key}:`).test(aBlock)) fail(`достижение ${a.id}: счётчика «${a.key}» нет в сводке app.js (heroSummary, const A)`);
+  if (!(Number.isInteger(a.goal) && a.goal >= 1)) fail(`достижение ${a.id}: цель goal — целое число от 1`);
+  else if (reach[a.key] === undefined) fail(`достижение ${a.id}: добавь счётчик «${a.key}» в проверку достижимости (tests/check-story.js)`);
+  else if (a.goal > reach[a.key]) fail(`достижение ${a.id}: цель ${a.goal} недостижима — в курсе только ${reach[a.key]}`);
+});
+const ev = AW.evaluate({ solved: 1 });
+if (!ev[0].done || ev.some((a, i) => i && a.done && a.key !== 'solved')) fail('HeroAwards.evaluate считает неверно');
+if (!/<script src="js\/awards\.js"><\/script>/.test(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8'))) fail('js/awards.js не подключён в index.html');
+
+console.log(errors ? `Ошибок: ${errors}` : `Сюжет и прокачка в порядке: уроков ${W.LESSONS.length}, уровней ${G.LEVELS.length}, вещей ${G.ITEMS.length}, достижений ${AW.LIST.length}.`);
 process.exit(errors ? 1 : 0);

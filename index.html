@@ -29,7 +29,7 @@
         <span class="mb-stars" id="mbStars"></span>
       </button>
       <select id="lessonSel" hidden aria-hidden="true" tabindex="-1"></select>
-      <button type="button" class="hero-badge" id="heroBtn" aria-controls="gearPanel">
+      <button type="button" class="hero-badge" id="heroBtn" aria-haspopup="dialog" aria-controls="heroPage">
         <span class="hb-lvl" id="hbLvl">1</span>
         <span class="hb-text"><b>Бит</b> <span id="hbTitle">Новичок</span></span>
         <span class="hb-bar" aria-hidden="true"><i id="hbBar"></i></span>
@@ -129,19 +129,6 @@
             <button type="button" class="btn secondary bonus-btn" id="bonusBtn" hidden>★ Задание со звёздочкой</button>
             <button type="button" class="btn secondary" id="editLvlBtn" hidden>✎ Изменить уровень</button>
           </div>
-        </div>
-      </div>
-      <!-- Снаряжение героя: открывается кнопкой с уровнем в шапке -->
-      <div class="gear" id="gearPanel" role="dialog" aria-labelledby="gearTitle" hidden>
-        <div class="gear-head">
-          <h3 id="gearTitle"></h3>
-          <button type="button" class="gear-close" id="gearClose" aria-label="Закрыть">×</button>
-        </div>
-        <p class="gear-sub" id="gearSub"></p>
-        <ul class="gear-list" id="gearList"></ul>
-        <div class="gear-actions">
-          <button type="button" class="btn secondary" id="storyBtn">История долины</button>
-          <button type="button" class="btn secondary" id="recapBtn" hidden>Итог пролога</button>
         </div>
       </div>
       <!-- Реплика персонажа: пролог, начало и конец квеста -->
@@ -265,6 +252,68 @@
     </div>
   </div>
 </div>
+<!-- Страница героя: Бит на острове своего края, звание, темы курса, достижения, снаряжение.
+     По ссылке #hero=… та же страница открывается только для просмотра (js/app.js, openHeroPage) -->
+<div class="hp" id="heroPage" hidden>
+  <div class="hp-card" role="dialog" aria-modal="true" aria-labelledby="hpTitle">
+    <button type="button" class="gear-close hp-close" id="hpClose" aria-label="Закрыть">×</button>
+    <div class="hp-top">
+      <div class="hp-stage" id="hpStage">
+        <span class="hp-lvl" id="hpLvl" aria-hidden="true"></span>
+        <span class="hp-place" id="hpPlace"></span>
+      </div>
+      <div class="hp-head">
+        <p class="hp-kicker" id="hpKicker"></p>
+        <h2 id="hpTitle">Бит</h2>
+        <p class="hp-rank" id="hpRank"></p>
+        <p class="hp-name" id="hpName" hidden></p>
+        <div class="hp-level">
+          <div class="hp-level-line"><span id="hpLevelText"></span><span id="hpLevelStars"></span></div>
+          <div class="hp-bar" aria-hidden="true"><i id="hpBar"></i></div>
+          <p class="hp-next" id="hpNext"></p>
+        </div>
+        <ul class="hp-stats" id="hpStats" aria-label="Статистика"></ul>
+      </div>
+    </div>
+    <p class="hp-shared-note" id="hpSharedNote" hidden>Это страница героя по ссылке: её можно только смотреть. Свой прогресс в этом браузере не меняется.</p>
+    <section class="hp-sec">
+      <h3>Темы курса</h3>
+      <ol class="hp-topics" id="hpTopics"></ol>
+    </section>
+    <section class="hp-sec">
+      <h3>Достижения <span class="hp-count" id="hpAchCount"></span></h3>
+      <p class="hp-tip" id="hpAchTip">Нажми на полученное достижение — оно станет титулом под званием.</p>
+      <ul class="hp-ach" id="hpAch"></ul>
+    </section>
+    <section class="hp-sec" id="hpGearSec">
+      <h3>Снаряжение</h3>
+      <p class="gear-sub" id="gearSub"></p>
+      <ul class="gear-list hp-gear" id="gearList"></ul>
+    </section>
+    <section class="hp-sec" id="hpCodeSec">
+      <h3 id="hpCodeTitle">Последняя программа</h3>
+      <pre class="recap-code" id="hpCode"></pre>
+    </section>
+    <section class="hp-sec hp-share" id="hpShare" hidden>
+      <h3>Поделиться</h3>
+      <p class="hp-tip">Ссылка открывает эту страницу только для просмотра — для родителей, репетитора или друга. Всё нужное зашито в саму ссылку.</p>
+      <label class="hw-field"><span>Имя на странице — по желанию</span><input id="hpNameInput" maxlength="24" autocomplete="off" placeholder="например, Саша"></label>
+      <label class="hw-field"><span>Ссылка</span><input id="hpUrl" readonly></label>
+      <label class="hw-field"><span>Сообщение</span><textarea id="hpMsg" rows="3" readonly></textarea></label>
+      <div class="lvl-actions">
+        <button type="button" class="btn primary" id="hpCopyMsg">Скопировать сообщение</button>
+        <button type="button" class="btn secondary" id="hpCopyUrl">Скопировать ссылку</button>
+      </div>
+      <p class="hw-sum" id="hpShareSum" role="status"></p>
+    </section>
+    <div class="recap-actions hp-actions">
+      <button type="button" class="btn primary" id="hpShareBtn">Поделиться</button>
+      <button type="button" class="btn primary" id="hpOpenGame" hidden>Открыть Долину</button>
+      <button type="button" class="btn secondary" id="storyBtn">История долины</button>
+      <button type="button" class="btn secondary" id="recapBtn" hidden>Итог пролога</button>
+    </div>
+  </div>
+</div>
 <!-- 3D-библиотека (локальная копия, работает без интернета) -->
 <script src="js/three.min.js"></script>
 <!-- Учебный Python: разбор и пошаговое выполнение кода -->
@@ -283,6 +332,8 @@
 <!-- Сюжет: персонажи и реплики. Прокачка: уровни и снаряжение героя -->
 <script src="js/story.js"></script>
 <script src="js/gear.js"></script>
+<!-- Достижения для страницы героя -->
+<script src="js/awards.js"></script>
 <!-- Звуки: синтез в браузере, без файлов -->
 <script src="js/sound.js"></script>
 <!-- Интерфейс, 3D-сцена и анимации -->
