@@ -252,7 +252,7 @@
     </div>
   </div>
 </div>
-<!-- Страница героя: Бит на острове своего края, звание, темы курса, достижения, снаряжение.
+<!-- Страница героя: Бит на острове своего края, звание, темы курса, достижения, лавка Ады (кристаллы), снаряжение.
      По ссылке #hero=… та же страница открывается только для просмотра (js/app.js, openHeroPage) -->
 <div class="hp" id="heroPage" hidden>
   <div class="hp-card" role="dialog" aria-modal="true" aria-labelledby="hpTitle">
@@ -260,19 +260,42 @@
     <div class="hp-top">
       <div class="hp-stage" id="hpStage">
         <span class="hp-lvl" id="hpLvl" aria-hidden="true"></span>
+        <span class="hp-gems" id="hpGems"></span>
         <span class="hp-place" id="hpPlace"></span>
+        <!-- Примерка вещи из лавки: что надето на Бита сейчас и кнопка «Купить» -->
+        <div class="hp-try" id="hpTry" hidden>
+          <span class="hp-try-text"><b id="hpTryName"></b><span id="hpTryPrice"></span></span>
+          <button type="button" class="btn primary" id="hpBuy">Купить</button>
+          <button type="button" class="gear-close" id="hpTryOff" aria-label="Снять примерку">×</button>
+        </div>
       </div>
       <div class="hp-head">
         <p class="hp-kicker" id="hpKicker"></p>
         <h2 id="hpTitle">Бит</h2>
         <p class="hp-rank" id="hpRank"></p>
         <p class="hp-name" id="hpName" hidden></p>
-        <div class="hp-level">
-          <div class="hp-level-line"><span id="hpLevelText"></span><span id="hpLevelStars"></span></div>
-          <div class="hp-bar" aria-hidden="true"><i id="hpBar"></i></div>
-          <p class="hp-next" id="hpNext"></p>
+        <div class="hp-tabs" id="hpTabs" role="tablist" aria-label="Разделы страницы героя">
+          <button type="button" role="tab" id="hpTabProg" aria-controls="hpPanelProg" aria-selected="true" data-tab="Prog">Прогресс</button>
+          <button type="button" role="tab" id="hpTabShop" aria-controls="hpPanelShop" aria-selected="false" data-tab="Shop">Лавка Ады <span class="hp-gem-n" id="hpGemsTab"></span></button>
+          <button type="button" role="tab" id="hpTabGear" aria-controls="hpPanelGear" aria-selected="false" data-tab="Gear">Снаряжение</button>
         </div>
-        <ul class="hp-stats" id="hpStats" aria-label="Статистика"></ul>
+        <div class="hp-panel" id="hpPanelProg" role="tabpanel" aria-labelledby="hpTabProg">
+          <div class="hp-level">
+            <div class="hp-level-line"><span id="hpLevelText"></span><span id="hpLevelStars"></span></div>
+            <div class="hp-bar" aria-hidden="true"><i id="hpBar"></i></div>
+            <p class="hp-next" id="hpNext"></p>
+          </div>
+          <ul class="hp-stats" id="hpStats" aria-label="Статистика"></ul>
+        </div>
+        <div class="hp-panel hp-scroll" id="hpPanelShop" role="tabpanel" aria-labelledby="hpTabShop" hidden>
+          <p class="hp-tip" id="hpShopTip"></p>
+          <ul class="hp-shop" id="hpShop"></ul>
+          <p class="hp-shop-msg" id="hpShopMsg" role="status"></p>
+        </div>
+        <div class="hp-panel hp-scroll" id="hpPanelGear" role="tabpanel" aria-labelledby="hpTabGear" hidden>
+          <p class="hp-tip" id="gearSub"></p>
+          <ul class="gear-list hp-gear" id="gearList"></ul>
+        </div>
       </div>
     </div>
     <p class="hp-shared-note" id="hpSharedNote" hidden>Это страница героя по ссылке: её можно только смотреть. Свой прогресс в этом браузере не меняется.</p>
@@ -284,11 +307,6 @@
       <h3>Достижения <span class="hp-count" id="hpAchCount"></span></h3>
       <p class="hp-tip" id="hpAchTip">Нажми на полученное достижение — оно станет титулом под званием.</p>
       <ul class="hp-ach" id="hpAch"></ul>
-    </section>
-    <section class="hp-sec" id="hpGearSec">
-      <h3>Снаряжение</h3>
-      <p class="gear-sub" id="gearSub"></p>
-      <ul class="gear-list hp-gear" id="gearList"></ul>
     </section>
     <section class="hp-sec" id="hpCodeSec">
       <h3 id="hpCodeTitle">Последняя программа</h3>

@@ -228,7 +228,7 @@
     return LESSONS.reduce((n, l) => n + [...l.tasks, ...(l.bonus || [])].reduce((m, t) => m + (save.stars[t.id] || []).reduce((a, b) => a + b, 0), 0), 0);
   }
   const heroLevel = () => HeroGear.levelFor(totalStars());
-  const isOpen = it => it.level <= heroLevel();
+  const isOpen = it => (it.price ? !!(save.shop || {})[it.id] : it.level <= heroLevel()); // вещь из лавки — если куплена
   function applyGear() {
     Object.keys(gearOn).forEach(slot => { hero.remove(gearOn[slot]); delete gearOn[slot]; });
     let colors = HeroGear.DEFAULT_COLORS;
@@ -547,7 +547,7 @@
         c.position.y = 0.5 + (reduceMotion ? 0 : Math.abs(Math.sin(time * 4)) * 0.45);
       } else c.position.y = 0.42 + Math.sin(time * 2.4 + c.userData.phase) * 0.05;
     });
-    if (gearOn.pet) { const a = time * 1.7; gearOn.pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); }
+    if (gearOn.pet) { const a = time * 1.7; gearOn.pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); gearOn.pet.rotation.y = -a; }
     M.lava.emissiveIntensity = 0.75 + Math.sin(time * 3) * 0.25;
     if (flag) flag.rotation.y = Math.sin(time * 2.2) * 0.25;
     if (finishRing) finishRing.material.opacity = 0.35 + Math.sin(time * 3) * 0.2;
@@ -823,6 +823,8 @@
     if (right) save.predict.hits++;
     save.predict.streak = right ? (save.predict.streak || 0) + 1 : 0; // серия верных догадок — для достижения «Провидец»
     save.predict.best = Math.max(save.predict.best || 0, save.predict.streak);
+    // верная догадка в новом задании — кристаллы (свои уровни не считаются: их можно рисовать без конца)
+    if (right && TASKS[taskIdx].kind !== 'custom') { save.guessed = save.guessed || {}; save.guessed[TASKS[taskIdx].id] = 1; }
     persist();
     // верный вариант — зелёный, неверный выбор — оранжевый, остальные гаснут
     guess.options.forEach(p => paintOption(p,
@@ -1255,7 +1257,7 @@
     $('#hbLvl').textContent = n;
     $('#hbTitle').textContent = cur.title;
     $('#hbBar').style.width = next ? `${Math.round(((stars - cur.stars) / (next.stars - cur.stars)) * 100)}%` : '100%';
-    $('#heroBtn').setAttribute('aria-label', `${STORY.hero}, уровень ${n}: ${cur.title}. Страница героя${save.awardsNew ? ', есть новое достижение' : ''}`);
+    $('#heroBtn').setAttribute('aria-label', `${STORY.hero}, уровень ${n}: ${cur.title}. Страница героя${save.awardsNew ? ', там есть новое' : ''}`);
     $('#heroBtn').classList.toggle('new', !!save.awardsNew);
   }
 
@@ -1730,11 +1732,13 @@
         log('Вся домашка готова! Её увидят на следующем занятии — звёзды сохранились.', 'ok');
       }
     }
-    // новые достижения — ещё и строкой в карточке результата
-    const won = checkAwards();
-    if (won.length) {
+    // новые достижения и кристаллы — ещё и строкой в карточке результата
+    const ch = checkAwards(), bits = [];
+    if (ch.awards.length) bits.push(`${ch.awards.length > 1 ? 'Достижения' : 'Достижение'}: ${ch.awards.map(a => `«${a.name}»`).join(', ')}!`);
+    if (ch.gems) bits.push(`+${ch.gems} ${plural(ch.gems, 'кристалл', 'кристалла', 'кристаллов')}.`);
+    if (bits.length) {
       const rl = $('#resLevel'), was = rl.hidden ? '' : rl.textContent + ' ';
-      rl.textContent = `${was}${won.length > 1 ? 'Достижения' : 'Достижение'}: ${won.map(a => `«${a.name}»`).join(', ')}!`;
+      rl.textContent = was + bits.join(' ');
       rl.hidden = false;
     }
   }
@@ -1998,6 +2002,8 @@
       d: Math.max((save.days || {}).n || 0, won.length ? 1 : 0),
       k: won.reduce((n, t) => n + codeLines(save.code[t.id] ?? t.hints[2]).length, 0),
       p: [save.predict.hits || 0, save.predict.tries || 0, save.predict.best || 0],
+      q: Object.keys(save.guessed || {}).length, // задания с верной догадкой — за них кристаллы
+      b: HeroGear.SHOP.filter(isOpen).map(it => it.id), // куплено в лавке Ады
       c: lt ? [lt.id, clipCode(save.code[lt.id] ?? lt.hints[2])] : null,
       at: Date.now(),
     };
@@ -2020,9 +2026,11 @@
       first: D.f, noHints: flat.filter(x => x.st[1]).length, short: flat.filter(x => x.st[2]).length,
       fixes: flat.filter(x => x.st[0] && FIX_IDS.has(x.t.id)).length, streak: D.p[2], bonus: per.reduce((n, p) => n + p.bonus, 0),
       warm: D.w, hw: D.h, built: D.u, days: D.d, lines: D.k, perfect: per.filter(p => p.perfect).length,
-      lessons: per.filter(p => p.done && !p.l.prologue).length, course: per.every(p => p.done) ? 1 : 0,
+      lessons: per.filter(p => p.done && !p.l.prologue).length, course: per.every(p => p.done) ? 1 : 0, guessed: D.q,
     };
-    return { per, stars, A, awards: HeroAwards.evaluate(A), level: HeroGear.levelFor(stars) };
+    // кристаллы: заработано всего (js/awards.js) минус потрачено в лавке Ады
+    const earned = HeroAwards.gemsEarned(A), spent = D.b.reduce((n, id) => n + (HeroGear.SHOP.find(it => it.id === id) || {}).price, 0);
+    return { per, stars, A, awards: HeroAwards.evaluate(A), level: HeroGear.levelFor(stars), gems: { earned, spent, left: Math.max(0, earned - spent) } };
   }
   // Ссылка #hero=…: данные проверяются — в ссылке может оказаться что угодно
   function cleanHero(d) {
@@ -2033,10 +2041,11 @@
     const D = {
       v: 1, n: cleanName(d.n), r: Math.min(int(d.r), LESSONS.length - 1), g: {}, t: typeof d.t === 'string' ? d.t.slice(0, 20) : '', s,
       f: int(d.f), w: int(d.w), h: int(d.h), u: int(d.u, 1), d: int(d.d), k: int(d.k), p: [0, 1, 2].map(i => int((d.p || [])[i])),
+      q: int(d.q), b: Array.isArray(d.b) ? HeroGear.SHOP.filter(it => d.b.includes(it.id)).map(it => it.id) : [],
       c: null, at: int(d.at, 4102444800000) || Date.now(),
     };
     const lvl = heroSummary(D).level;
-    ITEMS.forEach(it => { if (d.g && d.g[it.slot] === it.id && it.level <= lvl) D.g[it.slot] = it.id; });
+    ITEMS.forEach(it => { if (d.g && d.g[it.slot] === it.id && (it.price ? D.b.includes(it.id) : it.level <= lvl)) D.g[it.slot] = it.id; });
     if (Array.isArray(d.c) && typeof d.c[1] === 'string' && findTask(d.c[0])) D.c = [d.c[0], clipCode(d.c[1])];
     return D;
   }
@@ -2047,20 +2056,26 @@
     try { return cleanHero(JSON.parse(b64dec(m[1]))); } catch (e) { return null; }
   }
 
-  // Новые достижения: поздравление в журнале и точка на кнопке героя. silent — запомнить молча (первый запуск)
+  // Новые достижения и кристаллы: поздравление в журнале и точка на кнопке героя. silent — запомнить молча
+  // (первый запуск: всё полученное раньше просто запоминается, кристаллы за него уже лежат в лавке)
   function checkAwards(silent = false) {
-    if (SHOW) return [];
+    if (SHOW) return { awards: [], gems: 0 };
     if (!save.awards) save.awards = {};
-    const fresh = heroSummary(heroData()).awards.filter(a => a.done && !save.awards[a.id]);
+    const S = heroSummary(heroData());
+    const fresh = S.awards.filter(a => a.done && !save.awards[a.id]);
     fresh.forEach(a => { save.awards[a.id] = Date.now(); });
-    if (fresh.length && !silent) {
+    const plus = silent || save.gemsSeen === undefined ? 0 : S.gems.earned - save.gemsSeen;
+    const changed = fresh.length || save.gemsSeen !== S.gems.earned;
+    save.gemsSeen = S.gems.earned;
+    if (!silent && (fresh.length || plus > 0)) {
       save.awardsNew = true;
       fresh.forEach(a => log(`Новое достижение: «${a.name}». Оно уже на странице героя — кнопка с уровнем Бита наверху.`, 'ok'));
-      Sound.play('award');
+      if (plus > 0) log(`+${plus} ${plural(plus, 'кристалл', 'кристалла', 'кристаллов')} — их тратят в лавке Ады на странице героя.`, 'ok');
+      if (fresh.length) Sound.play('award');
       renderBadge();
     }
-    if (fresh.length) persist();
-    return silent ? [] : fresh;
+    if (changed) persist();
+    return silent ? { awards: [], gems: 0 } : { awards: fresh, gems: Math.max(0, plus) };
   }
   // День занятий: считаем дни, когда программа запускалась
   function markDay() {
@@ -2078,6 +2093,10 @@
     $('#hpKicker').textContent = `Долина Эникей · страница героя · ${date}`;
     $('#hpTitle').textContent = `${STORY.hero} · уровень ${n}`;
     $('#hpLvl').textContent = n;
+    $('#hpGems').innerHTML = `${GEM_SVG}<b>${S.gems.left}</b>`;
+    $('#hpGems').title = `Кристаллы: ${S.gems.left}. Всего заработано: ${S.gems.earned}`;
+    $('#hpGemsTab').innerHTML = `${GEM_SVG}${S.gems.left}`;
+    $('#hpTabs').hidden = shared; // по ссылке — только прогресс
     $('#hpPlace').textContent = shared ? place : `${place} · Бит здесь`;
     $('#hpRank').innerHTML = `<b>${esc(cur.title)}</b>${title ? ` · <span class="hp-title">«${esc(title.name)}»</span>` : ''}`;
     $('#hpName').hidden = !D.n;
@@ -2119,8 +2138,7 @@
       const cls = `hp-a${a.done ? ' done' : ''}${isTitle ? ' title' : ''}`;
       return `<li>${a.done && !shared ? `<button type="button" class="${cls}" data-id="${a.id}" aria-pressed="${isTitle}">${inner}</button>` : `<div class="${cls}">${inner}</div>`}</li>`;
     }).join('');
-    $('#hpGearSec').hidden = shared;
-    if (!shared) renderGear();
+    if (!shared) { renderGear(); renderShop(S); }
     const c = D.c && findTask(D.c[0]);
     $('#hpCodeSec').hidden = !c;
     if (c) {
@@ -2136,6 +2154,9 @@
   }
   function openHeroPage(shared = null) {
     hpShared = shared;
+    hpTry = null;
+    $('#hpShopMsg').textContent = '';
+    showTab('Prog');
     if (!shared && save.awardsNew) { save.awardsNew = false; persist(); renderBadge(); }
     $('#hpShare').hidden = true;
     renderHeroPage();
@@ -2153,15 +2174,107 @@
     document.body.classList.remove('recap-open');
     stopIsland();
     hpShared = null;
+    hpTry = null;
     if (!shared) $('#heroBtn').focus({ preventScroll: true });
   }
+  // Вкладки справа от острова: прогресс, лавка Ады, снаряжение. Остров всегда виден — на нём и примерка
+  function showTab(name) {
+    ['Prog', 'Shop', 'Gear'].forEach(n => {
+      const t = $(`#hpTab${n}`);
+      t.setAttribute('aria-selected', String(n === name));
+      t.tabIndex = n === name ? 0 : -1;
+      $(`#hpPanel${n}`).hidden = n !== name;
+    });
+    if (name !== 'Shop' && hpTry) { tryOn(null); renderTry(heroSummary(heroData())); }
+  }
+  $('#hpTabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) showTab(b.dataset.tab); });
+  $('#hpTabs').addEventListener('keydown', e => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    const tabs = $$('#hpTabs [role="tab"]'), i = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true');
+    const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+    showTab(next.dataset.tab);
+    next.focus();
+    e.preventDefault();
+  });
 
-  // Снаряжение на странице героя: вещи за уровни, нажатие — надеть или снять
+  /* Лавка Ады: вещи за кристаллы, отдельно от вещей за уровни. Нажатие — примерка на острове, «Купить» — в рамке острова */
+  const GEM_SVG = '<svg class="gem" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10l5 6-10 12L2 9z" fill="#7FE0FF"/><path d="M2 9h20L12 21z" fill="#38B6E6"/>'
+    + '<path d="M7 3l3 6h4l3-6z" fill="#C9F3FF"/><path d="M7 3h10l5 6-10 12L2 9zM2 9h20M10 9l2 12 2-12M7 3l3 6M17 3l-3 6" fill="none" stroke="#1C7FB5" stroke-width="1.3" stroke-linejoin="round"/></svg>';
+  const SLOT_ICON = {
+    head: '<path d="M3 17h18"/><path d="M6 17v-6a6 6 0 0 1 12 0v6"/>',
+    face: '<circle cx="7" cy="13" r="3.5"/><circle cx="17" cy="13" r="3.5"/><path d="M10.5 13h3"/>',
+    neck: '<path d="M12 12L4 7v10zM12 12l8-5v10z"/>',
+    back: '<path d="M8 21V9a4 4 0 0 1 8 0v12z"/><path d="M8 14h8M10 21v2M14 21v2"/>',
+    pet: '<path d="M4 14c3 0 5-5 9-5a5 5 0 0 1 5 5c0 3-3 5-7 5H8"/><path d="M18 12l3 1-3 1"/><circle cx="15" cy="12.5" r=".9"/>',
+  };
+  const hexColor = c => '#' + c.toString(16).padStart(6, '0');
+  let hpTry = null; // вещь из лавки на примерке
+  function tryOn(id) {
+    hpTry = id;
+    if (!island) return;
+    const g = { ...heroData().g }, it = id && HeroGear.SHOP.find(x => x.id === id);
+    if (it) g[it.slot] = it.id;
+    island.setGear(g);
+    island.turn(it && it.slot === 'back' ? Math.PI : 0); // вещь на спину — показать Бита со спины
+  }
+  function renderShop(S) {
+    const left = S.gems.left, R = HeroAwards.GEMS;
+    $('#hpShopTip').textContent = `Ада мастерит для Бита обновки. Кристаллы дают за задание со звёздочкой (${R.bonus}), сделанную домашку (${R.hw}), `
+      + `достижения (от 10 до 50) и верную догадку в «Угадай» в новом задании (${R.guess}). Нажми на вещь — Бит её примерит.`;
+    $('#hpShop').innerHTML = HeroGear.SHOP.map(it => {
+      const own = isOpen(it), on = own && save.gear[it.slot] === it.id, tr = hpTry === it.id;
+      const ico = it.colors ? `<span class="si-sw" style="background:linear-gradient(135deg, ${hexColor(it.colors[0])} 50%, ${hexColor(it.colors[1])} 50%)"></span>`
+        : `<svg viewBox="0 0 24 24">${SLOT_ICON[it.slot] || ''}</svg>`;
+      const cls = ['hp-si', own && 'own', on && 'on', tr && 'try', !own && it.price > left && 'dear'].filter(Boolean).join(' ');
+      return `<li><button type="button" class="${cls}" data-id="${it.id}" aria-pressed="${own ? on : tr}" title="${esc(it.name)}${own ? '' : `: ${it.price} ${plural(it.price, 'кристалл', 'кристалла', 'кристаллов')}`}">
+        <span class="si-ico" aria-hidden="true">${ico}</span><span class="si-text"><b>${esc(it.name)}</b><span>${SLOTS[it.slot]}</span></span>
+        <span class="si-state">${on ? 'надето' : own ? 'куплено' : `${GEM_SVG}${it.price}`}</span></button></li>`;
+    }).join('');
+    renderTry(S);
+  }
+  function renderTry(S) {
+    const it = hpTry && HeroGear.SHOP.find(x => x.id === hpTry);
+    $('#hpTry').hidden = !it;
+    if (!it) return;
+    const can = S.gems.left >= it.price;
+    $('#hpTryName').textContent = `Примерка: ${it.name}`;
+    $('#hpTryPrice').innerHTML = can ? `${GEM_SVG}${it.price}` : `не хватает ${GEM_SVG}${it.price - S.gems.left}`;
+    $('#hpBuy').disabled = !can;
+  }
+  $('#hpShop').addEventListener('click', e => {
+    const b = e.target.closest('button[data-id]');
+    if (!b || hpShared) return;
+    const it = HeroGear.SHOP.find(x => x.id === b.dataset.id);
+    $('#hpShopMsg').textContent = '';
+    if (isOpen(it)) { // уже куплено — надеть или снять, как в снаряжении
+      save.gear[it.slot] = save.gear[it.slot] === it.id ? null : it.id;
+      persist(); applyGear(); tryOn(null);
+    } else tryOn(hpTry === it.id ? null : it.id);
+    renderHeroPage();
+    const again = $(`#hpShop button[data-id="${it.id}"]`);
+    if (again) again.focus({ preventScroll: true });
+    // на телефоне остров над вкладками: показать примерку
+    if (hpTry && matchMedia('(max-width: 760px)').matches) $('#hpStage').scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+  });
+  $('#hpBuy').addEventListener('click', () => {
+    const it = HeroGear.SHOP.find(x => x.id === hpTry);
+    if (!it || hpShared || heroSummary(heroData()).gems.left < it.price) return;
+    save.shop = save.shop || {};
+    save.shop[it.id] = 1;
+    save.gear[it.slot] = it.id; // купленное сразу надевается
+    persist(); applyGear(); tryOn(null);
+    Sound.play('award');
+    renderHeroPage();
+    $('#hpShopMsg').textContent = `Куплено: «${it.name}». Бит уже в обновке — снять можно во вкладке «Снаряжение».`;
+  });
+  $('#hpTryOff').addEventListener('click', () => { tryOn(null); renderHeroPage(); });
+
+  // Снаряжение на странице героя: вещи за уровни и купленные в лавке, нажатие — надеть или снять
   function renderGear() {
-    $('#gearSub').textContent = 'Вещи открываются за уровни. Нажми на вещь, чтобы надеть её или снять.';
+    $('#gearSub').textContent = 'Вещи открываются за уровни, а в лавке Ады их покупают за кристаллы. Нажми на вещь, чтобы надеть её или снять.';
     const list = $('#gearList');
     list.innerHTML = '';
-    ITEMS.forEach(it => {
+    ITEMS.filter(it => !it.price || isOpen(it)).forEach(it => {
       const on = save.gear[it.slot] === it.id, open = isOpen(it);
       const b = document.createElement('button');
       b.type = 'button';
@@ -2176,9 +2289,10 @@
       b.append(name, state);
       b.addEventListener('click', () => {
         save.gear[it.slot] = on ? null : it.id;
-        persist(); applyGear(); renderGear();
-        if (island) island.setGear(heroData().g);
-        if (!$('#hpShare').hidden) hpOutput();
+        persist(); applyGear(); tryOn(null);
+        renderHeroPage();
+        const again = $$('#gearList .gear-item').find(x => x.firstChild.textContent === it.name);
+        if (again) again.focus({ preventScroll: true });
       });
       const li = document.createElement('li');
       li.append(b);
@@ -2437,7 +2551,7 @@
       if (!reduceMotion) {
         bot.position.y = Math.max(0, Math.sin(t * 2.2)) * 0.05; // Бит пританцовывает
         const pet = bot.children.find(o => o.userData.gear === 'pet');
-        if (pet) { const a = t * 1.7; pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); }
+        if (pet) { const a = t * 1.7; pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); pet.rotation.y = -a; }
       }
       land.tick(t, dt);
       r.render(sc, cam);
@@ -2445,7 +2559,7 @@
     };
     raf = requestAnimationFrame(loop);
     addEventListener('resize', fit);
-    island = { r, land, fit, setGear, raf: () => raf };
+    island = { r, land, fit, setGear, raf: () => raf, turn: a => { userRot = a; } };
   }
   function stopIsland() {
     if (!island) return;
@@ -2997,7 +3111,7 @@
   /* ---------- Старт ---------- */
   resize();
   selectTask(taskIdx);
-  if (!save.awards) checkAwards(true); // уже полученные до появления достижений — без поздравлений
+  if (!save.awards || save.gemsSeen === undefined) checkAwards(true); // полученное до появления достижений и кристаллов — без поздравлений
   const openHero = heroFromLink();
   if (openHw) { // домашка по ссылке — сразу первое нерешённое задание (вступление урока покажет заставка)
     const items = hwItems(), first = items.find(x => !solvedTask(x.t)) || items[0];

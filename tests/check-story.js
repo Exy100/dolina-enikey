@@ -90,7 +90,9 @@ G.ITEMS.forEach(it => {
   if (ids.has(it.id)) fail(`вещь «${it.id}» повторяется`);
   ids.add(it.id);
   if (!G.SLOTS[it.slot]) fail(`${it.id}: неизвестный слот «${it.slot}»`);
-  if (it.level < 2 || it.level > G.LEVELS.length) fail(`${it.id}: уровень ${it.level} вне списка уровней`);
+  if ((it.level === undefined) === (it.price === undefined)) fail(`${it.id}: у вещи должно быть что-то одно — уровень (level) или цена в лавке (price)`);
+  else if (it.price !== undefined) { if (!(Number.isInteger(it.price) && it.price > 0)) fail(`${it.id}: цена — целое число кристаллов больше нуля`); }
+  else if (it.level < 2 || it.level > G.LEVELS.length) fail(`${it.id}: уровень ${it.level} вне списка уровней`);
   if (it.slot === 'color' ? !(it.colors && it.colors.length === 2) : it.colors) fail(`${it.id}: цвета (colors) бывают только у слота color, и их два`);
   if (it.slot !== 'color') {
     try {
@@ -124,11 +126,17 @@ AW.LIST.forEach(a => {
   if (!HUES.includes(a.hue)) fail(`достижение ${a.id}: неизвестный цвет «${a.hue}»`);
   if (!new RegExp(`(^|[\\s,{])${a.key}:`).test(aBlock)) fail(`достижение ${a.id}: счётчика «${a.key}» нет в сводке app.js (heroSummary, const A)`);
   if (!(Number.isInteger(a.goal) && a.goal >= 1)) fail(`достижение ${a.id}: цель goal — целое число от 1`);
+  if (!(Number.isInteger(a.gems) && a.gems > 0)) fail(`достижение ${a.id}: награда gems — целое число кристаллов больше нуля`);
   else if (reach[a.key] === undefined) fail(`достижение ${a.id}: добавь счётчик «${a.key}» в проверку достижимости (tests/check-story.js)`);
   else if (a.goal > reach[a.key]) fail(`достижение ${a.id}: цель ${a.goal} недостижима — в курсе только ${reach[a.key]}`);
 });
 const ev = AW.evaluate({ solved: 1 });
 if (!ev[0].done || ev.some((a, i) => i && a.done && a.key !== 'solved')) fail('HeroAwards.evaluate считает неверно');
+// Лавка Ады: любую вещь можно купить кристаллами за сам курс — достижения и задания со звёздочкой,
+// даже без домашки и догадок
+const courseGems = AW.LIST.reduce((n, a) => n + a.gems, 0) + reach.bonus * AW.GEMS.bonus;
+G.SHOP.forEach(it => { if (it.price > courseGems) fail(`${it.id}: цена ${it.price} больше, чем можно заработать за курс (${courseGems})`); });
+if (G.SHOP.length !== G.ITEMS.filter(it => it.price).length) fail('HeroGear.SHOP — это вещи с ценой');
 if (!/<script src="js\/awards\.js"><\/script>/.test(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8'))) fail('js/awards.js не подключён в index.html');
 
 console.log(errors ? `Ошибок: ${errors}` : `Сюжет и прокачка в порядке: уроков ${W.LESSONS.length}, уровней ${G.LEVELS.length}, вещей ${G.ITEMS.length}, достижений ${AW.LIST.length}.`);
