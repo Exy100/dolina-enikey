@@ -33,12 +33,12 @@ const HeroPoster = (() => {
   ];
 
   const C = {
-    bg1: '#121433', bg2: '#2A1E6E', ink: '#FFFFFF', soft: 'rgba(236,238,255,0.78)', dim: 'rgba(236,238,255,0.5)',
-    gold: '#FFC83D', accent: '#8C7BFF', violet: '#5B45E0', mint: '#3FD3B5', pink: '#FF6BB3', coral: '#FF8A6B',
-    card: '#1D2050', line: 'rgba(255,255,255,0.12)', code: '#171A36', codeLine: '#2B2F5C', term: '#0C0E22',
+    bg1: '#1B1530', bg2: '#4A2560', ink: '#FFFFFF', soft: 'rgba(236,238,255,0.78)', dim: 'rgba(236,238,255,0.5)',
+    gold: '#FFC83D', accent: '#A996FF', violet: '#6B4BD8', mint: '#3FD3B5', pink: '#FF6BB3', coral: '#FFA877',
+    card: '#271F45', line: 'rgba(255,255,255,0.12)', code: '#2E2447', codeLine: '#45376B', term: '#150F29',
   };
-  const TOK = { kw: '#FF8FB1', hero: '#FFD166', fn: '#8FD3FF', num: '#7FE0C8', str: '#B8F28B', com: '#7479A6', plain: '#E8EAFF' };
-  const HUES = { violet: ['#A496FF', '#5B45E0'], mint: ['#5BE3C6', '#11917A'], gold: ['#FFD76A', '#D9960F'], coral: ['#FFA27A', '#E4572E'], sky: ['#8FD0FF', '#3C83E0'], pink: ['#FF9ACF', '#D63A8C'] };
+  const TOK = { kw: '#FF8FB1', hero: '#FFD166', fn: '#8FD3FF', num: '#7FE0C8', str: '#B8F28B', com: '#8F82A8', plain: '#E8EAFF' };
+  const HUES = { violet: ['#A496FF', '#6B4BD8'], mint: ['#5BE3C6', '#11917A'], gold: ['#FFD76A', '#D9960F'], coral: ['#FFA27A', '#E4572E'], sky: ['#8FD0FF', '#3C83E0'], pink: ['#FF9ACF', '#D63A8C'] };
   const F = {
     display: (w, s) => `${w} ${s}px Unbounded, Rubik, "Segoe UI", Arial, sans-serif`,
     ui: (w, s) => `${w} ${s}px Rubik, "Segoe UI", Arial, sans-serif`,
@@ -175,7 +175,9 @@ const HeroPoster = (() => {
   // Картинка в скруглённой рамке с тенью
   function photo(x, img, bx, by, bw, bh, r = 28, mode = 'cover', back = null) {
     shadow(x, 60, 28);
-    x.fillStyle = back || '#BFE3FF'; x.fill(rr(bx, by, bw, bh, r));
+    const sky = x.createLinearGradient(0, by, 0, by + bh); // небо заката за прозрачным снимком мира
+    sky.addColorStop(0, '#FFC9A8'); sky.addColorStop(0.5, '#F9BFC4'); sky.addColorStop(1, '#D9C2FF');
+    x.fillStyle = back || sky; x.fill(rr(bx, by, bw, bh, r));
     noShadow(x);
     x.save(); x.clip(rr(bx, by, bw, bh, r));
     if (img) placeImg(x, img, bx, by, bw, bh, mode);

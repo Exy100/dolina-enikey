@@ -146,9 +146,9 @@
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
-  const hemi = new THREE.HemisphereLight(0xdff0ff, 0x6b5a4a, 0.62);
+  const hemi = new THREE.HemisphereLight(0xffe6d4, 0x7a5f8a, 0.6);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff1dc, 0.8);
+  const sun = new THREE.DirectionalLight(0xffd9b0, 0.82);
   sun.position.set(6, 12, 5);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -156,16 +156,16 @@
   scene.add(sun, sun.target);
 
   const M = {
-    grassA: new THREE.MeshStandardMaterial({ color: 0x86d06f, flatShading: true, roughness: 0.9 }),
-    grassB: new THREE.MeshStandardMaterial({ color: 0x78c262, flatShading: true, roughness: 0.9 }),
-    dirt: new THREE.MeshStandardMaterial({ color: 0x9a6a45, flatShading: true, roughness: 1 }),
-    rock: new THREE.MeshStandardMaterial({ color: 0x6f6878, flatShading: true, roughness: 1 }),
-    stoneA: new THREE.MeshStandardMaterial({ color: 0x7f86a0, flatShading: true, roughness: 0.95 }),
-    stoneB: new THREE.MeshStandardMaterial({ color: 0x6c7390, flatShading: true, roughness: 0.95 }),
+    grassA: new THREE.MeshStandardMaterial({ color: 0x86c76a, flatShading: true, roughness: 0.9 }),
+    grassB: new THREE.MeshStandardMaterial({ color: 0x79bb5f, flatShading: true, roughness: 0.9 }),
+    dirt: new THREE.MeshStandardMaterial({ color: 0xb08258, flatShading: true, roughness: 1 }),
+    rock: new THREE.MeshStandardMaterial({ color: 0x7e7090, flatShading: true, roughness: 1 }),
+    stoneA: new THREE.MeshStandardMaterial({ color: 0x8f88aa, flatShading: true, roughness: 0.95 }),
+    stoneB: new THREE.MeshStandardMaterial({ color: 0x7d7699, flatShading: true, roughness: 0.95 }),
     lava: new THREE.MeshStandardMaterial({ color: 0xff5a1f, emissive: 0xff3b0a, emissiveIntensity: 0.9, flatShading: true, roughness: 0.6 }),
     coin: new THREE.MeshStandardMaterial({ color: 0xf5b82e, emissive: 0x7a4b00, emissiveIntensity: 0.35, metalness: 0.55, roughness: 0.3 }),
     trunk: new THREE.MeshStandardMaterial({ color: 0x7b4f2e, flatShading: true }),
-    leaf: new THREE.MeshStandardMaterial({ color: 0x3fa35b, flatShading: true }),
+    leaf: new THREE.MeshStandardMaterial({ color: 0x4cb070, flatShading: true }),
     pole: new THREE.MeshStandardMaterial({ color: 0xf3f0ff, roughness: 0.5 }),
     flag: new THREE.MeshStandardMaterial({ color: 0x1fa88f, side: THREE.DoubleSide, flatShading: true }),
     ring: new THREE.MeshBasicMaterial({ color: 0x7ef0d6, transparent: true, opacity: 0.55 }),
@@ -188,10 +188,10 @@
   const hero = new THREE.Group();
   const heroParts = {};
   (function buildHero() {
-    const violet = new THREE.MeshStandardMaterial({ color: 0x6a55ea, flatShading: true, roughness: 0.55 });
+    const violet = new THREE.MeshStandardMaterial({ color: 0x6b4bd8, flatShading: true, roughness: 0.55 });
     const violetLight = new THREE.MeshStandardMaterial({ color: 0x8f7cff, roughness: 0.45 });
     const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
-    const black = new THREE.MeshStandardMaterial({ color: 0x1b1e3c, roughness: 0.3 });
+    const black = new THREE.MeshStandardMaterial({ color: 0x3a2a4d, roughness: 0.3 });
     const gold = new THREE.MeshStandardMaterial({ color: 0xffc83d, emissive: 0x6b4500, emissiveIntensity: 0.4 });
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.4, 10), violet);
     body.position.y = 0.26; body.castShadow = true;
@@ -487,17 +487,32 @@
   }
   const wait = ms => tween(ms, () => {});
   const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const easeBack = t => 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2); // с лёгким перелётом
+  // Пружина героя: вытягивается в движении, сплющивается при касании земли
+  function squash(k) { if (!reduceMotion) hero.scale.set(1 - k * 0.5, 1 + k, 1 - k * 0.5); }
 
   const particles = [];
   function confetti(x, z, n = 70) {
-    if (reduceMotion) n = 18;
-    const cols = [0xffc83d, 0x6a55ea, 0x1fa88f, 0xff6b8b, 0x7ec8ff];
+    if (reduceMotion || lite) n = 18;
+    const cols = [0xffc83d, 0x6b4bd8, 0x1e9e7e, 0xff9f6b, 0xff6b8b, 0xd9c2ff];
     const g = new THREE.PlaneGeometry(0.08, 0.12);
     for (let i = 0; i < n; i++) {
       const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: cols[i % cols.length], side: THREE.DoubleSide }));
       m.position.set(x, 1, z);
       const a = Math.random() * Math.PI * 2, s = 1.5 + Math.random() * 2.5;
       particles.push({ m, v: new THREE.Vector3(Math.cos(a) * s * 0.5, 3 + Math.random() * 3, Math.sin(a) * s * 0.5), life: 1.8, spin: Math.random() * 10 });
+      scene.add(m);
+    }
+  }
+  // Пыль из-под ног: мягкие светлые шарики, всплывают и тают
+  function dust(x, z, n = 5) {
+    if (reduceMotion || lite) return;
+    const g = new THREE.SphereGeometry(0.07, 8, 6);
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xfff1e6, transparent: true, opacity: 0.7 }));
+      m.position.set(x + (Math.random() - 0.5) * 0.3, 0.08, z + (Math.random() - 0.5) * 0.3);
+      const a = Math.random() * Math.PI * 2;
+      particles.push({ m, v: new THREE.Vector3(Math.cos(a) * 0.5, 0.5 + Math.random() * 0.4, Math.sin(a) * 0.5), life: 0.55, life0: 0.55, spin: 0, g: 0, soft: true });
       scene.add(m);
     }
   }
@@ -560,8 +575,9 @@
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
-      p.v.y -= 9 * dt;
+      p.v.y -= (p.g === undefined ? 9 : p.g) * dt;
       p.m.position.addScaledVector(p.v, dt);
+      if (p.soft) { const k = Math.max(0, p.life / p.life0); p.m.material.opacity = 0.7 * k; p.m.scale.setScalar(1 + (1 - k) * 1.6); }
       p.m.rotation.x += p.spin * dt; p.m.rotation.y += p.spin * dt;
       p.life -= dt;
       if (p.life <= 0 || p.m.position.y < -3) { scene.remove(p.m); particles.splice(i, 1); }
@@ -588,6 +604,23 @@
     fitCamera();
   }
   new ResizeObserver(resize).observe(stage);
+
+  /* Лёгкая графика: без теней и размытия, пикселей меньше, частиц меньше. По умолчанию включается на слабых устройствах */
+  const LITE_AUTO = (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+  let lite = save.lite === undefined ? !!LITE_AUTO : !!save.lite;
+  function applyLite() {
+    document.body.classList.toggle('lite', lite);
+    renderer.setPixelRatio(lite ? 1 : Math.min(devicePixelRatio, 2));
+    if (renderer.shadowMap.enabled === lite) {
+      renderer.shadowMap.enabled = !lite;
+      scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => { m.needsUpdate = true; }); });
+    }
+    const b = $('#liteBtn');
+    if (b) { b.setAttribute('aria-pressed', String(lite)); b.title = lite ? 'Вернуть тени и красоту' : 'Для слабого компьютера: без теней и лишних эффектов'; }
+    resize();
+  }
+  $('#liteBtn').addEventListener('click', () => { lite = !lite; save.lite = lite; persist(); applyLite(); Sound.play('tick'); });
+  applyLite();
 
   /* Вращение камеры мышью / пальцем */
   (function orbit() {
@@ -1003,12 +1036,15 @@
       case 'move': {
         Sound.play('step');
         const fx = ev.from.x, fz = ev.from.z, tx = ev.to.x, tz = ev.to.z;
+        dust(fx, fz, 4);
         await tween(360, t => {
           const e = ease(t);
           heroRig.position.set(fx + (tx - fx) * e, 0, fz + (tz - fz) * e);
           hero.position.y = Math.sin(t * Math.PI) * 0.14;
+          // вытягивается в полёте, в конце шага сплющивается
+          squash(t < 0.7 ? 0.07 * Math.sin(t / 0.7 * Math.PI) : -0.09 * Math.sin((t - 0.7) / 0.3 * Math.PI));
         });
-        hero.position.y = 0;
+        hero.position.y = 0; hero.scale.set(1, 1, 1);
         trailStep(ev.from, ev.to);
         return;
       }
@@ -1020,9 +1056,10 @@
           const e = ease(t);
           heroRig.position.set(fx + (tx - fx) * e, 0, fz + (tz - fz) * e);
           hero.position.y = Math.sin(t * Math.PI) * 1.05;
-          hero.scale.set(1, 1 + Math.sin(t * Math.PI) * 0.1, 1);
+          squash(t < 0.85 ? 0.12 * Math.sin(t / 0.85 * Math.PI) : -0.14 * Math.sin((t - 0.85) / 0.15 * Math.PI));
         });
         hero.position.y = 0; hero.scale.set(1, 1, 1);
+        dust(tx, tz, 7);
         Sound.play('land');
         trailHop(ev.from, ev.to);
         return;
@@ -1031,7 +1068,7 @@
         Sound.play('turn');
         const a0 = heroAngle, a1 = heroAngle + ev.side * Math.PI / 2;
         heroAngle = a1;
-        await tween(260, t => { hero.rotation.y = a0 + (a1 - a0) * ease(t); });
+        await tween(260, t => { hero.rotation.y = a0 + (a1 - a0) * easeBack(t); });
         return;
       }
       case 'take': {
@@ -2178,8 +2215,8 @@
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     const sc = new THREE.Scene();
-    sc.add(new THREE.HemisphereLight(0xdff0ff, 0x6b5a4a, 0.78));
-    const sunL = new THREE.DirectionalLight(0xfff1dc, 0.85);
+    sc.add(new THREE.HemisphereLight(0xffe6d4, 0x7a5f8a, 0.72));
+    const sunL = new THREE.DirectionalLight(0xffd9b0, 0.8);
     sunL.position.set(4, 9, 6);
     sunL.castShadow = true;
     sunL.shadow.mapSize.set(1024, 1024);
@@ -2505,6 +2542,29 @@
 
   // Новые достижения и кристаллы: поздравление в журнале и точка на кнопке героя. silent — запомнить молча
   // (первый запуск: всё полученное раньше просто запоминается, кристаллы за него уже лежат в лавке)
+  // Кристаллы вылетают из мира и летят к кнопке героя
+  function flyGems(n) {
+    const to = $('#heroBtn') && $('#heroBtn').getBoundingClientRect(), from = $('#stage').getBoundingClientRect();
+    if (reduceMotion || lite || !to || !to.width || !from.width || !document.body.animate) return;
+    const sx = from.left + from.width / 2, sy = from.top + from.height / 2;
+    const dx = to.left + to.width / 2 - sx, dy = to.top + to.height / 2 - sy;
+    for (let i = 0; i < Math.min(n, 8); i++) {
+      const el = document.createElement('span');
+      el.className = 'gem-fly';
+      el.innerHTML = GEM_SVG;
+      el.style.left = sx + 'px'; el.style.top = sy + 'px';
+      document.body.append(el);
+      const ox = (Math.random() - 0.5) * 220, oy = -40 - Math.random() * 90;
+      el.animate([
+        { transform: 'translate(-50%,-50%) scale(.2)', opacity: 0 },
+        { transform: `translate(calc(-50% + ${ox}px),calc(-50% + ${oy}px)) scale(1.15)`, opacity: 1, offset: 0.3 },
+        { transform: `translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px)) scale(.45)`, opacity: 0.9 },
+      ], { duration: 1000, delay: i * 90, easing: 'cubic-bezier(.45,0,.75,.5)', fill: 'both' }).onfinish = () => {
+        el.remove();
+        const b = $('#heroBtn'); b.classList.remove('gem-pulse'); void b.offsetWidth; b.classList.add('gem-pulse');
+      };
+    }
+  }
   function checkAwards(silent = false) {
     if (SHOW) return { awards: [], gems: 0 };
     if (!save.awards) save.awards = {};
@@ -2519,6 +2579,7 @@
       fresh.forEach(a => log(`Новое достижение: «${a.name}». Оно уже на странице героя — кнопка с уровнем Бита наверху.`, 'ok'));
       if (plus > 0) log(`+${plus} ${plural(plus, 'кристалл', 'кристалла', 'кристаллов')} — их тратят в лавке Ады на странице героя.`, 'ok');
       if (fresh.length) Sound.play('award');
+      if (plus > 0) flyGems(plus);
       renderBadge();
     }
     if (changed) persist();
@@ -2958,8 +3019,8 @@
     const D = hpShared || heroData(), S = heroSummary(D);
     r.domElement.setAttribute('aria-label', `Бит на острове: ${$('#hpPlace').textContent}`);
     const sc = new THREE.Scene();
-    sc.add(new THREE.HemisphereLight(0xdff0ff, 0x6b5a4a, 0.78));
-    const sunL = new THREE.DirectionalLight(0xfff1dc, 0.85);
+    sc.add(new THREE.HemisphereLight(0xffe6d4, 0x7a5f8a, 0.72));
+    const sunL = new THREE.DirectionalLight(0xffd9b0, 0.8);
     sunL.position.set(4, 9, 6);
     sunL.castShadow = true;
     sunL.shadow.mapSize.set(1024, 1024);
@@ -3122,8 +3183,12 @@
       <ellipse cx="612" cy="372" rx="26" ry="10" fill="#ff7a2e" opacity=".85"/><ellipse cx="648" cy="392" rx="18" ry="7" fill="#ff5a1f" opacity=".8"/>
       <rect x="744" y="410" width="22" height="70" rx="3" fill="var(--vm-rock)"/><rect x="738" y="402" width="34" height="12" rx="2" fill="var(--vm-rock)"/>
       <circle cx="890" cy="106" r="78" fill="#ff2bd6" opacity=".14"/><circle cx="890" cy="106" r="46" fill="#ff2bd6" opacity=".12"/>
-      <path d="${smoothPath(pts)}" fill="none" stroke="var(--vm-path)" stroke-width="7" stroke-linecap="round" stroke-dasharray="1 16" opacity=".75"/>
-      ${reach > 0 ? `<path d="${smoothPath(pts.slice(0, reach + 1))}" fill="none" stroke="var(--mint)" stroke-width="7" stroke-linecap="round" opacity=".85"/>` : ''}
+      <path d="${smoothPath(pts)}" fill="none" stroke="color-mix(in srgb, var(--vm-path) 65%, #5a3a1a)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>
+      <path d="${smoothPath(pts)}" fill="none" stroke="var(--vm-path)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="${smoothPath(pts)}" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 14" opacity=".55"/>
+      ${reach > 0 ? `<path d="${smoothPath(pts.slice(0, reach + 1))}" fill="none" stroke="var(--mint)" stroke-width="6" stroke-linecap="round" stroke-dasharray="1 13" opacity=".95"/>` : ''}
+      <defs><linearGradient id="vfog" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="var(--sky2)" stop-opacity=".75"/><stop offset="1" stop-color="var(--sky2)" stop-opacity="0"/></linearGradient></defs>
+      <rect x="640" y="0" width="360" height="625" fill="url(#vfog)"/>
     </svg>`;
   }
   function renderValley() {

@@ -6,8 +6,8 @@
 const HeroCert = (() => {
   const W = 2970, H = 2100;
   const C = {
-    paper: '#FFFDF8', ink: '#1B1E3C', muted: '#5A6084', accent: '#5B45E0', deep: '#3A2BA8', soft: '#EEEAFF',
-    gold: '#D9960F', star: '#F5B82E', mint: '#11917A', mintSoft: '#DCF3EC', pink: '#D6409F', coral: '#E0532F', line: '#D9DDF0',
+    paper: '#FFFAF4', ink: '#3A2A4D', muted: '#6E5E80', accent: '#6B4BD8', deep: '#4B32A6', soft: '#EFE6FF',
+    gold: '#C9850A', star: '#F5B82E', mint: '#1E9E7E', mintSoft: '#DDF5EC', pink: '#D6409F', coral: '#E0702F', line: '#F0D9CC',
   };
   const KINDS = ['prolog', 'trial', 'course'];
   // name — вкладка в окне грамоты, when — за что выдаётся, seal — текст по кругу печати, icon — значок в её центре
