@@ -8,7 +8,8 @@
 //  - уровни идут по возрастанию, последний достижим звёздами курса (js/gear.js);
 //  - у вещей уникальные id, известные слоты, уровни в пределах списка, и каждая собирается в three.js;
 //  - у каждого урока есть тема для страницы героя (topic: name, code);
-//  - достижения (js/awards.js): уникальные id, счётчик есть в сводке app.js, цель достижима в курсе, тексты без мужского рода.
+//  - достижения (js/awards.js): уникальные id, счётчик есть в сводке app.js, цель достижима в курсе, тексты без мужского рода;
+//  - реплики и задания Испытания Сбоя (STORY.trial, js/trial.js) — по тем же правилам.
 const fs = require('fs');
 const path = require('path');
 global.MiniPy = require('../js/minipy.js');
@@ -35,6 +36,8 @@ function checkLines(lines, where) {
 }
 
 checkLines(STORY.prologue, 'пролог');
+if (!STORY.trial) fail('нет реплик Испытания Сбоя (STORY.trial)');
+else { checkLines(STORY.trial.intro, 'испытание: вступление'); checkLines(STORY.trial.fixed, 'испытание: после финала'); }
 W.LESSONS.forEach(l => {
   const s = STORY.lessons[l.id];
   if (!s) { fail(`у урока «${l.title}» (${l.id}) нет сюжета в js/story.js`); return; }
@@ -57,7 +60,7 @@ Object.keys(STORY.lessons).forEach(id => {
 // Проверяем реплики, тексты уроков и строки с сообщениями в коде (комментарии пропускаем).
 const MASC = /(^|[^а-яё])ты\s+(?:[а-яё]+\s+)?[а-яё]+(?:л|лся)(?![а-яё])/i, SAM = /(^|[^а-яё])сам(?![а-яё])/i;
 const texts = [];
-[STORY.prologue, ...Object.values(STORY.lessons).flatMap(s => [s.intro, s.outro])].forEach(ls => (ls || []).forEach(([, t]) => texts.push(['сюжет', t, false])));
+[STORY.prologue, ...(STORY.trial ? [STORY.trial.intro, STORY.trial.fixed] : []), ...Object.values(STORY.lessons).flatMap(s => [s.intro, s.outro])].forEach(ls => (ls || []).forEach(([, t]) => texts.push(['сюжет', t, false])));
 AW.LIST.forEach(a => [a.name, a.desc].forEach(x => texts.push([`достижение ${a.id}`, x || '', true])));
 // мост к Python: карточка урока, план репетитора и задания в консоли
 const BR = require('../js/bridge.js');
@@ -65,11 +68,14 @@ Object.entries(BR.LESSONS).forEach(([id, b]) => {
   [b.text, ...(b.tutor || [])].forEach(x => texts.push([`мост ${id}`, x || '', true]));
   b.tasks.forEach(t => [t.goal, t.news, ...t.hints.slice(0, 2)].forEach(x => texts.push([t.id, x || '', true])));
 });
+// Испытание Сбоя: задания и сообщения «это испытание на …»
+const TRIAL = require('../js/trial.js');
+TRIAL.TASKS.forEach(t => [t.title, t.goal, t.news, ...(t.need || []).map(n => n.msg)].forEach(x => texts.push([t.id, x || '', true])));
 W.LESSONS.forEach(l => {
   texts.push([l.id, l.intro || '', true]);
   l.tasks.forEach(t => [t.goal, t.news, ...t.hints.slice(0, 2)].forEach(x => texts.push([t.id, x || '', true])));
 });
-['world.js', 'minipy.js', 'app.js', 'bridge.js'].forEach(f => fs.readFileSync(path.join(__dirname, '../js', f), 'utf8').split('\n').forEach((line, i) => {
+['world.js', 'minipy.js', 'app.js', 'bridge.js', 'trial.js'].forEach(f => fs.readFileSync(path.join(__dirname, '../js', f), 'utf8').split('\n').forEach((line, i) => {
   if (/^\s*(\/\/|\/\*|\*)/.test(line)) return;
   texts.push([`${f}:${i + 1}`, line.replace(/\/\/.*$/, ''), false]);
 }));
@@ -123,6 +129,7 @@ const reach = {
   lessons: W.LESSONS.filter(l => !l.prologue).length, perfect: W.LESSONS.length,
   prolog: 1, course: 1, hw: Infinity, built: 1, days: Infinity, lines: Infinity, streak: Infinity,
   py: Object.values(require('../js/bridge.js').LESSONS).reduce((n, b) => n + b.tasks.length, 0),
+  trial: 6,
 };
 const HUES = ['violet', 'mint', 'gold', 'coral', 'sky', 'pink'];
 const aIds = new Set();

@@ -36,6 +36,8 @@ const HeroAwards = (() => {
       icon: '<path d="M3 20l6-10 4 6 3-4 5 8z"/><path d="M15 4v6M15 4h4l-1 1.5 1 1.5h-4"/>' },
     { id: 'python', name: 'Настоящий Python', desc: 'Реши пять заданий в консоли Python', key: 'py', goal: 5, gems: 20, hue: 'mint',
       icon: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 10l3 2-3 2M12 15h5"/>' },
+    { id: 'trial', name: 'Испытание Сбоя', desc: 'Пройди все шесть испытаний за одну попытку', key: 'trial', goal: 6, gems: 30, hue: 'coral',
+      icon: '<path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6M16 16l4 4M19 21l2-2"/>' },
     { id: 'finale', name: 'Сбой починен', desc: 'Пройди всю долину и верни Ключ-код', key: 'course', goal: 1, gems: 50, hue: 'pink',
       icon: '<circle cx="7.5" cy="12" r="4"/><path d="M11.5 12H21M17.5 12v3.4M20.5 12v2.4"/>' },
   ];

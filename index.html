@@ -42,6 +42,15 @@
     <section class="code-pane" aria-label="Задание и код">
       <!-- Режим показа (?show): подпись к уровню вместо задания -->
       <div class="reel-cap" id="reelCap"><p class="reel-lesson" id="reelLesson"></p><h2 id="reelTitle"></h2><p class="reel-what" id="reelWhat"></p></div>
+      <!-- Испытание Сбоя: идёт попытка — сколько решено, «Завершить» и «Выйти» (js/app.js, раздел «Испытание Сбоя») -->
+      <div class="trial-bar" id="trialBar" hidden>
+        <span class="tb-ico" title="Испытание Сбоя"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6M16 16l4 4M19 21l2-2"/><path d="M9.5 6.5 21 18M14 5l7-2-2 7"/></svg></span>
+        <span class="tb-text"><b id="trialCount"></b><span class="tb-note">без подсказок</span></span>
+        <span class="tb-btns">
+          <button type="button" class="btn secondary" id="trialFinish">Завершить</button>
+          <button type="button" class="btn ghost" id="trialPause" title="Испытание подождёт: продолжить можно с карты долины">Выйти</button>
+        </span>
+      </div>
       <!-- Домашка по ссылке (#hw=…): какие задания задал репетитор и какие уже готовы -->
       <div class="hw" id="hw" hidden>
         <div class="hw-head"><b id="hwTitle">Домашка</b><span id="hwCount"></span><button type="button" class="hw-x" id="hwHide" aria-label="Скрыть домашку" title="Скрыть домашку">×</button></div>
@@ -51,7 +60,7 @@
         <p class="num-line" id="taskNum"></p>
         <h2 id="taskTitle"></h2>
         <p class="goal" id="taskGoal"></p>
-        <p class="new"><b>Новое:</b> <span id="taskNew"></span></p>
+        <p class="new"><b id="taskNewLbl">Новое:</b> <span id="taskNew"></span></p>
         <div class="chips" id="chips" aria-label="Команды для этого задания"></div>
         <!-- Задание в консоли Python: как должно получиться (ввод и вывод первой проверки) -->
         <div class="py-sample" id="pySample" hidden></div>
@@ -187,6 +196,7 @@
     <div class="valley-head">
       <div><h2 id="valleyTitle">Карта долины</h2><p id="valleySub"></p></div>
       <div class="valley-tools">
+        <button type="button" class="btn secondary trial-open" id="valleyTrial">Испытание Сбоя</button>
         <button type="button" class="btn secondary" id="valleyHw">Задать домашку</button>
         <button type="button" class="btn secondary" id="valleyEdit">✎ Свой уровень</button>
         <button type="button" class="gear-close" id="valleyClose" aria-label="Закрыть">×</button>
@@ -273,6 +283,73 @@
     </div>
   </div>
 </div>
+<!-- Испытание Сбоя: что проверяем, прошлые попытки, «Начать» или «Продолжить» (js/app.js, openTrialCard) -->
+<div class="recap trial" id="trialCard" hidden>
+  <div class="recap-card trial-card" role="dialog" aria-modal="true" aria-labelledby="tcTitle">
+    <button type="button" class="gear-close tr-close" id="tcClose" aria-label="Закрыть">×</button>
+    <header class="tc-head">
+      <span class="tc-badge" aria-hidden="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6M16 16l4 4M19 21l2-2"/><path d="M9.5 6.5 21 18M14 5l7-2-2 7"/></svg></span>
+      <div>
+        <p class="recap-kicker">Глава 1 · Долина Эникей</p>
+        <h2 id="tcTitle">Испытание Сбоя</h2>
+        <p class="recap-lead">Шесть испытаний — по одному на каждую тему главы. Карты новые, подсказок нет. Запускать и смотреть «Шагом» можно сколько угодно — засчитывается то, что получилось.</p>
+      </div>
+    </header>
+    <h3>Что проверяем</h3>
+    <ol class="tc-topics" id="tcTopics"></ol>
+    <div id="tcHistBox" hidden>
+      <h3>Прошлые испытания</h3>
+      <div class="tr-hist" id="tcHist"></div>
+    </div>
+    <p class="tc-warn" id="tcWarn" hidden></p>
+    <p class="tc-tutor">Для репетитора: первый раз — как точка отсчёта, дальше раз в месяц-два. Итог — карточкой для родителя: видно, как растёт результат.</p>
+    <div class="recap-actions">
+      <button type="button" class="btn primary" id="tcStart">Начать испытание</button>
+      <button type="button" class="btn secondary" id="tcRestart" hidden>Начать заново</button>
+      <button type="button" class="btn secondary" id="tcLast" hidden>Итог последнего</button>
+    </div>
+  </div>
+</div>
+<!-- Итог испытания — карточка для родителя: счёт, темы, было → стало, ссылка (js/app.js, openTrialResult). По ссылке #trial=… — только смотреть -->
+<div class="recap trial" id="trialRes" hidden>
+  <div class="recap-card trial-card" role="dialog" aria-modal="true" aria-labelledby="trTitle">
+    <button type="button" class="gear-close tr-close" id="trClose" aria-label="Закрыть">×</button>
+    <header class="tr-top">
+      <div class="tr-ring" id="trRing" aria-hidden="true"></div>
+      <div class="tr-head">
+        <p class="recap-kicker" id="trKicker"></p>
+        <h2 id="trTitle"></h2>
+        <p class="recap-lead" id="trLead"></p>
+        <p class="tr-name" id="trName" hidden></p>
+      </div>
+    </header>
+    <p class="hp-shared-note" id="trSharedNote" hidden>Это итог испытания по ссылке: его можно только смотреть.</p>
+    <h3>Темы главы</h3>
+    <ul class="tr-topics" id="trTopics"></ul>
+    <p class="tr-sum" id="trSum"></p>
+    <section id="trGrowBox">
+      <h3>Как растёт результат</h3>
+      <div class="tr-hist big" id="trHist"></div>
+      <p class="tr-delta" id="trDelta"></p>
+    </section>
+    <section class="hp-share" id="trShare" hidden>
+      <h3>Поделиться</h3>
+      <p class="hp-tip">Ссылка открывает эту карточку только для просмотра — например, для родителей. Всё нужное зашито в саму ссылку.</p>
+      <label class="hw-field"><span>Ссылка</span><input id="trUrl" readonly></label>
+      <label class="hw-field"><span>Сообщение</span><textarea id="trMsg" rows="3" readonly></textarea></label>
+      <div class="lvl-actions">
+        <button type="button" class="btn primary" id="trCopyMsg">Скопировать сообщение</button>
+        <button type="button" class="btn secondary" id="trCopyUrl">Скопировать ссылку</button>
+      </div>
+      <p class="hw-sum" id="trShareSum" role="status"></p>
+    </section>
+    <div class="recap-actions">
+      <button type="button" class="btn primary" id="trShareBtn">Поделиться</button>
+      <button type="button" class="btn primary" id="trOpenGame" hidden>Открыть Долину</button>
+      <button type="button" class="btn secondary" id="trDone">Закрыть</button>
+    </div>
+  </div>
+</div>
 <!-- Страница героя: Бит на острове своего края, звание, темы курса, достижения, лавка Ады (кристаллы), снаряжение.
      По ссылке #hero=… та же страница открывается только для просмотра (js/app.js, openHeroPage) -->
 <div class="hp" id="heroPage" hidden>
@@ -329,6 +406,14 @@
       <p class="hp-tip" id="hpAchTip">Нажми на полученное достижение — оно станет титулом под званием.</p>
       <ul class="hp-ach" id="hpAch"></ul>
     </section>
+    <section class="hp-sec" id="hpTrialSec">
+      <h3>Испытание Сбоя <span class="hp-count" id="hpTrialBest"></span></h3>
+      <div class="tr-hist" id="hpTrialHist"></div>
+      <div class="hp-trial-actions" id="hpTrialActions">
+        <button type="button" class="btn secondary" id="hpTrialGo">Испытание Сбоя</button>
+        <button type="button" class="btn ghost" id="hpTrialLast" hidden>Итог последнего</button>
+      </div>
+    </section>
     <section class="hp-sec" id="hpCodeSec">
       <h3 id="hpCodeTitle">Последняя программа</h3>
       <pre class="recap-code" id="hpCode"></pre>
@@ -368,6 +453,8 @@
 <script src="js/lessons/5-peremennye.js"></script>
 <script src="js/lessons/6-funkcii.js"></script>
 <script src="js/lessons/7-labirint.js"></script>
+<!-- Испытание Сбоя: шесть заданий по темам главы, результат — карточкой для родителя -->
+<script src="js/trial.js"></script>
 <!-- Сюжет: персонажи и реплики. Прокачка: уровни и снаряжение героя -->
 <script src="js/story.js"></script>
 <script src="js/gear.js"></script>
