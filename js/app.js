@@ -160,8 +160,8 @@
     grassB: new THREE.MeshStandardMaterial({ color: 0x79bb5f, flatShading: true, roughness: 0.9 }),
     dirt: new THREE.MeshStandardMaterial({ color: 0xb08258, flatShading: true, roughness: 1 }),
     rock: new THREE.MeshStandardMaterial({ color: 0x7e7090, flatShading: true, roughness: 1 }),
-    stoneA: new THREE.MeshStandardMaterial({ color: 0x8f88aa, flatShading: true, roughness: 0.95 }),
-    stoneB: new THREE.MeshStandardMaterial({ color: 0x7d7699, flatShading: true, roughness: 0.95 }),
+    stoneA: new THREE.MeshStandardMaterial({ color: 0x6c6690, flatShading: true, roughness: 0.95 }),
+    stoneB: new THREE.MeshStandardMaterial({ color: 0x5d5880, flatShading: true, roughness: 0.95 }),
     lava: new THREE.MeshStandardMaterial({ color: 0xff5a1f, emissive: 0xff3b0a, emissiveIntensity: 0.9, flatShading: true, roughness: 0.6 }),
     coin: new THREE.MeshStandardMaterial({ color: 0xf5b82e, emissive: 0x7a4b00, emissiveIntensity: 0.35, metalness: 0.55, roughness: 0.3 }),
     trunk: new THREE.MeshStandardMaterial({ color: 0x7b4f2e, flatShading: true }),
@@ -177,6 +177,27 @@
     boss: new THREE.MeshStandardMaterial({ color: 0x1b1e3c, emissive: 0xff2bd6, emissiveIntensity: 0.6, roughness: 0.4 }),
     bossFixed: new THREE.MeshStandardMaterial({ color: 0x8f7cff, emissive: 0x1fb89a, emissiveIntensity: 0.35, roughness: 0.4 }), // починенный Сбой
   });
+
+  /* День и ночь: в тёмной теме мир освещён луной — свет холодный и тусклый, земля темнее и зеленее,
+     а монеты, флаг и лава светятся сильнее, чтобы их было видно */
+  let night = false;
+  const LOOK = {
+    day: { hemi: [0xffe6d4, 0x7a5f8a, 0.6], sun: [0xffd9b0, 0.82], grassA: 0x86c76a, grassB: 0x79bb5f, dirt: 0xb08258, rock: 0x7e7090, stoneA: 0x6c6690, stoneB: 0x5d5880, leaf: 0x4cb070, coinGlow: 0.35, flagGlow: 0, lava: 1 },
+    night: { hemi: [0xb4bff2, 0x3a2f60, 0.62], sun: [0xc9d0ff, 0.5], grassA: 0x5aaa6c, grassB: 0x4f9e61, dirt: 0x87624a, rock: 0x6a6088, stoneA: 0x58557f, stoneB: 0x4e4b72, leaf: 0x3a9461, coinGlow: 0.8, flagGlow: 0.3, lava: 1.3 },
+  };
+  function applyNight() {
+    const dark = document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+    night = dark && !SHOW; // в показе для объявления мир всегда дневной
+    const L = night ? LOOK.night : LOOK.day;
+    hemi.color.setHex(L.hemi[0]); hemi.groundColor.setHex(L.hemi[1]); hemi.intensity = L.hemi[2];
+    sun.color.setHex(L.sun[0]); sun.intensity = L.sun[1];
+    ['grassA', 'grassB', 'dirt', 'rock', 'stoneA', 'stoneB', 'leaf'].forEach(k => M[k].color.setHex(L[k]));
+    M.coin.emissiveIntensity = L.coinGlow;
+    M.flag.emissive.setHex(0x1fa88f); M.flag.emissiveIntensity = L.flagGlow;
+  }
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyNight);
+  new MutationObserver(applyNight).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  applyNight();
 
   let levelGroup = new THREE.Group();
   scene.add(levelGroup);
@@ -346,7 +367,7 @@
           crown.position.set(x, 0.72, z); crown.castShadow = true;
           levelGroup.add(trunk, crown);
         } else {
-          const h = 0.28 + r * 0.32;
+          const h = 0.12 + r * 0.16; // низкие камни по краям: видно, где кончается дорога, но карта не загорожена
           const w = new THREE.Mesh(boxGeo, r > 0.6 ? M.stoneA : M.stoneB);
           w.scale.set(0.94, h, 0.94);
           w.position.set(x, h / 2, z);
@@ -565,7 +586,7 @@
       } else c.position.y = 0.42 + Math.sin(time * 2.4 + c.userData.phase) * 0.05;
     });
     if (gearOn.pet) { const a = time * 1.7; gearOn.pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); gearOn.pet.rotation.y = -a; }
-    M.lava.emissiveIntensity = 0.75 + Math.sin(time * 3) * 0.25;
+    M.lava.emissiveIntensity = (0.75 + Math.sin(time * 3) * 0.25) * (night ? LOOK.night.lava : 1);
     if (flag) flag.rotation.y = Math.sin(time * 2.2) * 0.25;
     if (finishRing) finishRing.material.opacity = 0.35 + Math.sin(time * 3) * 0.2;
     if (guess) animateGuess(time);
