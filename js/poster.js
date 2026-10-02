@@ -175,7 +175,9 @@ const HeroPoster = (() => {
   // Картинка в скруглённой рамке с тенью
   function photo(x, img, bx, by, bw, bh, r = 28, mode = 'cover', back = null) {
     shadow(x, 60, 28);
-    x.fillStyle = back || '#BFE3FF'; x.fill(rr(bx, by, bw, bh, r));
+    const sky = x.createLinearGradient(0, by, 0, by + bh); // небо заката за прозрачным снимком мира
+    sky.addColorStop(0, '#FFC9A8'); sky.addColorStop(0.5, '#F9BFC4'); sky.addColorStop(1, '#D9C2FF');
+    x.fillStyle = back || sky; x.fill(rr(bx, by, bw, bh, r));
     noShadow(x);
     x.save(); x.clip(rr(bx, by, bw, bh, r));
     if (img) placeImg(x, img, bx, by, bw, bh, mode);

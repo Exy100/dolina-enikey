@@ -2215,8 +2215,8 @@
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
     const sc = new THREE.Scene();
-    sc.add(new THREE.HemisphereLight(0xdff0ff, 0x6b5a4a, 0.78));
-    const sunL = new THREE.DirectionalLight(0xfff1dc, 0.85);
+    sc.add(new THREE.HemisphereLight(0xffe6d4, 0x7a5f8a, 0.72));
+    const sunL = new THREE.DirectionalLight(0xffd9b0, 0.8);
     sunL.position.set(4, 9, 6);
     sunL.castShadow = true;
     sunL.shadow.mapSize.set(1024, 1024);
@@ -3019,8 +3019,8 @@
     const D = hpShared || heroData(), S = heroSummary(D);
     r.domElement.setAttribute('aria-label', `Бит на острове: ${$('#hpPlace').textContent}`);
     const sc = new THREE.Scene();
-    sc.add(new THREE.HemisphereLight(0xdff0ff, 0x6b5a4a, 0.78));
-    const sunL = new THREE.DirectionalLight(0xfff1dc, 0.85);
+    sc.add(new THREE.HemisphereLight(0xffe6d4, 0x7a5f8a, 0.72));
+    const sunL = new THREE.DirectionalLight(0xffd9b0, 0.8);
     sunL.position.set(4, 9, 6);
     sunL.castShadow = true;
     sunL.shadow.mapSize.set(1024, 1024);
