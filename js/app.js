@@ -493,7 +493,7 @@
 
   const particles = [];
   function confetti(x, z, n = 70) {
-    if (reduceMotion) n = 18;
+    if (reduceMotion || lite) n = 18;
     const cols = [0xffc83d, 0x6b4bd8, 0x1e9e7e, 0xff9f6b, 0xff6b8b, 0xd9c2ff];
     const g = new THREE.PlaneGeometry(0.08, 0.12);
     for (let i = 0; i < n; i++) {
@@ -506,7 +506,7 @@
   }
   // Пыль из-под ног: мягкие светлые шарики, всплывают и тают
   function dust(x, z, n = 5) {
-    if (reduceMotion) return;
+    if (reduceMotion || lite) return;
     const g = new THREE.SphereGeometry(0.07, 8, 6);
     for (let i = 0; i < n; i++) {
       const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xfff1e6, transparent: true, opacity: 0.7 }));
@@ -604,6 +604,23 @@
     fitCamera();
   }
   new ResizeObserver(resize).observe(stage);
+
+  /* Лёгкая графика: без теней и размытия, пикселей меньше, частиц меньше. По умолчанию включается на слабых устройствах */
+  const LITE_AUTO = (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+  let lite = save.lite === undefined ? !!LITE_AUTO : !!save.lite;
+  function applyLite() {
+    document.body.classList.toggle('lite', lite);
+    renderer.setPixelRatio(lite ? 1 : Math.min(devicePixelRatio, 2));
+    if (renderer.shadowMap.enabled === lite) {
+      renderer.shadowMap.enabled = !lite;
+      scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => { m.needsUpdate = true; }); });
+    }
+    const b = $('#liteBtn');
+    if (b) { b.setAttribute('aria-pressed', String(lite)); b.title = lite ? 'Вернуть тени и красоту' : 'Для слабого компьютера: без теней и лишних эффектов'; }
+    resize();
+  }
+  $('#liteBtn').addEventListener('click', () => { lite = !lite; save.lite = lite; persist(); applyLite(); Sound.play('tick'); });
+  applyLite();
 
   /* Вращение камеры мышью / пальцем */
   (function orbit() {
@@ -2525,6 +2542,29 @@
 
   // Новые достижения и кристаллы: поздравление в журнале и точка на кнопке героя. silent — запомнить молча
   // (первый запуск: всё полученное раньше просто запоминается, кристаллы за него уже лежат в лавке)
+  // Кристаллы вылетают из мира и летят к кнопке героя
+  function flyGems(n) {
+    const to = $('#heroBtn') && $('#heroBtn').getBoundingClientRect(), from = $('#stage').getBoundingClientRect();
+    if (reduceMotion || lite || !to || !to.width || !from.width || !document.body.animate) return;
+    const sx = from.left + from.width / 2, sy = from.top + from.height / 2;
+    const dx = to.left + to.width / 2 - sx, dy = to.top + to.height / 2 - sy;
+    for (let i = 0; i < Math.min(n, 8); i++) {
+      const el = document.createElement('span');
+      el.className = 'gem-fly';
+      el.innerHTML = GEM_SVG;
+      el.style.left = sx + 'px'; el.style.top = sy + 'px';
+      document.body.append(el);
+      const ox = (Math.random() - 0.5) * 220, oy = -40 - Math.random() * 90;
+      el.animate([
+        { transform: 'translate(-50%,-50%) scale(.2)', opacity: 0 },
+        { transform: `translate(calc(-50% + ${ox}px),calc(-50% + ${oy}px)) scale(1.15)`, opacity: 1, offset: 0.3 },
+        { transform: `translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px)) scale(.45)`, opacity: 0.9 },
+      ], { duration: 1000, delay: i * 90, easing: 'cubic-bezier(.45,0,.75,.5)', fill: 'both' }).onfinish = () => {
+        el.remove();
+        const b = $('#heroBtn'); b.classList.remove('gem-pulse'); void b.offsetWidth; b.classList.add('gem-pulse');
+      };
+    }
+  }
   function checkAwards(silent = false) {
     if (SHOW) return { awards: [], gems: 0 };
     if (!save.awards) save.awards = {};
@@ -2539,6 +2579,7 @@
       fresh.forEach(a => log(`Новое достижение: «${a.name}». Оно уже на странице героя — кнопка с уровнем Бита наверху.`, 'ok'));
       if (plus > 0) log(`+${plus} ${plural(plus, 'кристалл', 'кристалла', 'кристаллов')} — их тратят в лавке Ады на странице героя.`, 'ok');
       if (fresh.length) Sound.play('award');
+      if (plus > 0) flyGems(plus);
       renderBadge();
     }
     if (changed) persist();
@@ -3142,8 +3183,12 @@
       <ellipse cx="612" cy="372" rx="26" ry="10" fill="#ff7a2e" opacity=".85"/><ellipse cx="648" cy="392" rx="18" ry="7" fill="#ff5a1f" opacity=".8"/>
       <rect x="744" y="410" width="22" height="70" rx="3" fill="var(--vm-rock)"/><rect x="738" y="402" width="34" height="12" rx="2" fill="var(--vm-rock)"/>
       <circle cx="890" cy="106" r="78" fill="#ff2bd6" opacity=".14"/><circle cx="890" cy="106" r="46" fill="#ff2bd6" opacity=".12"/>
-      <path d="${smoothPath(pts)}" fill="none" stroke="var(--vm-path)" stroke-width="7" stroke-linecap="round" stroke-dasharray="1 16" opacity=".75"/>
-      ${reach > 0 ? `<path d="${smoothPath(pts.slice(0, reach + 1))}" fill="none" stroke="var(--mint)" stroke-width="7" stroke-linecap="round" opacity=".85"/>` : ''}
+      <path d="${smoothPath(pts)}" fill="none" stroke="color-mix(in srgb, var(--vm-path) 65%, #5a3a1a)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" opacity=".8"/>
+      <path d="${smoothPath(pts)}" fill="none" stroke="var(--vm-path)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="${smoothPath(pts)}" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="2 14" opacity=".55"/>
+      ${reach > 0 ? `<path d="${smoothPath(pts.slice(0, reach + 1))}" fill="none" stroke="var(--mint)" stroke-width="6" stroke-linecap="round" stroke-dasharray="1 13" opacity=".95"/>` : ''}
+      <defs><linearGradient id="vfog" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="var(--sky2)" stop-opacity=".75"/><stop offset="1" stop-color="var(--sky2)" stop-opacity="0"/></linearGradient></defs>
+      <rect x="640" y="0" width="360" height="625" fill="url(#vfog)"/>
     </svg>`;
   }
   function renderValley() {
