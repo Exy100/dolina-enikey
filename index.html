@@ -40,31 +40,41 @@
 
   <main>
     <section class="code-pane" aria-label="Задание и код">
-      <!-- Режим показа (?show): подпись к уровню вместо задания -->
-      <div class="reel-cap" id="reelCap"><p class="reel-lesson" id="reelLesson"></p><h2 id="reelTitle"></h2><p class="reel-what" id="reelWhat"></p></div>
-      <!-- Испытание Сбоя: идёт попытка — сколько решено, «Завершить» и «Выйти» (js/app.js, раздел «Испытание Сбоя») -->
-      <div class="trial-bar" id="trialBar" hidden>
-        <span class="tb-ico" title="Испытание Сбоя"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6M16 16l4 4M19 21l2-2"/><path d="M9.5 6.5 21 18M14 5l7-2-2 7"/></svg></span>
-        <span class="tb-text"><b id="trialCount"></b><span class="tb-note">без подсказок</span></span>
-        <span class="tb-btns">
-          <button type="button" class="btn secondary" id="trialFinish">Завершить</button>
-          <button type="button" class="btn ghost" id="trialPause" title="Испытание подождёт: продолжить можно с карты долины">Выйти</button>
-        </span>
+      <!-- Верх панели: задание и подсказки. На компьютере прокручивается сам, а редактор, «Запуск» и журнал всегда на виду -->
+      <div class="pane-top" id="paneTop">
+        <!-- Режим показа (?show): подпись к уровню вместо задания -->
+        <div class="reel-cap" id="reelCap"><p class="reel-lesson" id="reelLesson"></p><h2 id="reelTitle"></h2><p class="reel-what" id="reelWhat"></p></div>
+        <!-- Испытание Сбоя: идёт попытка — сколько решено, «Завершить» и «Выйти» (js/app.js, раздел «Испытание Сбоя») -->
+        <div class="trial-bar" id="trialBar" hidden>
+          <span class="tb-ico" title="Испытание Сбоя"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6M16 16l4 4M19 21l2-2"/><path d="M9.5 6.5 21 18M14 5l7-2-2 7"/></svg></span>
+          <span class="tb-text"><b id="trialCount"></b><span class="tb-note">без подсказок</span></span>
+          <span class="tb-btns">
+            <button type="button" class="btn secondary" id="trialFinish">Завершить</button>
+            <button type="button" class="btn ghost" id="trialPause" title="Испытание подождёт: продолжить можно с карты долины">Выйти</button>
+          </span>
+        </div>
+        <!-- Домашка по ссылке (#hw=…): какие задания задал репетитор и какие уже готовы -->
+        <div class="hw" id="hw" hidden>
+          <div class="hw-head"><b id="hwTitle">Домашка</b><span id="hwCount"></span><button type="button" class="hw-x" id="hwHide" aria-label="Скрыть домашку" title="Скрыть домашку">×</button></div>
+          <div class="hw-list" id="hwList"></div>
+        </div>
+        <article class="task">
+          <p class="num-line" id="taskNum"></p>
+          <h2 id="taskTitle"></h2>
+          <p class="goal" id="taskGoal"></p>
+          <p class="new"><b id="taskNewLbl">Новое:</b> <span id="taskNew"></span></p>
+          <div class="chips" id="chips" aria-label="Команды для этого задания"></div>
+          <!-- Команд много — они свёрнуты в одну строку, кнопка показывает все -->
+          <button type="button" class="chips-more" id="chipsMore" aria-controls="chips" aria-expanded="false" hidden></button>
+          <!-- Задание в консоли Python: как должно получиться (ввод и вывод первой проверки) -->
+          <div class="py-sample" id="pySample" hidden></div>
+        </article>
+
+        <div class="hints">
+          <div class="hints-row"><button type="button" class="btn secondary" id="hintBtn">Подсказка 1 из 2</button></div>
+          <div id="hintBox" class="hints"></div>
+        </div>
       </div>
-      <!-- Домашка по ссылке (#hw=…): какие задания задал репетитор и какие уже готовы -->
-      <div class="hw" id="hw" hidden>
-        <div class="hw-head"><b id="hwTitle">Домашка</b><span id="hwCount"></span><button type="button" class="hw-x" id="hwHide" aria-label="Скрыть домашку" title="Скрыть домашку">×</button></div>
-        <div class="hw-list" id="hwList"></div>
-      </div>
-      <article class="task">
-        <p class="num-line" id="taskNum"></p>
-        <h2 id="taskTitle"></h2>
-        <p class="goal" id="taskGoal"></p>
-        <p class="new"><b id="taskNewLbl">Новое:</b> <span id="taskNew"></span></p>
-        <div class="chips" id="chips" aria-label="Команды для этого задания"></div>
-        <!-- Задание в консоли Python: как должно получиться (ввод и вывод первой проверки) -->
-        <div class="py-sample" id="pySample" hidden></div>
-      </article>
 
       <div class="editor">
         <div class="ed-bar"><span class="file" id="edFile">герой.py</span><span class="ed-tools">
@@ -86,19 +96,14 @@
       <div class="vars" id="vars" aria-live="off" hidden></div>
 
       <div class="controls">
-        <button type="button" class="btn primary" id="runBtn">Запуск</button>
+        <button type="button" class="btn primary" id="runBtn" title="Запустить программу — или Ctrl+Enter в редакторе">Запуск</button>
         <button type="button" class="btn secondary" id="stepBtn">Шаг</button>
         <button type="button" class="btn secondary guess-btn" id="guessBtn" aria-pressed="false" title="Покажи на карте, где остановится Бит, — и проверим">Угадай</button>
         <button type="button" class="btn ghost" id="stopBtn" disabled>Стоп</button>
-        <label class="speed">Скорость <input type="range" id="speed" min="0.5" max="3" step="0.5" value="1"><output id="speedVal">1,0×</output></label>
+        <label class="speed" title="Скорость Бита"><span class="sp-cap">Скорость</span> <input type="range" id="speed" min="0.5" max="3" step="0.5" value="1"><output id="speedVal">1,0×</output></label>
       </div>
 
       <div class="out" id="out" role="log" aria-live="polite"></div>
-
-      <div class="hints">
-        <div class="hints-row"><button type="button" class="btn secondary" id="hintBtn">Подсказка 1 из 2</button></div>
-        <div id="hintBox" class="hints"></div>
-      </div>
     </section>
 
     <section class="world" aria-label="Игровой мир">

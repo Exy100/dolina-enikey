@@ -1305,9 +1305,39 @@
       b.addEventListener('click', () => { if (!running) selectTask(i); });
       nav.append(b);
     });
+    fitTabs();
     renderHw();
     renderTrialBar();
   }
+  // Вкладки в одну строку: не помещаются — у неактивных только номер и звёзды; активная — на виду
+  function fitTabs() {
+    const nav = $('#tabs');
+    nav.classList.remove('compact');
+    if (nav.scrollWidth > nav.clientWidth + 1) nav.classList.add('compact');
+    const act = nav.querySelector('.tab.active');
+    if (act && nav.scrollWidth > nav.clientWidth + 1) nav.scrollLeft = Math.max(0, act.offsetLeft - (nav.clientWidth - act.offsetWidth) / 2);
+  }
+  // Команды-подсказки: не помещаются в одну строку — свёрнуты, «Все команды» показывает остальные (save.chipsOpen — показывать все)
+  function fitChips() {
+    const box = $('#chips'), more = $('#chipsMore'), kids = [...box.children];
+    box.classList.remove('fold');
+    box.style.maxHeight = '';
+    const over = kids.length > 1 && kids[kids.length - 1].offsetTop > kids[0].offsetTop + 2; // последняя команда — уже на другой строке
+    if (over && !save.chipsOpen) { box.classList.add('fold'); box.style.maxHeight = `${kids[0].offsetHeight}px`; }
+    more.hidden = !over;
+    more.textContent = save.chipsOpen ? 'Свернуть команды' : `Все команды · ${box.children.length}`;
+    more.setAttribute('aria-expanded', String(!!save.chipsOpen));
+  }
+  $('#chipsMore').addEventListener('click', () => { save.chipsOpen = !save.chipsOpen; persist(); fitChips(); paneShade(); });
+  // Верх панели прокручивается сам (на компьютере): если ниже есть ещё текст — край тает
+  function paneShade() {
+    const el = $('#paneTop');
+    el.classList.toggle('more', el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+  }
+  $('#paneTop').addEventListener('scroll', paneShade, { passive: true });
+  { const ro = new ResizeObserver(paneShade); [$('#paneTop'), ...$('#paneTop').children].forEach(el => ro.observe(el)); } // и само место, и то, что в нём
+  let fitW = 0;
+  addEventListener('resize', () => { if (innerWidth === fitW) return; fitW = innerWidth; fitTabs(); fitChips(); });
 
   function hintsUsed() { return save.hints[TASKS[taskIdx].id] || 0; }
   function renderHints() {
@@ -1372,6 +1402,9 @@
       b.addEventListener('click', () => { if (!ta.readOnly) insertText(c); });
       chips.append(b);
     });
+    fitChips();
+    $('#paneTop').scrollTop = 0;
+    paneShade();
     ta.value = save.code[t.id] ?? t.starter;
     markLine(null);
     renderTabs();
@@ -2338,6 +2371,7 @@
     document.body.classList.toggle('big', !!save.big);
     $('#bigBtn').setAttribute('aria-pressed', String(!!save.big));
     markLine(markedLine, markedKind); // полоса подсветки строки — под новый размер
+    fitChips(); // кнопки команд стали крупнее — строка свёрнутых тоже
   }
   $('#bigBtn').addEventListener('click', () => { save.big = !save.big; persist(); applyBig(); });
   if (!SHOW) applyBig();
@@ -2380,6 +2414,9 @@
     save.hints[id] = Math.min(3, (save.hints[id] || 0) + 1);
     persist();
     renderHints();
+    const last = $('#hintBox').lastElementChild; // новая подсказка — на виду (вверху панели она прокручивается)
+    if (last) last.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+    paneShade();
   });
   let resetArmed = null;
   $('#resetBtn').addEventListener('click', e => {
