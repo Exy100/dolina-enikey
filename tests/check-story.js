@@ -9,7 +9,8 @@
 //  - у вещей уникальные id, известные слоты, уровни в пределах списка, и каждая собирается в three.js;
 //  - у каждого урока есть тема для страницы героя (topic: name, code);
 //  - достижения (js/awards.js): уникальные id, счётчик есть в сводке app.js, цель достижима в курсе, тексты без мужского рода;
-//  - реплики и задания Испытания Сбоя (STORY.trial, js/trial.js) — по тем же правилам.
+//  - реплики и задания Испытания Сбоя (STORY.trial, js/trial.js), грамота (js/cert.js), кадры для Авито (js/poster.js)
+//    и сообщения родителям (js/messages.js) — по тем же правилам; в сообщениях нет рода и у репетитора, все метки заполняются.
 const fs = require('fs');
 const path = require('path');
 global.MiniPy = require('../js/minipy.js');
@@ -68,6 +69,25 @@ Object.entries(BR.LESSONS).forEach(([id, b]) => {
   [b.text, ...(b.tutor || [])].forEach(x => texts.push([`мост ${id}`, x || '', true]));
   b.tasks.forEach(t => [t.goal, t.news, ...t.hints.slice(0, 2)].forEach(x => texts.push([t.id, x || '', true])));
 });
+// Грамота и кадры для Авито: что написано на листе и на картинках
+const CERT = require('../js/cert.js'), POSTER = require('../js/poster.js');
+CERT.KINDS.forEach(k => {
+  const c = CERT.content(k, { name: 'Саша', level: 3, rank: 'Путник', tasks: 4, lines: 22, stars: 10, maxStars: 12, cmds: ['вперёд()'], of: 6, first: 4, mins: 30, topics: ['Цикл for'], was: { n: 2, date: 0 }, lessons: 7, solved: 50, days: 9 });
+  [c.reason, c.lead, CERT.META[k].when, ...c.stats.map(x => x[1])].forEach(x => texts.push([`грамота ${k}`, x || '', true]));
+});
+POSTER.SHOTS.forEach(s => [s.title, s.sub, ...(s.lines || []), s.cta].forEach(x => texts.push([`кадр ${s.id}`, x || '', true])));
+// Сообщения родителям: без рода и про ученика, и про репетитора («прошёл», «рад», «благодарен»)
+const MSGS = require('../js/messages.js'), GENDER = /(^|[^а-яё])(прош[её]л|прошла|сделал|сделала|написал|написала|смог|смогла|рад|рада|благодарен|благодарна|готов|готова|уверен|уверена)(?![а-яё])/i;
+const msgIds = new Set();
+MSGS.LIST.forEach(m => {
+  if (msgIds.has(m.id)) fail(`сообщение «${m.id}» повторяется`);
+  msgIds.add(m.id);
+  [m.title, m.when, m.text].forEach(x => texts.push([`сообщение ${m.id}`, x || '', true]));
+  const g = m.text.match(GENDER);
+  if (g) fail(`сообщение ${m.id}: слово с родом — «${g[2]}». Перепиши нейтрально`);
+  const full = MSGS.fill(m, { name: 'Саша', parent: 'Анна', sign: 'Мария', site: 'https://x' });
+  if (/\{[a-z]+\}/.test(full)) fail(`сообщение ${m.id}: осталась незаполненная метка ${full.match(/\{[a-z]+\}/)[0]}`);
+});
 // Испытание Сбоя: задания и сообщения «это испытание на …»
 const TRIAL = require('../js/trial.js');
 TRIAL.TASKS.forEach(t => [t.title, t.goal, t.news, ...(t.need || []).map(n => n.msg)].forEach(x => texts.push([t.id, x || '', true])));
@@ -75,7 +95,7 @@ W.LESSONS.forEach(l => {
   texts.push([l.id, l.intro || '', true]);
   l.tasks.forEach(t => [t.goal, t.news, ...t.hints.slice(0, 2)].forEach(x => texts.push([t.id, x || '', true])));
 });
-['world.js', 'minipy.js', 'app.js', 'bridge.js', 'trial.js'].forEach(f => fs.readFileSync(path.join(__dirname, '../js', f), 'utf8').split('\n').forEach((line, i) => {
+['world.js', 'minipy.js', 'app.js', 'bridge.js', 'trial.js', 'cert.js', 'poster.js', 'messages.js'].forEach(f => fs.readFileSync(path.join(__dirname, '../js', f), 'utf8').split('\n').forEach((line, i) => {
   if (/^\s*(\/\/|\/\*|\*)/.test(line)) return;
   texts.push([`${f}:${i + 1}`, line.replace(/\/\/.*$/, ''), false]);
 }));

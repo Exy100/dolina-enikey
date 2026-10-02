@@ -5,7 +5,8 @@
 //  - типичные ошибки (WRONG) обязаны ломаться на каждом наборе карт и с нужной причиной (kind);
 //  - если третья звезда за «коротко», эталон укладывается в best строк.
 // Ещё проверяется, что каждый файл из js/lessons/ подключён в index.html и id заданий не повторяются,
-// а уровни ролика для Авито (REEL в js/app.js, режим ?show) существуют и проходятся на его картах.
+// а уровни ролика для Авито (REEL в js/app.js, режим ?show) существуют и проходятся на его картах;
+// задания кадров для Авито (js/poster.js, ?shots) проходят карту кадра, код консоли печатает то, что на кадре.
 // Глубже, на большем числе наборов карт: SEEDS=1000 node tests/check-tasks.js
 const fs = require('fs');
 const path = require('path');
@@ -208,5 +209,28 @@ else {
   if (!html.includes('src="js/sound.js"')) { console.log('✗ js/sound.js не подключён в index.html'); errors++; }
   console.log(`ролик для Авито: ${items.length} уровней проверено`);
 }
+// Кадры для Авито (?shots, js/poster.js): задания есть в курсе и проходят карту SEED (на кадре — эталон и след Бита),
+// код консоли печатает ровно то, что на картинке; poster.js и cert.js подключены до app.js
+const PO = require('../js/poster.js');
+PO.SHOTS.forEach(s => {
+  if (s.kind === 'world') {
+    const t = TASKS.find(x => x.id === s.task);
+    if (!t) { console.log(`✗ кадр «${s.id}»: задания «${s.task}» нет в курсе`); errors++; return; }
+    const r = W.runSilent(t.hints[2], W.makeMaps(t, PO.SEED)[0]);
+    if (!r.ok) { console.log(`✗ кадр «${s.id}»: эталон «${s.task}» не проходит карту кадра: ${r.err}`); errors++; }
+  }
+  if (s.kind === 'console') {
+    const B = require('../js/bridge.js'), r = B.run(s.code, s.input);
+    const out = (r.out || '').trimEnd().split('\n');
+    if (r.err || out.join('|') !== s.out.join('|')) { console.log(`✗ кадр «${s.id}»: код печатает «${out.join(' / ')}»${r.err ? ` (${r.err})` : ''}, а на кадре «${s.out.join(' / ')}»`); errors++; }
+    const asks = (s.code.match(/input\(/g) || []).length * (+(s.code.match(/range\((\d+)\)/) || [0, 1])[1]);
+    if (asks !== s.input.length) { console.log(`✗ кадр «${s.id}»: программа спрашивает ${asks} раз, а ответов на кадре ${s.input.length}`); errors++; }
+  }
+});
+['cert', 'poster'].forEach(f => {
+  const i = html.indexOf(`src="js/${f}.js"`);
+  if (i < 0 || i > html.indexOf('src="js/app.js"')) { console.log(`✗ js/${f}.js должен быть подключён в index.html до app.js`); errors++; }
+});
+console.log(`кадры для Авито: ${PO.SHOTS.length} кадров проверено`);
 console.log(errors ? `Ошибок: ${errors}` : 'Все задания в порядке.');
 process.exit(errors ? 1 : 0);

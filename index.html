@@ -198,6 +198,7 @@
       <div class="valley-tools">
         <button type="button" class="btn secondary trial-open" id="valleyTrial">Испытание Сбоя</button>
         <button type="button" class="btn secondary" id="valleyHw">Задать домашку</button>
+        <button type="button" class="btn secondary" id="valleyMsg">Родителям</button>
         <button type="button" class="btn secondary" id="valleyEdit">✎ Свой уровень</button>
         <button type="button" class="gear-close" id="valleyClose" aria-label="Закрыть">×</button>
       </div>
@@ -220,6 +221,22 @@
       <button type="button" class="btn primary" id="hwCopyMsg">Скопировать сообщение</button>
       <button type="button" class="btn secondary" id="hwCopyUrl">Скопировать ссылку</button>
     </div>
+  </div>
+</div>
+<!-- Сообщения родителям: готовые тексты для репетитора — обращение, имя и подпись подставляются сами (js/messages.js, js/app.js — openMessages) -->
+<div class="valley" id="msgEd" hidden>
+  <div class="valley-card msg-card" role="dialog" aria-modal="true" aria-labelledby="msgTitle">
+    <div class="valley-head">
+      <div><h2 id="msgTitle">Сообщения родителям</h2><p>Готовые тексты для переписки — от ответа на Авито до просьбы об отзыве. Впиши имена, и они встанут во все тексты. В [квадратных скобках] — что дописать самим.</p></div>
+      <button type="button" class="gear-close" id="msgClose" aria-label="Закрыть">×</button>
+    </div>
+    <div class="msg-fields">
+      <label class="hw-field"><span>Имя ученика</span><input id="msgName" maxlength="24" autocomplete="off" placeholder="например, Саша"></label>
+      <label class="hw-field"><span>Обращение к родителю — по желанию</span><input id="msgParent" maxlength="40" autocomplete="off" placeholder="например, Анна Сергеевна"></label>
+      <label class="hw-field"><span>Подпись — по желанию</span><input id="msgSign" maxlength="40" autocomplete="off" placeholder="например, Мария, репетитор по Python"></label>
+    </div>
+    <ol class="msg-list" id="msgList"></ol>
+    <p class="hp-tip msg-more">Для объявления: <a href="?shots">кадры для Авито</a> — готовые картинки, <a href="?show">ролик</a> — Бит сам проходит уровни, а запись экрана становится видео.</p>
   </div>
 </div>
 <!-- Свой уровень: редактор карты, проверка и ссылка (js/app.js, openEditor) -->
@@ -279,6 +296,7 @@
     </section>
     <div class="recap-actions">
       <button type="button" class="btn primary" id="recapGo"></button>
+      <button type="button" class="btn secondary" id="recapCert">Грамота</button>
       <button type="button" class="btn secondary" id="recapClose">Закрыть</button>
     </div>
   </div>
@@ -345,10 +363,57 @@
     </section>
     <div class="recap-actions">
       <button type="button" class="btn primary" id="trShareBtn">Поделиться</button>
+      <button type="button" class="btn secondary" id="trCert" hidden>Грамота</button>
       <button type="button" class="btn primary" id="trOpenGame" hidden>Открыть Долину</button>
       <button type="button" class="btn secondary" id="trDone">Закрыть</button>
     </div>
   </div>
+</div>
+<!-- Грамота: за пролог, за Испытание Сбоя на 6 из 6 и за всю главу. Рисунок на canvas (js/cert.js) — он же идёт
+     в печать (A4 альбомом, «Сохранить как PDF») и в картинку PNG для чата с родителями (js/app.js, openCert) -->
+<div class="recap over cert" id="cert" hidden>
+  <div class="recap-card cert-card" role="dialog" aria-modal="true" aria-labelledby="certTitle">
+    <button type="button" class="gear-close tr-close" id="certClose" aria-label="Закрыть">×</button>
+    <header class="cert-head">
+      <p class="recap-kicker">Долина Эникей · для родителей</p>
+      <h2 id="certTitle">Грамота</h2>
+      <p class="recap-lead" id="certLead"></p>
+    </header>
+    <div class="cert-kinds" id="certKinds" aria-label="Какая грамота"></div>
+    <div class="cert-paper"><canvas id="certCanvas" width="2970" height="2100" role="img" aria-label="Грамота"></canvas></div>
+    <div class="cert-fields">
+      <label class="hw-field"><span>Имя на грамоте</span><input id="certName" maxlength="24" autocomplete="off" placeholder="например, Саша Петрова"></label>
+      <label class="hw-field"><span>Подпись репетитора — по желанию</span><input id="certTutor" maxlength="32" autocomplete="off" placeholder="например, Анна Сергеевна"></label>
+    </div>
+    <p class="hp-tip">Печать — лист A4 альбомом, в окне печати можно выбрать «Сохранить как PDF». Картинка — чтобы отправить в чат. Без имени на грамоте останется строка: его можно вписать от руки.</p>
+    <div class="recap-actions">
+      <button type="button" class="btn primary" id="certPrint">Распечатать или PDF</button>
+      <button type="button" class="btn secondary" id="certPng">Скачать картинку</button>
+      <button type="button" class="btn secondary" id="certShare" hidden>Отправить</button>
+    </div>
+    <p class="hw-sum" id="certSum" role="status"></p>
+  </div>
+</div>
+<!-- Кадры для объявления (?shots): постеры для Авито на canvas (js/poster.js), каждый сохраняется картинкой PNG.
+     Данные выдуманные, прогресс учеников не читается и не меняется (js/app.js, startShots) -->
+<div class="shots" id="shots" hidden>
+  <header class="shots-head">
+    <div>
+      <p class="recap-kicker">Долина Эникей · для объявления</p>
+      <h2>Кадры для Авито</h2>
+      <p class="recap-lead">Готовые картинки для объявления. Данные выдуманные, прогресс учеников на этом компьютере не меняется. Порядок — как в объявлении: первый кадр станет обложкой.</p>
+    </div>
+    <div class="shots-tools">
+      <div class="shots-size" id="shotsSize" role="group" aria-label="Формат кадров">
+        <button type="button" data-size="wide" aria-pressed="true">4:3 — для Авито</button>
+        <button type="button" data-size="square" aria-pressed="false">1:1 — квадрат</button>
+      </div>
+      <button type="button" class="btn primary" id="shotsAll" disabled>Скачать все</button>
+      <a class="btn ghost" id="shotsExit" href="./">Выйти</a>
+    </div>
+  </header>
+  <p class="shots-status" id="shotsStatus" role="status"></p>
+  <ol class="shots-grid" id="shotsGrid"></ol>
 </div>
 <!-- Страница героя: Бит на острове своего края, звание, темы курса, достижения, лавка Ады (кристаллы), снаряжение.
      По ссылке #hero=… та же страница открывается только для просмотра (js/app.js, openHeroPage) -->
@@ -414,6 +479,10 @@
         <button type="button" class="btn ghost" id="hpTrialLast" hidden>Итог последнего</button>
       </div>
     </section>
+    <section class="hp-sec" id="hpCertSec">
+      <h3>Грамоты <span class="hp-count" id="hpCertCount"></span></h3>
+      <ul class="hp-certs" id="hpCerts"></ul>
+    </section>
     <section class="hp-sec" id="hpCodeSec">
       <h3 id="hpCodeTitle">Последняя программа</h3>
       <pre class="recap-code" id="hpCode"></pre>
@@ -460,6 +529,11 @@
 <script src="js/gear.js"></script>
 <!-- Достижения для страницы героя -->
 <script src="js/awards.js"></script>
+<!-- Грамота: рисунок для печати и картинки. Кадры для объявления (?shots) -->
+<script src="js/cert.js"></script>
+<script src="js/poster.js"></script>
+<!-- Сообщения родителям: готовые тексты для репетитора -->
+<script src="js/messages.js"></script>
 <!-- Мост к Python: консоль обычного Python в каждом уроке -->
 <script src="js/bridge.js"></script>
 <!-- Звуки: синтез в браузере, без файлов -->

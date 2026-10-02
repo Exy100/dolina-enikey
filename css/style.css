@@ -870,6 +870,88 @@ body.big .br-code { font-size: 15px; }
   .tc-topics li.tc-note { flex-wrap: nowrap; }
 }
 
+/* Грамота: окно с предпросмотром листа, имя и подпись, печать и картинка */
+.cert-card { width: min(980px, 100%); }
+.cert-card::before { background: linear-gradient(90deg, #E0532F, #FF6BB3, var(--accent)); }
+.cert-head { padding-right: 30px; }
+.cert-head h2 { margin: 0; font: 700 clamp(26px, 4.2vw, 36px)/1.1 var(--display); }
+.cert-kinds { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.cert-kind { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 14px; border-radius: 14px; text-align: left;
+  border: 1.5px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; cursor: pointer; }
+.cert-kind b { font-size: 14px; }
+.cert-kind span { font-size: 12px; color: var(--muted); }
+.cert-kind.active { border-color: var(--accent); background: var(--accent-soft); }
+.cert-kind:disabled { cursor: default; border-style: dashed; opacity: .65; }
+.cert-paper { margin-top: 14px; border-radius: 12px; overflow: hidden; background: #FFFDF8; box-shadow: 0 10px 30px rgba(18,20,43,.18), 0 0 0 1px var(--line); }
+.cert-paper canvas { display: block; width: 100%; height: auto; }
+.cert-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.cert-fields input { font-family: var(--ui); font-size: 15px; }
+.hp-certs { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.hp-cert { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 16px; text-align: left;
+  border: 1.5px dashed var(--line); background: transparent; color: var(--ink); font: inherit; }
+.hp-cert.on { border-style: solid; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--panel-2); cursor: pointer; }
+.hp-cert.on:hover { border-color: var(--accent); }
+.hp-cert:disabled { color: var(--muted); }
+.hc-seal { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; font: 700 15px var(--display);
+  border: 2px solid var(--line); color: var(--muted); }
+.hp-cert.on .hc-seal { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); box-shadow: 0 0 0 3px var(--panel-2), 0 0 0 5px color-mix(in srgb, var(--gold-star) 70%, transparent); }
+.hc-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.hc-text b { font-size: 14px; }
+.hc-text span { font-size: 12.5px; color: var(--muted); }
+@media (max-width: 560px) {
+  .cert-kinds { flex-wrap: nowrap; gap: 6px; }
+  .cert-kind { flex: 1 1 0; min-width: 0; padding: 7px 10px; }
+  .cert-kind b { font-size: 13px; line-height: 1.2; }
+  .cert-kind span { display: none; }
+  .cert-fields { grid-template-columns: 1fr; }
+  .cert-paper { border-radius: 8px; }
+}
+/* Сообщения родителям: поля для имён и готовые тексты с кнопкой «Скопировать» */
+.msg-card { width: min(860px, 100%); }
+.msg-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 12px; align-items: end; }
+.msg-fields input { font-family: var(--ui); font-size: 14px; }
+.msg-list { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 12px; counter-reset: msg; }
+.msg-item { counter-increment: msg; border: 1.5px solid var(--line); border-radius: 18px; padding: 12px 14px; background: var(--panel-2); }
+.msg-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.msg-top b::before { content: counter(msg) ". "; color: var(--accent); }
+.msg-top span { font-size: 13px; color: var(--muted); }
+.msg-item textarea { display: block; width: 100%; margin-top: 8px; font: 14px/1.5 var(--ui); padding: 10px 12px; border-radius: 12px; border: 1.5px solid var(--line);
+  background: var(--panel); color: var(--ink); resize: vertical; overflow: hidden; }
+.msg-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 8px; }
+.msg-actions .hw-sum { margin: 0; }
+.msg-more { margin-top: 14px; }
+.msg-more a { color: var(--accent); font-weight: 600; }
+@media (max-width: 700px) { .msg-fields { grid-template-columns: 1fr; } }
+/* Кадры для Авито (?shots): галерея постеров поверх игры */
+.shots { position: fixed; inset: 0; z-index: 70; overflow-y: auto; padding: 24px clamp(16px, 4vw, 48px) 48px; background: var(--bg); color: var(--ink); }
+.shots[hidden] { display: none; }
+.shots-head { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: flex-end; justify-content: space-between; }
+.shots-head h2 { margin: 0; font: 700 clamp(26px, 4vw, 38px)/1.1 var(--display); }
+.shots-head .recap-lead { max-width: 62ch; }
+.shots-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.shots-size { display: inline-flex; padding: 4px; border-radius: 999px; background: var(--panel-2); border: 1.5px solid var(--line); }
+.shots-size button { border: 0; background: transparent; color: var(--muted); font: 600 14px var(--ui); padding: 7px 14px; border-radius: 999px; cursor: pointer; }
+.shots-size button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.shots-status { margin: 16px 0; color: var(--muted); }
+.shots-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 22px; }
+.shot { background: var(--panel); border-radius: 18px; padding: 10px; box-shadow: 0 10px 30px rgba(18,20,43,.12), 0 0 0 1px var(--line); }
+.shot canvas { display: block; width: 100%; height: auto; border-radius: 10px; }
+.shot-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 4px 2px; font-size: 14px; }
+.shot-bar b { color: var(--accent); }
+body.shots-mode { overflow: hidden; }
+/* Печать: на листе A4 альбомом — только сама грамота */
+@media print {
+  @page { size: A4 landscape; margin: 0; }
+  :root:has(body.cert-open) { padding: 0; }
+  body.cert-open { height: auto; overflow: visible; background: #fff; }
+  body.cert-open > :not(#cert) { display: none !important; }
+  body.cert-open #cert { position: static; display: block; padding: 0; overflow: visible; background: none; backdrop-filter: none; -webkit-backdrop-filter: none; animation: none; }
+  body.cert-open .cert-card { width: auto; margin: 0; padding: 0; border-radius: 0; box-shadow: none; background: none; animation: none; overflow: visible; }
+  body.cert-open .cert-card::before, body.cert-open .cert-card > :not(.cert-paper) { display: none !important; }
+  body.cert-open .cert-paper { margin: 0; border-radius: 0; box-shadow: none; }
+  body.cert-open .cert-paper canvas { width: 297mm; height: 209mm; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .band { transition: none; }
   .splash-btn .cur { animation: none; }
