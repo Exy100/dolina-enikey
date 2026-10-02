@@ -11,11 +11,13 @@
   let save = blankSave();
   try { const raw = localStorage.getItem(STORE); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* без сохранения */ }
   // Режим показа для видео (?show): свой Бит — в шляпе, шарфе и с рюкзаком; прогресс ученика не читаем и не пишем
-  const SHOW = new URLSearchParams(location.search).has('show');
+  // Кадры для объявления (?shots) — тоже показ: свой Бит, прогресс ученика не читаем и не пишем
+  const SHOTS = new URLSearchParams(location.search).has('shots');
+  const SHOW = SHOTS || new URLSearchParams(location.search).has('show');
   if (SHOW) {
     const stars = {};
     ['k-steps', 'k-turn', 'k-coins', 'k-lava', 'k-far'].forEach(id => { stars[id] = [1, 1, 1]; });
-    save = Object.assign(blankSave(), { stars, gear: { head: 'hat', neck: 'scarf', back: 'bag' }, mute: false });
+    save = Object.assign(blankSave(), { stars, gear: { head: 'hat', neck: 'scarf', back: 'bag' }, mute: SHOTS });
   }
   // Раньше урок был один («Условия»), и номер задания лежал в save.task. Кто его начинал — вернётся туда же.
   if (!LESSONS.some(l => l.id === save.lesson)) {
@@ -1958,6 +1960,8 @@
     const ch = checkAwards(), bits = [];
     if (ch.awards.length) bits.push(`${ch.awards.length > 1 ? 'Достижения' : 'Достижение'}: ${ch.awards.map(a => `«${a.name}»`).join(', ')}!`);
     if (ch.gems) bits.push(`+${ch.gems} ${plural(ch.gems, 'кристалл', 'кристалла', 'кристаллов')}.`);
+    // глава пройдена, а прощания урока не будет (оно уже было) — подскажем, где грамота
+    if (!outroPending && certFresh().includes('course')) bits.push('Вся глава пройдена — грамота ждёт на странице героя!');
     if (bits.length) {
       const rl = $('#resLevel'), was = rl.hidden ? '' : rl.textContent + ' ';
       rl.textContent = was + bits.join(' ');
@@ -2124,6 +2128,210 @@
     location.reload();
   }
 
+  /* ---------- Кадры для объявления на Авито (?shots): постеры на canvas (js/poster.js) — 3D-мир с кодом, остров героя,
+     консоль Python, рост по испытанию, грамота и призыв на пробное занятие. Данные выдуманные; прогресс ученика
+     не читается и не пишется (SHOW). 3D-мир задания снимается сразу под оба формата кадра, «Скачать» — PNG ---------- */
+  const PO = HeroPoster;
+  const SHOT_GEAR = { head: 'hat', neck: 'scarf', back: 'bag' };
+  let shotsSize = 'wide', shotsAssets = null;
+  // Код — строками цветных кусочков, как в редакторе (та же подсветка highlight)
+  function codeTokens(src) {
+    const box = document.createElement('div');
+    box.innerHTML = highlight(src).replace(/\n $/, '');
+    const lines = [[]];
+    box.childNodes.forEach(n => {
+      const c = n.nodeType === 1 ? n.className.replace('t-', '') : 'plain';
+      n.textContent.split('\n').forEach((part, i) => {
+        if (i) lines.push([]);
+        if (part) lines[lines.length - 1].push({ t: part, c });
+      });
+    });
+    return lines;
+  }
+  // Снять 3D-мир размером w × h: камера сразу на месте, без плавного подлёта; focus — смотреть ближе на точку
+  function grabWorld(w, h, focus = null) {
+    const pr = renderer.getPixelRatio(), target = cam.target.clone();
+    renderer.setPixelRatio(1);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    fitCamera();
+    Object.assign(cam, { az: cam.goal.az, el: cam.goal.el, dist: cam.goal.dist * (focus ? focus.zoom : 0.92), shake: 0 });
+    if (focus) cam.target.set(focus.x, 0, focus.z);
+    applyCamera();
+    M.boss.emissive.setHex(0xff2bd6); // Сбой мигает — в кадре он в своём цвете
+    renderer.render(scene, camera);
+    cam.target.copy(target);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(renderer.domElement, 0, 0);
+    renderer.setPixelRatio(pr);
+    resize();
+    return c;
+  }
+  // Остров края с Битом — как на странице героя, но одним кадром
+  function islandImage(icon, gear, w, h) {
+    let r;
+    try { r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); } catch (e) { return null; }
+    r.setPixelRatio(1);
+    r.setSize(w, h, false);
+    r.shadowMap.enabled = true;
+    r.shadowMap.type = THREE.PCFSoftShadowMap;
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight(0xdff0ff, 0x6b5a4a, 0.78));
+    const sunL = new THREE.DirectionalLight(0xfff1dc, 0.85);
+    sunL.position.set(4, 9, 6);
+    sunL.castShadow = true;
+    sunL.shadow.mapSize.set(1024, 1024);
+    Object.assign(sunL.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 1, far: 30 });
+    sunL.shadow.bias = -0.002;
+    sc.add(sunL);
+    const spin = new THREE.Group();
+    spin.rotation.y = 0.25;
+    sc.add(spin);
+    const land = buildIsland(icon, true);
+    spin.add(land.group);
+    land.tick(1.3, 0.016);
+    const bot = makeHeroModel(gear);
+    bot.scale.setScalar(1.35);
+    bot.position.set(0.35, 0, 1.05);
+    bot.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    spin.add(bot);
+    const c = new THREE.PerspectiveCamera(30, w / h, 0.1, 80);
+    const dist = 12.2 * (c.aspect < 1.15 ? Math.pow(1.15 / c.aspect, 0.85) : 1);
+    c.position.set(0, dist * 0.45, dist);
+    c.lookAt(0, 0.15, 0);
+    c.updateProjectionMatrix();
+    r.render(sc, c);
+    const img = document.createElement('canvas');
+    img.width = w; img.height = h;
+    img.getContext('2d').drawImage(r.domElement, 0, 0);
+    r.dispose();
+    r.forceContextLoss();
+    return img;
+  }
+  // Задание курса на карте SEED: Бит проходит эталон (виден след), мир снимается под оба формата
+  async function shotWorld(spec) {
+    const li = LESSONS.findIndex(l => l.tasks.some(t => t.id === spec.task));
+    selectLesson(li);
+    const ti = TASKS.findIndex(t => t.id === spec.task), t = TASKS[ti];
+    selectTask(ti);
+    maps = makeMaps(t, PO.SEED);
+    dotStates = ['', '', ''];
+    showMap(0);
+    ta.value = t.hints[2];
+    refreshEditor();
+    let focus = null;
+    if (spec.run) {
+      speed = 5;
+      const token = ++runToken;
+      stepMode = false;
+      setRunning(true);
+      let finished = false;
+      const done = runOnMap(ta.value, token).finally(() => { finished = true; });
+      // near: 'boss' — остановиться в паре шагов от Сбоя, пока его не починили, и смотреть на них ближе
+      while (spec.near === 'boss' && !finished && boss) {
+        const dx = heroRig.position.x - boss.position.x, dz = heroRig.position.z - boss.position.z;
+        if (Math.hypot(dx, dz) < 2.1) { stopRun(); focus = { x: boss.position.x + dx / 2, z: boss.position.z + dz / 2, zoom: 0.55 }; break; }
+        await sleep(30);
+      }
+      await done;
+      setRunning(false);
+      markLine(null);
+      await sleep(focus ? 400 : 1800); // конфетти улеглись
+    } else await sleep(600);
+    const code = codeTokens(t.hints[2]), img = {};
+    Object.keys(PO.SIZES).forEach(sz => {
+      const sl = PO.slot(Object.assign({}, spec, { code }), sz);
+      img[sz] = grabWorld(Math.round(sl.w * 1.25), Math.round(sl.h * 1.25), focus);
+    });
+    return { code, img, badge: lessonName(li) };
+  }
+  // Всё, что нужно кадрам: снимки мира, остров, грамота, портрет, данные героя и испытания (выдуманные)
+  async function buildShots() {
+    const out = {}, list = PO.SHOTS, day = 864e5, now = Date.now();
+    const short = ms => new Date(ms).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '');
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      $('#shotsStatus').textContent = `Готовлю кадр ${i + 1} из ${list.length}: «${s.title.replace(/\*/g, '')}»…`;
+      if (s.kind === 'world') out[s.id] = await shotWorld(s);
+      else if (s.kind === 'hero') {
+        const stars = 128, level = HeroGear.levelFor(stars), img = {};
+        Object.keys(PO.SIZES).forEach(sz => { const sl = PO.slot(s, sz); img[sz] = islandImage('tower', SHOT_GEAR, Math.round(sl.w * 1.25), Math.round(sl.h * 1.25)); });
+        out[s.id] = {
+          img, level, rank: LEVELS[level - 1].title, stars, maxStars: MAX_STARS, gems: 85, done: 11, total: HeroAwards.LIST.length,
+          medals: HeroAwards.LIST.slice(0, 12).map((a, k) => ({ icon: a.icon, hue: a.hue, done: k < 9 })),
+        };
+      } else if (s.kind === 'console') out[s.id] = { lines: codeTokens(s.code) };
+      else if (s.kind === 'trial') {
+        const ring = ['first', 'ok', 'first', 'first', 'ok', 'miss'];
+        out[s.id] = {
+          ring, score: 5, of: TR.length, lead: 'Почти вся глава в руках', topics: TR.map((t, k) => [t.name, ring[k]]),
+          bars: [{ n: 2, d: short(now - 120 * day) }, { n: 3, d: short(now - 62 * day) }, { n: 5, d: short(now) }],
+          delta: 'Было 2 из 6, стало 5 из 6: на 3 больше за 4 месяца',
+        };
+      } else if (s.kind === 'cert') out[s.id] = { img: shotCert() };
+      else if (s.kind === 'cta') out[s.id] = { img: heroPortrait(SHOT_GEAR) };
+    }
+    return out;
+  }
+  // Грамота на кадре — за главу, на имя «Саша»
+  function shotCert() {
+    const img = document.createElement('canvas'), main = LESSONS.filter(l => !l.prologue), level = HeroGear.levelFor(171);
+    CERT.draw(img, CERT.content('course', {
+      name: 'Саша', tutor: '', date: Date.now(), level, rank: LEVELS[level - 1].title, site: siteName(),
+      lessons: main.length, topics: main.map(l => (l.topic || {}).name || l.title), stars: 171, maxStars: MAX_STARS, solved: 58, lines: 1240, days: 21,
+    }), heroPortrait(SHOT_GEAR));
+    return img;
+  }
+  const shotSpec = s => Object.assign({}, s, shotsAssets[s.id], s.kind === 'world' || s.kind === 'hero' ? { img: shotsAssets[s.id].img[shotsSize] } : {});
+  const shotFile = (s, i) => `avito-${i + 1}-${s.id}-${shotsSize === 'wide' ? '4x3' : '1x1'}.png`;
+  function drawShots() {
+    $('#shotsGrid').innerHTML = PO.SHOTS.map((s, i) => `<li class="shot"><canvas aria-label="${esc(s.title.replace(/\*/g, ''))}"></canvas>`
+      + `<div class="shot-bar"><span><b>${i + 1}.</b> ${esc(s.title.replace(/\*/g, ''))}</span><button type="button" class="btn secondary" data-i="${i}">Скачать</button></div></li>`).join('');
+    $$('#shotsGrid canvas').forEach((c, i) => PO.draw(c, shotSpec(PO.SHOTS[i]), shotsSize));
+    $('#shotsAll').disabled = false;
+    $('#shotsStatus').textContent = `Готово: ${PO.SHOTS.length} кадров ${PO.SIZES[shotsSize].w} × ${PO.SIZES[shotsSize].h}. «Скачать» под кадром — одна картинка, «Скачать все» — все по очереди.`;
+  }
+  function downloadShot(i) {
+    return new Promise(res => {
+      $$('#shotsGrid canvas')[i].toBlob(b => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(b);
+        a.download = shotFile(PO.SHOTS[i], i);
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        res();
+      }, 'image/png');
+    });
+  }
+  async function startShots() {
+    document.body.classList.add('shots-mode');
+    $('#shots').hidden = false;
+    $('#shotsExit').href = location.pathname;
+    ta.readOnly = true;
+    resize();
+    const ready = await CERT.fonts();
+    shotsAssets = await buildShots();
+    drawShots();
+    // шрифты игры загрузились позже — перерисовать кадры и грамоту на них
+    if (!ready) CERT.fonts(0).then(() => { const c = PO.SHOTS.find(s => s.kind === 'cert'); if (c) shotsAssets[c.id].img = shotCert(); drawShots(); });
+  }
+  $('#shotsGrid').addEventListener('click', e => { const b = e.target.closest('button[data-i]'); if (b) downloadShot(+b.dataset.i); });
+  $('#shotsAll').addEventListener('click', async () => {
+    for (let i = 0; i < PO.SHOTS.length; i++) { await downloadShot(i); await sleep(400); }
+    $('#shotsStatus').textContent = `Скачано ${PO.SHOTS.length} картинок — в папке загрузок (avito-1…, avito-2…).`;
+  });
+  $('#shotsSize').addEventListener('click', e => {
+    const b = e.target.closest('button[data-size]');
+    if (!b || !shotsAssets || b.dataset.size === shotsSize) return;
+    shotsSize = b.dataset.size;
+    $$('#shotsSize button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    drawShots();
+  });
+
   /* ---------- Кнопки ---------- */
   // Крупный шрифт (кнопка A+ над кодом): удобно показывать экран на занятии
   function applyBig() {
@@ -2205,7 +2413,7 @@
     hideResult();
     // конец пролога — сцена со Сбоем, потом итог для родителя
     if (L.prologue) cutscene(lessonStory().outro, openRecap);
-    else talk(lessonStory().outro, next);
+    else talk(lessonStory().outro, () => { next(); if (certFresh().includes('course')) openCert('course'); }); // вся глава пройдена — грамота
   });
   $('#bonusBtn').addEventListener('click', () => { hideResult(); selectTask(TASKS.findIndex(t => t.kind === 'bonus')); });
   $('#lessonSel').addEventListener('change', e => {
@@ -2384,6 +2592,7 @@
     $('#hpTrialHist').innerHTML = xs.length ? histBars(xs, xs.length - 1)
       : `<p class="hp-tip">${shared ? 'Испытание ещё не проходили.' : 'Испытание ещё не проходили. Это шесть заданий по темам главы на новых картах — проверка, что всё уже получается.'}</p>`;
     $('#hpTrialSec').hidden = shared && !xs.length;
+    renderCertSec(shared);
     $('#hpTrialActions').hidden = shared;
     $('#hpTrialGo').textContent = tcur ? `Продолжить испытание — решено ${trialSolved()} из ${TR.length}` : 'Испытание Сбоя';
     $('#hpTrialLast').hidden = shared || !trialData().hist.length;
@@ -3176,6 +3385,59 @@
     $('#hwCopyMsg').focus({ preventScroll: true });
   }
   function closeHwBuilder() { $('#hwEd').hidden = true; document.body.classList.remove('recap-open'); }
+  /* ---------- Сообщения родителям (js/messages.js): готовые тексты для репетитора — обращение, имя ученика и подпись
+     подставляются во все сразу, текст можно поправить прямо в поле и скопировать. Подпись запоминается (save.msgSign) ---------- */
+  const MSG = HeroMessages;
+  let msgDirty = new Set(); // поля, которые поправили руками, — их не перезаписываем
+  const msgVars = () => ({
+    name: cleanName($('#msgName').value), parent: cleanTitle($('#msgParent').value), sign: cleanTitle($('#msgSign').value),
+    site: /^https?:$/.test(location.protocol) ? location.origin + location.pathname.replace(/index\.html$/, '') : '',
+  });
+  function renderMessages(first) {
+    if (first) {
+      $('#msgList').innerHTML = MSG.LIST.map((m, i) => `<li class="msg-item"><div class="msg-top"><b>${esc(m.title)}</b><span>${esc(m.when)}</span></div>`
+        + `<textarea data-i="${i}" aria-label="${esc(m.title)}"></textarea>`
+        + `<div class="msg-actions"><button type="button" class="btn secondary" data-copy="${i}">Скопировать</button><span class="hw-sum" data-st="${i}" role="status"></span></div></li>`).join('');
+    }
+    const v = msgVars();
+    $$('#msgList textarea').forEach((f, i) => {
+      if (msgDirty.has(i)) return;
+      f.value = MSG.fill(MSG.LIST[i], v);
+      fitArea(f);
+    });
+  }
+  // Поле с текстом — по высоте текста, чтобы письмо было видно целиком и на телефоне
+  const fitArea = f => { f.style.height = 'auto'; f.style.height = `${f.scrollHeight + 4}px`; };
+  function openMessages() {
+    $('#valley').hidden = true;
+    msgDirty = new Set();
+    $('#msgName').value = save.name || '';
+    $('#msgSign').value = save.msgSign || '';
+    $('#msgEd').hidden = false;
+    renderMessages(true);
+    $('#msgEd').scrollTop = 0;
+    document.body.classList.add('recap-open');
+    $('#msgName').focus({ preventScroll: true });
+  }
+  function closeMessages() { $('#msgEd').hidden = true; document.body.classList.remove('recap-open'); }
+  ['#msgName', '#msgParent', '#msgSign'].forEach(sel => $(sel).addEventListener('input', () => renderMessages(false)));
+  $('#msgSign').addEventListener('change', e => { save.msgSign = cleanTitle(e.target.value); persist(); });
+  $('#msgList').addEventListener('input', e => { const f = e.target.closest('textarea[data-i]'); if (f) { msgDirty.add(+f.dataset.i); fitArea(f); } });
+  $('#msgList').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-copy]');
+    if (!b) return;
+    const i = +b.dataset.copy, f = $$('#msgList textarea')[i], st = $$('#msgList [data-st]')[i];
+    f.select();
+    try {
+      await navigator.clipboard.writeText(f.value);
+      st.textContent = /\[[^\]]+\]/.test(f.value) ? 'Скопировано. Остались места в [скобках] — допиши их перед отправкой.' : 'Скопировано — можно вставлять в переписку.';
+    } catch (err) { st.textContent = 'Скопируй текст вручную: он уже выделен.'; }
+  });
+  $('#valleyMsg').addEventListener('click', openMessages);
+  $('#msgClose').addEventListener('click', closeMessages);
+  $('#msgEd').addEventListener('click', e => { if (e.target.id === 'msgEd') closeMessages(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#msgEd').hidden) closeMessages(); });
+
   async function copyField(sel, okText, out = '#hwSum') {
     const f = $(sel);
     f.select();
@@ -3450,6 +3712,7 @@
           : d === 0 ? '. Результат держится.' : '. Стоит повторить темы и попробовать снова.');
     $('#trShare').hidden = true;
     $('#trShareBtn').hidden = !!shared;
+    $('#trCert').hidden = !!shared || n < TR.length; // за 6 из 6 — грамота
     $('#trOpenGame').hidden = !shared;
     $('#trSharedNote').hidden = !shared;
     const box = $('#trialRes');
@@ -3595,7 +3858,184 @@
   $('#recapGo').addEventListener('click', () => { closeRecap(); selectLesson(PRO + 1); greet(); });
   $('#recapClose').addEventListener('click', closeRecap);
   $('#recap').addEventListener('click', e => { if (e.target.id === 'recap') closeRecap(); });
-  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#recap').hidden) closeRecap(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#recap').hidden && $('#cert').hidden) closeRecap(); });
+
+  /* ---------- Грамота (js/cert.js): за пролог, за Испытание Сбоя на 6 из 6 и за всю главу. Рисунок на canvas —
+     он же идёт в печать (A4 альбомом, «Сохранить как PDF») и в картинку PNG для чата с родителями.
+     Имя — save.name (то же, что на странице героя), подпись репетитора — save.tutor, дата — save.cert[вид]:
+     когда грамота открылась впервые (у испытания — дата первых 6 из 6) ---------- */
+  const CERT = HeroCert;
+  const cleanTutor = s => cleanTitle(s).slice(0, 32);
+  const trialSix = () => trialData().hist.find(h => recScore(h) === TR.length);
+  const certOk = kind => (kind === 'prolog' ? prologueDone() : kind === 'trial' ? !!trialSix() : courseDone());
+  const certFresh = () => CERT.KINDS.filter(k => certOk(k) && !(save.cert || {})[k]); // открыты, но ещё не смотрели
+  // Адрес сайта — мелко внизу грамоты (у файла с диска его нет)
+  const siteName = () => (/^https?:$/.test(location.protocol) ? (location.host + location.pathname).replace(/\/(index\.html)?$/, '') : '');
+  function certInfo(kind) {
+    const D = heroData(), S = heroSummary(D), main = LESSONS.filter(l => !l.prologue);
+    const info = { name: D.n, tutor: cleanTutor(save.tutor), date: (save.cert || {})[kind] || Date.now(), level: S.level, rank: LEVELS[S.level - 1].title, site: siteName() };
+    if (kind === 'prolog') {
+      const L = LESSONS[PRO];
+      return Object.assign(info, {
+        tasks: L.tasks.length, lines: L.tasks.reduce((n, t) => n + codeLines(save.code[t.id] ?? t.hints[2]).length, 0),
+        stars: lessonStars(L), maxStars: L.tasks.length * 3, cmds: [...new Set(L.tasks.flatMap(t => t.cmds))],
+      });
+    }
+    if (kind === 'trial') {
+      const rec = trialSix(), first = trialData().hist[0];
+      return Object.assign(info, {
+        date: rec.end, of: TR.length, first: rec.s.filter(v => v === 1).length, mins: rec.t ? Math.max(1, Math.round(rec.t / 6e4)) : 0,
+        topics: TR.map(t => t.name), was: first !== rec && recScore(first) < TR.length ? { n: recScore(first), date: first.end } : null,
+      });
+    }
+    return Object.assign(info, {
+      lessons: main.length, topics: main.map(l => (l.topic || {}).name || l.title), stars: S.stars, maxStars: MAX_STARS,
+      solved: S.A.solved, lines: D.k, days: D.d,
+    });
+  }
+  // 3D-портрет Бита в его снаряжении — на плитке травы; рисуется один раз, пока снаряжение то же
+  let certPortrait = null;
+  function heroPortrait(gear) {
+    const id = JSON.stringify(gear);
+    if (certPortrait && certPortrait.id === id) return certPortrait.img;
+    let r;
+    try { r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); } catch (e) { return null; }
+    const size = 760;
+    r.setPixelRatio(1);
+    r.setSize(size, size, false);
+    const sc = new THREE.Scene();
+    sc.add(new THREE.HemisphereLight(0xffffff, 0x8a7fb0, 0.95));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    sun.position.set(2, 4, 3);
+    sc.add(sun);
+    const bot = makeHeroModel(gear);
+    bot.rotation.y = 0.45;
+    sc.add(bot);
+    const tile = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.54, 0.16, 12), new THREE.MeshStandardMaterial({ color: 0x5fb35a, flatShading: true, roughness: 0.9 }));
+    tile.position.y = -0.08;
+    sc.add(tile);
+    const c = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
+    c.position.set(0, 0.95, 2.25);
+    c.lookAt(0, 0.5, 0);
+    r.render(sc, c);
+    const img = document.createElement('canvas');
+    img.width = img.height = size;
+    img.getContext('2d').drawImage(r.domElement, 0, 0);
+    r.dispose();
+    r.forceContextLoss();
+    certPortrait = { id, img };
+    return img;
+  }
+  let certKind = null, certToken = 0, certBlob = null, certTimer = null, certFake = null;
+  const certFile = () => `Грамота — ${CERT.META[certKind].name}${save.name ? ` — ${cleanName(save.name)}` : ''}.png`.replace(/[\\/:*?"<>|]/g, '');
+  // Нарисовать грамоту; пока шрифты игры грузятся — запасными, потом ещё раз. fake — данные для режима ?shots
+  async function paintCert() {
+    const token = ++certToken;
+    const ready = await CERT.fonts();
+    if (token !== certToken || $('#cert').hidden) return;
+    const draw = () => {
+      const info = certFake ? certFake.info : certInfo(certKind);
+      CERT.draw($('#certCanvas'), CERT.content(certKind, info), heroPortrait(certFake ? certFake.gear : heroData().g));
+      certBlob = null;
+      $('#certCanvas').toBlob(b => { if (token === certToken) certBlob = b; }, 'image/png');
+    };
+    draw();
+    if (!ready) CERT.fonts(0).then(() => { if (token === certToken && !$('#cert').hidden) draw(); });
+  }
+  function renderCertTabs() {
+    $('#certKinds').innerHTML = CERT.KINDS.map(k => {
+      const ok = certFake ? certFake.kinds.includes(k) : certOk(k), m = CERT.META[k];
+      return `<button type="button" class="cert-kind${k === certKind ? ' active' : ''}" data-kind="${k}" aria-pressed="${k === certKind}"${ok ? '' : ` disabled title="Откроется ${esc(m.when)}"`}>`
+        + `<b>${esc(m.name)}</b><span>${ok ? 'получена' : `откроется ${esc(m.when)}`}</span></button>`;
+    }).join('');
+    $('#certLead').textContent = `Грамота ${CERT.META[certKind].when}. Впиши имя, а потом распечатай или отправь картинкой.`;
+  }
+  function openCert(kind, fake = null) {
+    certFake = fake;
+    const kinds = fake ? fake.kinds : CERT.KINDS.filter(certOk);
+    if (!kinds.length) return;
+    certKind = kinds.includes(kind) ? kind : kinds[kinds.length - 1];
+    if (!fake) {
+      save.cert = save.cert || {};
+      if (!save.cert[certKind]) { save.cert[certKind] = certKind === 'trial' ? trialSix().end : Date.now(); persist(); }
+    }
+    $('#certName').value = fake ? fake.info.name : save.name || '';
+    $('#certTutor').value = fake ? fake.info.tutor : save.tutor || '';
+    $('#certSum').textContent = '';
+    renderCertTabs();
+    $('#cert').hidden = false;
+    $('#cert').scrollTop = 0;
+    document.body.classList.add('recap-open', 'cert-open');
+    paintCert();
+    $('#certPrint').focus({ preventScroll: true });
+  }
+  function closeCert() {
+    $('#cert').hidden = true;
+    certToken++;
+    document.body.classList.remove('cert-open');
+    // под грамотой может быть открыта другая карточка — тогда прокрутка страницы остаётся выключенной
+    if (![...document.querySelectorAll('.recap, .hp')].some(e => !e.hidden)) document.body.classList.remove('recap-open');
+    if (!$('#heroPage').hidden && !hpShared) renderHeroPage();
+    if (!$('#recap').hidden) $('#recapCert').focus({ preventScroll: true });
+  }
+  $('#certKinds').addEventListener('click', e => {
+    const b = e.target.closest('.cert-kind');
+    if (!b || b.disabled || b.dataset.kind === certKind) return;
+    openCert(b.dataset.kind, certFake);
+  });
+  // Имя и подпись: грамота перерисовывается, пока печатают (не на каждую букву)
+  const repaintSoon = () => { clearTimeout(certTimer); certTimer = setTimeout(paintCert, 250); };
+  $('#certName').addEventListener('input', e => {
+    if (certFake) certFake.info.name = cleanName(e.target.value); else { save.name = cleanName(e.target.value); persist(); }
+    repaintSoon();
+  });
+  $('#certTutor').addEventListener('input', e => {
+    if (certFake) certFake.info.tutor = cleanTutor(e.target.value); else { save.tutor = cleanTutor(e.target.value); persist(); }
+    repaintSoon();
+  });
+  // Печать: на листе только сама грамота (css: body.cert-open в @media print)
+  $('#certPrint').addEventListener('click', () => {
+    clearTimeout(certTimer);
+    window.print();
+  });
+  $('#certPng').addEventListener('click', () => {
+    const save_ = blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = certFile();
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      $('#certSum').textContent = `Картинка сохранена: «${certFile()}» — в загрузках.`;
+    };
+    if (certBlob) save_(certBlob); else $('#certCanvas').toBlob(b => b && save_(b), 'image/png');
+  });
+  // «Отправить» — на телефоне сразу в мессенджер (если браузер умеет делиться файлами)
+  const canShareFiles = (() => { try { return !!(navigator.canShare && navigator.canShare({ files: [new File(['x'], 'x.png', { type: 'image/png' })] })); } catch (e) { return false; } })();
+  $('#certShare').hidden = !canShareFiles;
+  $('#certShare').addEventListener('click', () => {
+    if (!certBlob) { $('#certSum').textContent = 'Картинка ещё готовится — нажми через секунду.'; return; }
+    navigator.share({ files: [new File([certBlob], certFile(), { type: 'image/png' })], title: 'Грамота — Долина Эникей' }).catch(() => {});
+  });
+  $('#certClose').addEventListener('click', closeCert);
+  $('#cert').addEventListener('click', e => { if (e.target.id === 'cert') closeCert(); });
+  addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#cert').hidden) { e.stopImmediatePropagation(); closeCert(); } }, true);
+  $('#recapCert').addEventListener('click', () => openCert('prolog'));
+  $('#trCert').addEventListener('click', () => openCert('trial'));
+  // Раздел «Грамоты» на странице героя: какие уже есть и за что дают остальные
+  function renderCertSec(shared) {
+    $('#hpCertSec').hidden = shared;
+    if (shared) return;
+    const got = CERT.KINDS.filter(certOk);
+    $('#hpCertCount').textContent = `${got.length} из ${CERT.KINDS.length}`;
+    $('#hpCerts').innerHTML = CERT.KINDS.map(k => {
+      const ok = got.includes(k), m = CERT.META[k];
+      return `<li><button type="button" class="hp-cert${ok ? ' on' : ''}" data-kind="${k}"${ok ? '' : ' disabled'}>`
+        + `<span class="hc-seal" aria-hidden="true">${ok ? '✓' : '?'}</span><span class="hc-text"><b>${esc(m.name)}</b><span>${ok ? 'открыть, распечатать, отправить' : `откроется ${esc(m.when)}`}</span></span></button></li>`;
+    }).join('');
+  }
+  $('#hpCerts').addEventListener('click', e => { const b = e.target.closest('.hp-cert'); if (b && !b.disabled) openCert(b.dataset.kind); });
 
   /* ---------- Сюжет: реплики персонажей (js/story.js) ---------- */
   let talkQueue = [], talkDone = null, outroPending = false;
@@ -3679,5 +4119,5 @@
   if (openHero) openHeroPage(openHero); // страница героя по ссылке — поверх заставки, только смотреть
   if (openTrial) openTrialResult(openTrial.h.length - 1, openTrial); // итог испытания по ссылке — тоже
   requestAnimationFrame(t => { last = t; frame(t); });
-  if (SHOW) startReel();
+  if (SHOW) (SHOTS ? startShots : startReel)();
 })();
