@@ -146,9 +146,9 @@
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 200);
-  const hemi = new THREE.HemisphereLight(0xdff0ff, 0x6b5a4a, 0.62);
+  const hemi = new THREE.HemisphereLight(0xffe6d4, 0x7a5f8a, 0.6);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff1dc, 0.8);
+  const sun = new THREE.DirectionalLight(0xffd9b0, 0.82);
   sun.position.set(6, 12, 5);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -156,16 +156,16 @@
   scene.add(sun, sun.target);
 
   const M = {
-    grassA: new THREE.MeshStandardMaterial({ color: 0x86d06f, flatShading: true, roughness: 0.9 }),
-    grassB: new THREE.MeshStandardMaterial({ color: 0x78c262, flatShading: true, roughness: 0.9 }),
-    dirt: new THREE.MeshStandardMaterial({ color: 0x9a6a45, flatShading: true, roughness: 1 }),
-    rock: new THREE.MeshStandardMaterial({ color: 0x6f6878, flatShading: true, roughness: 1 }),
-    stoneA: new THREE.MeshStandardMaterial({ color: 0x7f86a0, flatShading: true, roughness: 0.95 }),
-    stoneB: new THREE.MeshStandardMaterial({ color: 0x6c7390, flatShading: true, roughness: 0.95 }),
+    grassA: new THREE.MeshStandardMaterial({ color: 0x86c76a, flatShading: true, roughness: 0.9 }),
+    grassB: new THREE.MeshStandardMaterial({ color: 0x79bb5f, flatShading: true, roughness: 0.9 }),
+    dirt: new THREE.MeshStandardMaterial({ color: 0xb08258, flatShading: true, roughness: 1 }),
+    rock: new THREE.MeshStandardMaterial({ color: 0x7e7090, flatShading: true, roughness: 1 }),
+    stoneA: new THREE.MeshStandardMaterial({ color: 0x8f88aa, flatShading: true, roughness: 0.95 }),
+    stoneB: new THREE.MeshStandardMaterial({ color: 0x7d7699, flatShading: true, roughness: 0.95 }),
     lava: new THREE.MeshStandardMaterial({ color: 0xff5a1f, emissive: 0xff3b0a, emissiveIntensity: 0.9, flatShading: true, roughness: 0.6 }),
     coin: new THREE.MeshStandardMaterial({ color: 0xf5b82e, emissive: 0x7a4b00, emissiveIntensity: 0.35, metalness: 0.55, roughness: 0.3 }),
     trunk: new THREE.MeshStandardMaterial({ color: 0x7b4f2e, flatShading: true }),
-    leaf: new THREE.MeshStandardMaterial({ color: 0x3fa35b, flatShading: true }),
+    leaf: new THREE.MeshStandardMaterial({ color: 0x4cb070, flatShading: true }),
     pole: new THREE.MeshStandardMaterial({ color: 0xf3f0ff, roughness: 0.5 }),
     flag: new THREE.MeshStandardMaterial({ color: 0x1fa88f, side: THREE.DoubleSide, flatShading: true }),
     ring: new THREE.MeshBasicMaterial({ color: 0x7ef0d6, transparent: true, opacity: 0.55 }),
@@ -188,10 +188,10 @@
   const hero = new THREE.Group();
   const heroParts = {};
   (function buildHero() {
-    const violet = new THREE.MeshStandardMaterial({ color: 0x6a55ea, flatShading: true, roughness: 0.55 });
+    const violet = new THREE.MeshStandardMaterial({ color: 0x6b4bd8, flatShading: true, roughness: 0.55 });
     const violetLight = new THREE.MeshStandardMaterial({ color: 0x8f7cff, roughness: 0.45 });
     const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
-    const black = new THREE.MeshStandardMaterial({ color: 0x1b1e3c, roughness: 0.3 });
+    const black = new THREE.MeshStandardMaterial({ color: 0x3a2a4d, roughness: 0.3 });
     const gold = new THREE.MeshStandardMaterial({ color: 0xffc83d, emissive: 0x6b4500, emissiveIntensity: 0.4 });
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.4, 10), violet);
     body.position.y = 0.26; body.castShadow = true;
