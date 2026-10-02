@@ -69,9 +69,10 @@ button:disabled { cursor: default; opacity: .45; }
 .map-btn .mb-stars { color: var(--gold); font-weight: 600; white-space: nowrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .tabs { display: flex; gap: 8px; flex-wrap: wrap; }
-.tab { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--panel); }
+.tab { transition: transform .12s, box-shadow .12s, border-color .12s; display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border: 1.5px solid var(--line); border-radius: 999px; background: var(--panel); }
 .tab .num { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--panel-2); font: 700 13px var(--display); }
 .tab .nm { font-weight: 500; }
+.tab:hover { transform: translateY(-1px); }
 .tab.active { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 3px 0 color-mix(in srgb, var(--accent) 35%, transparent); }
 .tab.active .num { background: var(--accent); color: var(--accent-ink); }
 /* Разминка (задание из прошлого урока) и задание со звёздочкой */
@@ -249,7 +250,11 @@ body.is-running .ed-code textarea { cursor: default; }
 .res-card { background: var(--panel); border-radius: 22px; padding: 22px 26px; width: min(380px, 100%); box-shadow: 0 20px 50px rgba(18,20,43,.3); }
 .res-stars { font-size: 40px; line-height: 1; margin-bottom: 8px; }
 .res-stars i { font-style: normal; color: var(--line); }
-.res-stars i.on { color: var(--gold-star); }
+.res-stars i.on { color: var(--gold-star); display: inline-block; animation: starPop .6s cubic-bezier(.3,1.5,.5,1) both; text-shadow: 0 0 18px color-mix(in srgb, var(--gold-star) 55%, transparent); }
+.res-stars i.on:nth-child(2) { animation-delay: .14s; }
+.res-stars i.on:nth-child(3) { animation-delay: .28s; }
+@keyframes starPop { 0% { transform: scale(0) rotate(-40deg); opacity: 0; } 60% { transform: scale(1.35) rotate(8deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
+@media (prefers-reduced-motion: reduce) { .res-stars i.on { animation: none; } }
 .res-card h3 { margin: 0 0 10px; font: 700 18px/1.25 var(--display); }
 .res-card ul { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 6px; font-size: 14px; }
 .res-card li { color: var(--muted); padding-left: 24px; position: relative; }
@@ -421,7 +426,7 @@ body.show-mode .reel-toast:not([hidden]) { display: block; position: absolute; t
 
 /* Карта долины: края по урокам на тропе; «Бит здесь», пройденные края с галочкой, дальние — в тумане */
 .valley { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; padding: 20px 16px; overflow-y: auto;
-  background: rgba(18,20,43,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade .25s ease; }
+  background: rgba(46,36,71,.52); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade .25s ease; }
 .valley[hidden] { display: none; }
 .valley-card { position: relative; flex: none; margin: auto 0; width: min(1080px, 100%); background: var(--panel); border-radius: 28px; padding: 22px 24px 24px;
   box-shadow: 0 30px 80px rgba(18,20,43,.45); animation: rise .4s cubic-bezier(.2,.9,.3,1.15); }
@@ -539,7 +544,7 @@ body.show-mode .reel-toast:not([hidden]) { display: block; position: absolute; t
 /* Итог пролога: карточка для ученика и родителя, её удобно показать или сфотографировать экран */
 body.recap-open { overflow: hidden; }
 .recap { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; align-items: center; padding: 20px 16px; overflow-y: auto;
-  background: rgba(18,20,43,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade .25s ease; }
+  background: rgba(46,36,71,.52); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade .25s ease; }
 .recap[hidden] { display: none; }
 .recap-card { position: relative; flex: none; margin: auto 0; /* по центру, а если не влезает — с начала, с прокруткой */
   width: min(820px, 100%); background: var(--panel); color: var(--ink); border-radius: 28px; padding: 28px 30px 22px;
@@ -610,7 +615,7 @@ body.recap-open { overflow: hidden; }
 
 /* Страница героя: остров с Битом, звание, темы курса, достижения. По ссылке — только смотреть */
 .hp { position: fixed; inset: 0; z-index: 42; display: flex; flex-direction: column; align-items: center; padding: 20px 16px; overflow-y: auto;
-  background: rgba(18,20,43,.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade .25s ease; }
+  background: rgba(46,36,71,.52); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: fade .25s ease; }
 .hp.over { z-index: 60; } /* по ссылке — поверх заставки */
 .hp[hidden] { display: none; }
 .hp-card { position: relative; flex: none; margin: auto 0; width: min(1000px, 100%); background: var(--panel); color: var(--ink); border-radius: 28px;

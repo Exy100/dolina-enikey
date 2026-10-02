@@ -487,17 +487,32 @@
   }
   const wait = ms => tween(ms, () => {});
   const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+  const easeBack = t => 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2); // с лёгким перелётом
+  // Пружина героя: вытягивается в движении, сплющивается при касании земли
+  function squash(k) { if (!reduceMotion) hero.scale.set(1 - k * 0.5, 1 + k, 1 - k * 0.5); }
 
   const particles = [];
   function confetti(x, z, n = 70) {
     if (reduceMotion) n = 18;
-    const cols = [0xffc83d, 0x6a55ea, 0x1fa88f, 0xff6b8b, 0x7ec8ff];
+    const cols = [0xffc83d, 0x6b4bd8, 0x1e9e7e, 0xff9f6b, 0xff6b8b, 0xd9c2ff];
     const g = new THREE.PlaneGeometry(0.08, 0.12);
     for (let i = 0; i < n; i++) {
       const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: cols[i % cols.length], side: THREE.DoubleSide }));
       m.position.set(x, 1, z);
       const a = Math.random() * Math.PI * 2, s = 1.5 + Math.random() * 2.5;
       particles.push({ m, v: new THREE.Vector3(Math.cos(a) * s * 0.5, 3 + Math.random() * 3, Math.sin(a) * s * 0.5), life: 1.8, spin: Math.random() * 10 });
+      scene.add(m);
+    }
+  }
+  // Пыль из-под ног: мягкие светлые шарики, всплывают и тают
+  function dust(x, z, n = 5) {
+    if (reduceMotion) return;
+    const g = new THREE.SphereGeometry(0.07, 8, 6);
+    for (let i = 0; i < n; i++) {
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0xfff1e6, transparent: true, opacity: 0.7 }));
+      m.position.set(x + (Math.random() - 0.5) * 0.3, 0.08, z + (Math.random() - 0.5) * 0.3);
+      const a = Math.random() * Math.PI * 2;
+      particles.push({ m, v: new THREE.Vector3(Math.cos(a) * 0.5, 0.5 + Math.random() * 0.4, Math.sin(a) * 0.5), life: 0.55, life0: 0.55, spin: 0, g: 0, soft: true });
       scene.add(m);
     }
   }
@@ -560,8 +575,9 @@
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
-      p.v.y -= 9 * dt;
+      p.v.y -= (p.g === undefined ? 9 : p.g) * dt;
       p.m.position.addScaledVector(p.v, dt);
+      if (p.soft) { const k = Math.max(0, p.life / p.life0); p.m.material.opacity = 0.7 * k; p.m.scale.setScalar(1 + (1 - k) * 1.6); }
       p.m.rotation.x += p.spin * dt; p.m.rotation.y += p.spin * dt;
       p.life -= dt;
       if (p.life <= 0 || p.m.position.y < -3) { scene.remove(p.m); particles.splice(i, 1); }
@@ -1003,12 +1019,15 @@
       case 'move': {
         Sound.play('step');
         const fx = ev.from.x, fz = ev.from.z, tx = ev.to.x, tz = ev.to.z;
+        dust(fx, fz, 4);
         await tween(360, t => {
           const e = ease(t);
           heroRig.position.set(fx + (tx - fx) * e, 0, fz + (tz - fz) * e);
           hero.position.y = Math.sin(t * Math.PI) * 0.14;
+          // вытягивается в полёте, в конце шага сплющивается
+          squash(t < 0.7 ? 0.07 * Math.sin(t / 0.7 * Math.PI) : -0.09 * Math.sin((t - 0.7) / 0.3 * Math.PI));
         });
-        hero.position.y = 0;
+        hero.position.y = 0; hero.scale.set(1, 1, 1);
         trailStep(ev.from, ev.to);
         return;
       }
@@ -1020,9 +1039,10 @@
           const e = ease(t);
           heroRig.position.set(fx + (tx - fx) * e, 0, fz + (tz - fz) * e);
           hero.position.y = Math.sin(t * Math.PI) * 1.05;
-          hero.scale.set(1, 1 + Math.sin(t * Math.PI) * 0.1, 1);
+          squash(t < 0.85 ? 0.12 * Math.sin(t / 0.85 * Math.PI) : -0.14 * Math.sin((t - 0.85) / 0.15 * Math.PI));
         });
         hero.position.y = 0; hero.scale.set(1, 1, 1);
+        dust(tx, tz, 7);
         Sound.play('land');
         trailHop(ev.from, ev.to);
         return;
@@ -1031,7 +1051,7 @@
         Sound.play('turn');
         const a0 = heroAngle, a1 = heroAngle + ev.side * Math.PI / 2;
         heroAngle = a1;
-        await tween(260, t => { hero.rotation.y = a0 + (a1 - a0) * ease(t); });
+        await tween(260, t => { hero.rotation.y = a0 + (a1 - a0) * easeBack(t); });
         return;
       }
       case 'take': {
