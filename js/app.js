@@ -1250,6 +1250,10 @@
     $('#mbText').innerHTML = `<b>${esc(place)}</b> <span>· ${l.prologue ? 'Пролог' : `Урок ${lessonNo(lessonIdx)}`}</span>`;
     $('#mbStars').textContent = `★ ${lessonStars(l)}/${l.tasks.length * 3}`;
     $('#mapBtn').setAttribute('aria-label', `Карта долины. Сейчас: ${place}, ${lessonName(lessonIdx)}`);
+    if (inTrial) { // идёт испытание
+      $('#mbText').innerHTML = '<b>Испытание Сбоя</b> <span>· глава 1</span>';
+      $('#mbStars').textContent = `✓ ${trialSolved()}/${TR.length}`;
+    }
   }
 
   function renderBadge() {
@@ -1281,6 +1285,11 @@
       } else if (t.kind === 'bonus') {
         b.title = 'Задание со звёздочкой — для тех, кто решил урок быстро';
         b.innerHTML = `<span class="num" aria-hidden="true">★</span><span class="nm">${t.short}</span><span class="stars">${starsHtml(st)}</span>`;
+      } else if (t.kind === 'exam') {
+        const c = trialData().cur, ok = !!(c && c.ok[t.id]);
+        b.title = `Испытание ${i + 1}: ${t.name}`;
+        b.setAttribute('aria-label', `Испытание ${i + 1}: ${t.name}${ok ? ', решено' : ''}`);
+        b.innerHTML = `<span class="num">${i + 1}</span><span class="nm">${t.short}</span>${ok ? '<span class="tick" aria-hidden="true">✓</span>' : ''}`;
       } else if (t.kind === 'py') {
         const k = TASKS.filter(x => x.kind === 'py').indexOf(t) + 1, ok = solvedTask(t);
         b.title = `Python в консоли: ${t.title}`;
@@ -1295,6 +1304,7 @@
       nav.append(b);
     });
     renderHw();
+    renderTrialBar();
   }
 
   function hintsUsed() { return save.hints[TASKS[taskIdx].id] || 0; }
@@ -1314,11 +1324,12 @@
       box.append(d);
     }
     const btn = $('#hintBtn');
-    btn.hidden = used >= 3;
+    btn.hidden = used >= 3 || t.kind === 'exam'; // в испытании подсказок нет
     btn.textContent = used === 2 ? 'Показать решение' : `Подсказка ${used + 1} из 2`;
   }
 
   function selectLesson(li) {
+    exitTrial();
     lessonIdx = li;
     TASKS = lessonTasks(li);
     // в новом уроке — сначала разминка
@@ -1332,21 +1343,23 @@
     hideVars();
     taskIdx = i;
     save.lesson = LESSONS[lessonIdx].id;
-    const t = TASKS[i], py = t.kind === 'py';
+    const t = TASKS[i], py = t.kind === 'py', exam = t.kind === 'exam';
     if (!t.kind) save.pos[save.lesson] = i; // номер запоминаем только у основных заданий
     if (py) maps = []; // в консоли Python карт нет — вместо мира консоль
     else {
       if (!save.seeds[t.id]) save.seeds[t.id] = 1000 + Math.floor(Math.random() * 90000);
-      maps = makeMaps(t, save.seeds[t.id]);
+      maps = makeMaps(t, save.seeds[t.id], t.maps || 3); // у испытания бывает одна карта-рисунок по сиду попытки
     }
     persist();
     const place = lessonStory().place || lessonName(lessonIdx), pys = TASKS.filter(x => x.kind === 'py');
     $('#taskNum').textContent = t.kind === 'custom' ? 'Свой уровень · нарисован в редакторе'
       : t.kind === 'warm' ? `Разминка · задание из урока «${LESSONS[t.from].title}»`
       : py ? `${place} · Python в консоли · ${pys.indexOf(t) + 1} из ${pys.length}`
+      : exam ? `Испытание Сбоя · ${i + 1} из ${TR.length} · ${t.name}`
       : t.kind === 'bonus' ? `${place} · задание со звёздочкой` : `${place} · задание ${i + 1} из ${MAIN().length}`;
     $('#taskTitle').textContent = t.title;
     $('#taskGoal').textContent = t.goal;
+    $('#taskNewLbl').textContent = t.kind === 'exam' ? 'Тема:' : 'Новое:';
     $('#taskNew').textContent = t.news;
     const chips = $('#chips');
     chips.innerHTML = '';
@@ -1368,7 +1381,8 @@
       log('Консоль Python: Бита здесь нет — программа печатает текст и спрашивает ввод. «Запуск» запустит её, а потом проверит на нескольких вводах.', 'tip');
       return;
     }
-    if (t.kind === 'custom') log('Свой уровень. Изменить карту или получить ссылку — на карте долины, кнопка «Свой уровень».', 'tip');
+    if (exam) log('Испытание: подсказок нет. Запускать и смотреть «Шагом» можно сколько угодно — засчитывается то, что получилось.', 'tip');
+    else if (t.kind === 'custom') log('Свой уровень. Изменить карту или получить ссылку — на карте долины, кнопка «Свой уровень».', 'tip');
     else if (t.kind === 'warm') log('Разминка: реши с нуля задание из прошлого урока, на свежей карте. Звёзд за неё нет — это проверка, что тема не забылась.', 'tip');
     else if (t.kind === 'bonus') log('Задание со звёздочкой: необязательное и потруднее. Звёзды за него идут в уровень Бита.', 'tip');
     else if (i === 0 && LESSONS[lessonIdx].intro) log(LESSONS[lessonIdx].intro, 'tip');
@@ -1379,6 +1393,7 @@
     $('.hud.tl').hidden = maps.length === 1;
     $('#newMapsBtn').hidden = maps.length === 1;
     $('#againBtn').hidden = maps.length === 1;
+    if (exam) $('#newMapsBtn').hidden = $('#againBtn').hidden = $('#guessBtn').hidden = true; // карты попытки не меняют, угадывать не нужно
     dotStates = ['', '', ''];
     showMap(0);
   }
@@ -1574,7 +1589,7 @@
         ? `На карте ${mIdx} всё сработало, а на карте ${mIdx + 1} — нет. Условие у тебя уже есть, но здесь оно не помогло. Нажми «Шаг» и посмотри, где герой ошибается.`
         : `На карте ${mIdx} всё сработало, а на карте ${mIdx + 1} — нет. Код должен работать на любой карте: для этого и нужны условия.`, 'tip');
     }
-    const hint = lineHint(err, st);
+    const hint = inTrial ? null : lineHint(err, st); // в испытании подсказок нет
     if (hint) log(hint.text, 'tip', hint.line);
   }
 
@@ -1589,6 +1604,7 @@
     clearLog(); hideResult(); markLine(null);
     try { MiniPy.parse(code); } catch (e) { reportError(e, 0); return; }
     markDay();
+    if (inTrial && trialData().cur) { const c = trialData().cur, id = TASKS[taskIdx].id; c.runs[id] = (c.runs[id] || 0) + 1; trialTick(c); persist(); } // с какого запуска решено
     const token = ++runToken;
     stepMode = false;
     setRunning(true);
@@ -1633,6 +1649,7 @@
     cancelGuess();
     clearLog(); hideResult(); markLine(null);
     try { MiniPy.parse(code); } catch (e) { reportError(e, 0); return; }
+    if (inTrial && trialData().cur) trialTick(trialData().cur);
     const token = ++runToken;
     stepMode = true;
     setRunning(true);
@@ -1880,6 +1897,7 @@
     $('#editLvlBtn').hidden = true;
     if (t.kind === 'warm') { finishWarm(t); return; }
     if (t.kind === 'custom') { finishCustom(t, code); return; }
+    if (t.kind === 'exam') { finishExam(t, code); return; }
     const lines = codeLines(code).length;
     const first = !save.fails[t.id];
     const got = [1, hintsUsed() === 0 ? 1 : 0, (t.star3 === 'first' ? first : lines <= t.best) ? 1 : 0];
@@ -2170,6 +2188,7 @@
   $('#nextBtn').addEventListener('click', () => {
     const next = () => {
       const t = TASKS[taskIdx];
+      if (t.kind === 'exam') { const c = trialData().cur, nx = c ? TR.findIndex(x => !c.ok[x.id]) : -1; if (nx >= 0) selectTask(nx); else endTrial(); return; }
       if (hwNextId) { const id = hwNextId; hwNextId = null; goTask(id); return; }
       if (t.kind === 'warm') { const w = TASKS.findIndex(x => x.kind === 'warm' && !save.warm[x.id]); selectTask(w >= 0 ? w : firstOpen()); }
       else if (t.kind === 'custom') selectTask(firstOpen());
@@ -2220,6 +2239,7 @@
       p: [save.predict.hits || 0, save.predict.tries || 0, save.predict.best || 0],
       q: Object.keys(save.guessed || {}).length, // задания с верной догадкой — за них кристаллы
       y: Object.keys(save.py || {}).filter(id => HeroBridge.find(id)).length, // решено в консоли Python
+      x: keyAttempts(save.trial ? save.trial.hist : []).map(h => [Math.round(h.end / 6e4), h.s.filter(Boolean).length]), // испытания: когда и сколько из 6
       b: HeroGear.SHOP.filter(isOpen).map(it => it.id), // куплено в лавке Ады
       c: lt ? [lt.id, clipCode(save.code[lt.id] ?? lt.hints[2])] : null,
       at: Date.now(),
@@ -2244,6 +2264,7 @@
       fixes: flat.filter(x => x.st[0] && FIX_IDS.has(x.t.id)).length, streak: D.p[2], bonus: per.reduce((n, p) => n + p.bonus, 0),
       warm: D.w, hw: D.h, built: D.u, days: D.d, lines: D.k, perfect: per.filter(p => p.perfect).length,
       lessons: per.filter(p => p.done && !p.l.prologue).length, course: per.every(p => p.done) ? 1 : 0, guessed: D.q, py: D.y || 0,
+      trial: Math.max(0, ...(D.x || []).map(a => a[1])),
     };
     // кристаллы: заработано всего (js/awards.js) минус потрачено в лавке Ады
     const earned = HeroAwards.gemsEarned(A), spent = D.b.reduce((n, id) => n + (HeroGear.SHOP.find(it => it.id === id) || {}).price, 0);
@@ -2258,7 +2279,8 @@
     const D = {
       v: 1, n: cleanName(d.n), r: Math.min(int(d.r), LESSONS.length - 1), g: {}, t: typeof d.t === 'string' ? d.t.slice(0, 20) : '', s,
       f: int(d.f), w: int(d.w), h: int(d.h), u: int(d.u, 1), d: int(d.d), k: int(d.k), p: [0, 1, 2].map(i => int((d.p || [])[i])),
-      q: int(d.q), y: int(d.y), b: Array.isArray(d.b) ? HeroGear.SHOP.filter(it => d.b.includes(it.id)).map(it => it.id) : [],
+      q: int(d.q), y: int(d.y), x: Array.isArray(d.x) ? d.x.slice(-8).filter(Array.isArray).map(a => [int(a[0], 1e8), int(a[1], 6)]) : [],
+      b: Array.isArray(d.b) ? HeroGear.SHOP.filter(it => d.b.includes(it.id)).map(it => it.id) : [],
       c: null, at: int(d.at, 4102444800000) || Date.now(),
     };
     const lvl = heroSummary(D).level;
@@ -2356,6 +2378,15 @@
       return `<li>${a.done && !shared ? `<button type="button" class="${cls}" data-id="${a.id}" aria-pressed="${isTitle}">${inner}</button>` : `<div class="${cls}">${inner}</div>`}</li>`;
     }).join('');
     if (!shared) { renderGear(); renderShop(S); }
+    // испытания Сбоя: когда и сколько из 6 — столбиками
+    const xs = (D.x || []).map(([m, n]) => ({ end: m * 6e4, n })), tcur = !shared && trialData().cur;
+    $('#hpTrialBest').textContent = xs.length ? `лучшее — ${Math.max(...xs.map(x => x.n))} из ${TR.length}` : '';
+    $('#hpTrialHist').innerHTML = xs.length ? histBars(xs, xs.length - 1)
+      : `<p class="hp-tip">${shared ? 'Испытание ещё не проходили.' : 'Испытание ещё не проходили. Это шесть заданий по темам главы на новых картах — проверка, что всё уже получается.'}</p>`;
+    $('#hpTrialSec').hidden = shared && !xs.length;
+    $('#hpTrialActions').hidden = shared;
+    $('#hpTrialGo').textContent = tcur ? `Продолжить испытание — решено ${trialSolved()} из ${TR.length}` : 'Испытание Сбоя';
+    $('#hpTrialLast').hidden = shared || !trialData().hist.length;
     const c = D.c && findTask(D.c[0]);
     $('#hpCodeSec').hidden = !c;
     if (c) {
@@ -2907,12 +2938,13 @@
     let reach = 0;
     while (reach < LESSONS.length - 1 && done[reach]) reach++; // зелёная тропа — до первого непройденного края
     box.innerHTML = valleyArt(pts.map(p => ({ x: p.x * 10, y: p.y * 6.25 })), reach) + nodes.join('');
+    $('#valleyTrial').textContent = trialData().cur ? `Продолжить испытание · ${trialSolved()}/${TR.length}` : 'Испытание Сбоя';
     const n = done.filter(Boolean).length;
     $('#valleySub').textContent = `Пройдено краёв: ${n} из ${LESSONS.length} · звёзд всего: ${totalStars()}${fogCount ? ' · дальние края пока в тумане, но заглянуть можно' : ''}`;
     box.querySelectorAll('.vnode').forEach(b => b.addEventListener('click', () => {
       const i = +b.dataset.i;
       closeValley();
-      if (running || i === lessonIdx) return;
+      if (running || (i === lessonIdx && !inTrial)) return;
       selectLesson(i);
       greet();
     }));
@@ -3008,6 +3040,7 @@
   function closeEditor() {
     $('#lvlEd').hidden = true;
     document.body.classList.remove('recap-open');
+    if (inTrial) return; // идёт испытание — его вкладки на месте
     const ci = TASKS.findIndex(t => t.kind === 'custom');
     TASKS = lessonTasks(lessonIdx); // карта могла измениться — вкладка «Свой уровень» обновится
     if (TASKS[taskIdx] && ci === taskIdx) selectTask(Math.max(0, TASKS.findIndex(t => t.kind === 'custom'))); else renderTabs();
@@ -3036,6 +3069,7 @@
       $('#lvlEd').hidden = true;
       document.body.classList.remove('recap-open');
       if (running) stopRun();
+      exitTrial();
       TASKS = lessonTasks(lessonIdx);
       selectTask(TASKS.findIndex(t => t.kind === 'custom'));
     });
@@ -3059,7 +3093,7 @@
   const hwItems = () => (save.hw && save.hw.ids ? save.hw.ids.map(findTask).filter(Boolean) : []);
   function renderHw() {
     const box = $('#hw'), items = hwItems();
-    if (!items.length || SHOW) { box.hidden = true; return; }
+    if (!items.length || SHOW || inTrial) { box.hidden = true; return; }
     const done = items.filter(x => solvedTask(x.t)).length, cur = TASKS[taskIdx], all = done === items.length;
     box.hidden = false;
     box.classList.toggle('done', all);
@@ -3075,7 +3109,8 @@
   function goTask(id, withGreet = true) {
     const f = findTask(id);
     if (!f || running) return;
-    const other = f.li !== lessonIdx;
+    const other = f.li !== lessonIdx || inTrial;
+    exitTrial();
     if (other) { lessonIdx = f.li; TASKS = lessonTasks(f.li); }
     selectTask(TASKS.findIndex(t => t.id === id));
     if (other && withGreet) greet();
@@ -3173,8 +3208,304 @@
   addEventListener('hashchange', () => {
     if (running || SHOW) return;
     if (hwFromLink()) { const x = hwItems().find(y => !solvedTask(y.t)) || hwItems()[0]; goTask(x.t.id); log('Домашка обновлена: список — над заданием.', 'tip'); }
-    else if (levelFromLink()) { TASKS = lessonTasks(lessonIdx); selectTask(TASKS.findIndex(t => t.kind === 'custom')); }
-    else { const D = heroFromLink(); if (D) openHeroPage(D); }
+    else if (levelFromLink()) { exitTrial(); TASKS = lessonTasks(lessonIdx); selectTask(TASKS.findIndex(t => t.kind === 'custom')); }
+    else {
+      const D = heroFromLink(), tr = !D && trialFromLink();
+      if (D) openHeroPage(D);
+      else if (tr) openTrialResult(tr.h.length - 1, tr);
+    }
+  });
+
+  /* ---------- Испытание Сбоя (js/trial.js): проверка главы — шесть заданий по темам, новые карты, без подсказок.
+     Идущая попытка — save.trial.cur: { at, seed, ok: { id: с какого запуска решено }, runs: { id: запусков },
+     ahead — маска тем, до которых уроки ещё не дошли, active — открыта сейчас }. Завершённые — save.trial.hist:
+     { at, end, s: [с какого запуска решено каждое задание, 0 — не решено], ahead }. Итог — карточка для родителя
+     (openTrialResult): счёт, темы, «было → стало» по датам; ссылка #trial=… открывает её только для просмотра ---------- */
+  const TR = HeroTrial.TASKS;
+  let inTrial = false;
+  const trialData = () => (save.trial = save.trial || { cur: null, hist: [] });
+  const lessonDone = id => { const l = LESSONS.find(x => x.id === id); return !!l && l.tasks.every(solvedTask); };
+  const topicAhead = t => (t.lessons || [t.topic]).some(id => !lessonDone(id)); // уроки темы ещё не пройдены
+  const courseDone = () => LESSONS.every(l => l.tasks.every(solvedTask));
+  const trialSolved = () => { const c = trialData().cur; return c ? TR.filter(t => c.ok[t.id]).length : 0; };
+  function recScore(r) { return r.s.filter(Boolean).length; }
+  // Время попытки — только активное: между запусками и правками считаем не больше 10 минут, перерывы и «Выйти» не идут в счёт
+  function trialTick(c, resume) {
+    const now = Date.now();
+    if (!resume && c.last) c.spent = (c.spent || 0) + Math.max(0, Math.min(now - c.last, 10 * 6e4));
+    c.last = now;
+  }
+  const ruDate = (ms, opts = { day: 'numeric', month: 'long' }) => new Date(ms).toLocaleDateString('ru-RU', opts);
+  const andList = a => (a.length > 1 ? `${a.slice(0, -1).join(', ')} и ${a[a.length - 1]}` : a[0] || '');
+  function topicLabel(t) {
+    const nums = (t.lessons || [t.topic]).map(id => lessonNo(LESSONS.findIndex(l => l.id === id)));
+    return nums.length > 1 ? `Уроки ${nums[0]}–${nums[nums.length - 1]}` : `Урок ${nums[0]}`;
+  }
+  function spanText(ms) {
+    const d = Math.max(1, Math.round(ms / 864e5)), w = Math.round(d / 7), m = Math.round(d / 30);
+    return d < 14 ? `${d} ${plural(d, 'день', 'дня', 'дней')}` : d < 63 ? `${w} ${plural(w, 'неделю', 'недели', 'недель')}` : `${m} ${plural(m, 'месяц', 'месяца', 'месяцев')}`;
+  }
+  // Для столбиков и ссылок — не больше 8 попыток по порядку: первая (точка отсчёта), лучшая и последние
+  function keyAttempts(list) {
+    if (list.length <= 8) return list;
+    const best = list.reduce((b, h, i) => recScore(h) > recScore(list[b]) ? i : b, 0), keep = new Set([0, best]);
+    for (let i = list.length - 1; keep.size < 8; i--) keep.add(i);
+    return list.filter((h, i) => keep.has(i));
+  }
+  // Столбики попыток: { end, n } по порядку; cur — какая выделена
+  function histBars(list, cur = -1) {
+    return list.map((h, k) => `<div class="th-col${k === cur ? ' cur' : ''}" title="${ruDate(h.end)}: ${h.n} из ${TR.length}">`
+      + `<span class="th-n">${h.n}</span><span class="th-bar"><i style="height:${Math.max(6, (h.n / TR.length) * 100)}%"></i></span>`
+      + `<span class="th-d">${ruDate(h.end, { day: 'numeric', month: 'short' }).replace('.', '')}</span></div>`).join('');
+  }
+
+  // Режим испытания: вкладки — шесть испытаний, над заданием — полоска; урок и его вкладки ждут
+  function enterTrial(i) {
+    const c = trialData().cur;
+    if (!c || running) return;
+    inTrial = true;
+    c.active = true;
+    trialTick(c, true);
+    persist();
+    TASKS = TR;
+    selectTask(i ?? Math.max(0, TR.findIndex(t => !c.ok[t.id])));
+  }
+  // Выйти из режима (попытка остаётся — её можно продолжить); сам урок выбирает тот, кто вызвал
+  function exitTrial() {
+    if (!inTrial) return;
+    inTrial = false;
+    const c = trialData().cur;
+    if (c) c.active = false;
+    persist();
+    $('#trialBar').hidden = true;
+  }
+  function leaveTrial() {
+    exitTrial();
+    TASKS = lessonTasks(lessonIdx);
+    selectTask(Math.min(save.pos[LESSONS[lessonIdx].id] || 0, MAIN().length - 1));
+  }
+  function startTrial() {
+    if (running) stopRun();
+    const tr = trialData(), seed = 10000 + Math.floor(Math.random() * 900000);
+    tr.cur = { at: Date.now(), seed, ok: {}, runs: {}, ahead: HeroTrial.toMask(TR.filter(topicAhead).map(t => t.id)), active: true };
+    // каждая попытка — новые карты и пустой редактор
+    TR.forEach((t, i) => { save.seeds[t.id] = seed + i * 7919; delete save.code[t.id]; delete save.fails[t.id]; delete save.hints[t.id]; });
+    persist();
+    closeTrialCard();
+    enterTrial(0);
+    talk(courseDone() ? STORY.trial.fixed : STORY.trial.intro);
+  }
+  function endTrial() {
+    const tr = trialData(), c = tr.cur;
+    if (!c || running) return;
+    trialTick(c);
+    tr.hist.push({ at: c.at, end: Date.now(), s: TR.map(t => c.ok[t.id] || 0), ahead: c.ahead, t: c.spent || 0 });
+    if (tr.hist.length > 30) tr.hist.splice(1, 1); // первая попытка — точка отсчёта, её храним
+    tr.cur = null;
+    persist();
+    leaveTrial();
+    checkAwards();
+    Sound.play('levelup');
+    openTrialResult(tr.hist.length - 1);
+  }
+  function renderTrialBar() {
+    $('#trialBar').hidden = !inTrial;
+    if (!inTrial) return;
+    const n = trialSolved();
+    $('#trialCount').textContent = `Решено ${n} из ${TR.length}`;
+    if (!finishArmed) $('#trialFinish').textContent = n === TR.length ? 'Итоги' : 'Завершить';
+  }
+  // Испытание решено: «Дальше» — следующее нерешённое, а когда решены все — итоги
+  function finishExam(t, code) {
+    const c = trialData().cur;
+    if (!c) return;
+    const miss = HeroTrial.unmet(t, code);
+    if (miss) { log(miss, 'err'); Sound.play('fail'); return; }
+    if (!c.ok[t.id]) c.ok[t.id] = c.runs[t.id] || 1;
+    trialTick(c);
+    outroPending = false;
+    persist();
+    renderTabs();
+    const n = trialSolved(), nx = TR.find(x => !c.ok[x.id]), runs = c.ok[t.id];
+    $('#resStars').innerHTML = `<i class="on exam">${n}/${TR.length}</i>`;
+    $('#resTitle').textContent = `Испытание ${TR.indexOf(t) + 1} пройдено!`;
+    $('#resLevel').hidden = true;
+    $('#resList').innerHTML = `<li class="on">${maps.length > 1 ? 'Код прошёл все три карты' : 'Бит дошёл до флага'}</li>`
+      + `<li class="${runs === 1 ? 'on' : ''}">${runs === 1 ? 'С первого запуска' : `С ${runs}-го запуска — тоже засчитано`}</li>`
+      + `<li class="on">Тема «${esc(t.name.toLowerCase())}» — в руках</li>`;
+    $('#nextBtn').textContent = nx ? `Испытание ${TR.indexOf(nx) + 1}: ${nx.short}` : 'Итоги испытания';
+    $('#bonusBtn').hidden = $('#againBtn').hidden = $('#editLvlBtn').hidden = true;
+    $('#result').hidden = false;
+    Sound.play('stars', { n: 3 });
+  }
+  let finishArmed = null;
+  $('#trialFinish').addEventListener('click', e => {
+    if (running) return;
+    const left = TR.length - trialSolved();
+    if (left && !finishArmed) { // нерешённые не засчитаются — переспросим
+      e.currentTarget.textContent = `Точно? Осталось ${left}`;
+      finishArmed = setTimeout(() => { finishArmed = null; renderTrialBar(); }, 3500);
+      return;
+    }
+    clearTimeout(finishArmed);
+    finishArmed = null;
+    endTrial();
+  });
+  ta.addEventListener('input', () => { if (inTrial && trialData().cur) trialTick(trialData().cur); }); // правка кода — тоже работа над испытанием
+  $('#trialPause').addEventListener('click', () => {
+    if (running) return;
+    leaveTrial();
+    log('Испытание ждёт: продолжить можно с карты долины — кнопка «Испытание Сбоя».', 'tip');
+  });
+
+  // Окно испытания: что проверяем (по темам — пройдена или впереди), прошлые попытки, «Начать» или «Продолжить»
+  let restartArmed = null;
+  function openTrialCard() {
+    const tr = trialData(), c = tr.cur, last = tr.hist[tr.hist.length - 1], locked = !prologueDone();
+    $('#tcTopics').innerHTML = TR.map((t, i) => {
+      const ahead = topicAhead(t), done = c && c.ok[t.id];
+      return `<li class="${done ? 'done' : ahead ? 'ahead' : 'ready'}"><i>${done ? '✓' : i + 1}</i><span class="tc-t"><b>${esc(t.name)}</b>`
+        + `<span>${topicLabel(t)} · «${esc(t.title)}»</span></span><span class="tc-s">${done ? 'решено' : ahead ? 'тема впереди' : 'тема пройдена'}</span></li>`;
+    }).join('') + (TR.some(topicAhead) ? '<li class="tc-note">Темы, до которых уроки ещё не дошли, тоже можно попробовать: так видно точку отсчёта.</li>' : '');
+    $('#tcHistBox').hidden = !tr.hist.length;
+    $('#tcHist').innerHTML = histBars(keyAttempts(tr.hist).map(h => ({ end: h.end, n: recScore(h) })));
+    const days = last ? Math.floor((Date.now() - last.end) / 864e5) : 0;
+    const recent = last && !c && days < 14;
+    $('#tcWarn').hidden = !locked && !recent;
+    $('#tcWarn').textContent = locked ? 'Испытание откроется после пролога — сначала первые шаги с Битом.'
+      : `Прошлое испытание было ${days ? `${days} ${plural(days, 'день', 'дня', 'дней')} назад` : 'сегодня'}. Для честного сравнения лучше подождать хотя бы две недели.`;
+    $('#tcStart').textContent = c ? `Продолжить — решено ${trialSolved()} из ${TR.length}` : recent ? 'Всё равно начать' : 'Начать испытание';
+    $('#tcStart').disabled = locked;
+    $('#tcRestart').hidden = !c;
+    $('#tcRestart').textContent = 'Начать заново';
+    $('#tcLast').hidden = !last;
+    $('#trialCard').hidden = false;
+    document.body.classList.add('recap-open');
+    $('#tcStart').focus({ preventScroll: true });
+  }
+  function closeTrialCard() { $('#trialCard').hidden = true; document.body.classList.remove('recap-open'); }
+  $('#tcStart').addEventListener('click', () => {
+    if (running) stopRun();
+    if (trialData().cur) { closeTrialCard(); enterTrial(); } else startTrial();
+  });
+  $('#tcRestart').addEventListener('click', e => {
+    if (!restartArmed) {
+      e.currentTarget.textContent = 'Точно? Решённое в этой попытке пропадёт';
+      restartArmed = setTimeout(() => { restartArmed = null; $('#tcRestart').textContent = 'Начать заново'; }, 3500);
+      return;
+    }
+    clearTimeout(restartArmed);
+    restartArmed = null;
+    startTrial();
+  });
+  $('#tcLast').addEventListener('click', () => { closeTrialCard(); openTrialResult(trialData().hist.length - 1); });
+  $('#tcClose').addEventListener('click', closeTrialCard);
+  $('#trialCard').addEventListener('click', e => { if (e.target.id === 'trialCard') closeTrialCard(); });
+  $('#valleyTrial').addEventListener('click', () => { closeValley(); openTrialCard(); });
+  $('#hpTrialGo').addEventListener('click', () => { closeHeroPage(); openTrialCard(); });
+  $('#hpTrialLast').addEventListener('click', () => { closeHeroPage(); openTrialResult(trialData().hist.length - 1); });
+
+  // Итог испытания — карточка для родителя. shared — данные из ссылки #trial=… (только смотреть)
+  let trShared = null, trIdx = -1;
+  function ringSvg(s, ahead) {
+    const R = 50, C = 2 * Math.PI * R, seg = C / TR.length, gap = 7, n = s.filter(Boolean).length;
+    const arcs = TR.map((t, i) => {
+      const cls = s[i] ? (s[i] === 1 ? 'first' : 'ok') : ahead.includes(t.id) ? 'ahead' : 'miss';
+      return `<circle class="rs ${cls}" cx="64" cy="64" r="${R}" stroke-dasharray="${(seg - gap).toFixed(2)} ${(C - seg + gap).toFixed(2)}" stroke-dashoffset="${(-i * seg).toFixed(2)}"/>`;
+    }).join('');
+    return `<svg viewBox="0 0 128 128"><g transform="rotate(-90 64 64)">${arcs}</g><text x="64" y="72" text-anchor="middle">${n}<tspan dx="2">/${TR.length}</tspan></text></svg>`;
+  }
+  function openTrialResult(idx, shared = null) {
+    trShared = shared;
+    trIdx = idx;
+    const hist = shared ? shared.h : trialData().hist, rec = hist[idx];
+    if (!rec) return;
+    const name = shared ? shared.n : cleanName(save.name), n = recScore(rec), ahead = HeroTrial.fromMask(rec.ahead);
+    $('#trKicker').textContent = `Долина Эникей · Испытание Сбоя · ${ruDate(rec.end)}`;
+    $('#trTitle').textContent = `${n} из ${TR.length}`;
+    $('#trLead').textContent = n === TR.length ? 'Все шесть испытаний пройдены — глава 1 в руках!'
+      : n >= 4 ? 'Почти вся глава в руках: осталось совсем немного.'
+      : n >= 2 ? 'Хорошее начало: часть тем уже получается уверенно.'
+      : 'Это точка отсчёта: большая часть тем главы ещё впереди.';
+    $('#trName').hidden = !name;
+    $('#trName').textContent = name ? `Пишет код: ${name}` : '';
+    $('#trRing').innerHTML = ringSvg(rec.s, ahead);
+    $('#trTopics').innerHTML = TR.map((t, i) => {
+      const s = rec.s[i], cls = s ? (s === 1 ? 'first' : 'ok') : ahead.includes(t.id) ? 'ahead' : 'miss';
+      const st = s === 1 ? 'с первого запуска' : s ? `с ${s}-го запуска` : ahead.includes(t.id) ? 'тема ещё впереди' : 'пока не получилось';
+      return `<li class="${cls}"><i>${s ? '✓' : i + 1}</i><span class="tt-t"><b>${esc(t.name)}</b><span>${topicLabel(t)}</span></span><span class="tt-s">${st}</span></li>`;
+    }).join('');
+    const names = f => TR.filter((t, i) => f(t, i)).map(t => t.name.toLowerCase());
+    const good = names((t, i) => rec.s[i]), redo = names((t, i) => !rec.s[i] && !ahead.includes(t.id)), later = names((t, i) => !rec.s[i] && ahead.includes(t.id));
+    const mins = rec.t ? Math.max(1, Math.round(rec.t / 6e4)) : 0;
+    $('#trSum').textContent = [good.length ? `Получается: ${andList(good)}.` : '', redo.length ? `Стоит повторить: ${andList(redo)}.` : '',
+      later.length ? `Ещё впереди: ${andList(later)}.` : '', mins ? `Время: ${mins} ${plural(mins, 'минута', 'минуты', 'минут')}.` : ''].filter(Boolean).join(' ');
+    // было → стало: все попытки до этой, первая — точка отсчёта
+    const upto = hist.slice(0, idx + 1), shown = keyAttempts(upto), first = upto[0], d = n - recScore(first);
+    $('#trHist').innerHTML = histBars(shown.map(h => ({ end: h.end, n: recScore(h) })), shown.length - 1);
+    $('#trDelta').textContent = idx === 0
+      ? 'Это первое испытание — точка отсчёта. Повтори его через месяц-два, и здесь будет видно, как растёт результат.'
+      : `Было ${recScore(first)} из ${TR.length} (${ruDate(first.end)}), стало ${n} из ${TR.length}`
+        + (d > 0 ? `: на ${d} больше${rec.end - first.end > 864e5 ? ' за ' + spanText(rec.end - first.end) : ''}.`
+          : d === 0 ? '. Результат держится.' : '. Стоит повторить темы и попробовать снова.');
+    $('#trShare').hidden = true;
+    $('#trShareBtn').hidden = !!shared;
+    $('#trOpenGame').hidden = !shared;
+    $('#trSharedNote').hidden = !shared;
+    const box = $('#trialRes');
+    box.classList.toggle('over', !!shared); // по ссылке — поверх заставки
+    box.hidden = false;
+    box.scrollTop = 0;
+    document.body.classList.add('recap-open');
+    (shared ? $('#trOpenGame') : $('#trShareBtn')).focus({ preventScroll: true });
+  }
+  function closeTrialResult() {
+    $('#trialRes').hidden = true;
+    document.body.classList.remove('recap-open');
+    trShared = null;
+  }
+  // Ссылка на итог: попытки до этой (не больше 8), время — в минутах, чтобы ссылка была короче
+  function trialOutput() {
+    const hist = keyAttempts(trialData().hist.slice(0, trIdx + 1)), rec = hist[hist.length - 1], first = hist[0], name = cleanName(save.name);
+    const h = hist.map(r => [Math.round(r.at / 6e4), Math.round(r.end / 6e4), r.s, r.ahead, r.t ? Math.max(1, Math.round(r.t / 6e4)) : 0]);
+    const url = `${location.href.split(/[?#]/)[0]}#trial=${b64enc(JSON.stringify({ v: 1, n: name, h }))}`;
+    $('#trUrl').value = url;
+    $('#trMsg').value = `${name ? `${name}: ` : ''}Испытание Сбоя в Долине Эникей — ${recScore(rec)} из ${TR.length}`
+      + (hist.length > 1 ? ` (было ${recScore(first)} из ${TR.length}, ${ruDate(first.end)})` : '') + `. Итог по темам: ${url}`;
+  }
+  function cleanTrial(d) {
+    if (!d || d.v !== 1 || !Array.isArray(d.h) || !d.h.length) return null;
+    const int = (x, max) => Math.max(0, Math.min(max, Math.floor(+x) || 0));
+    const h = d.h.slice(-8).filter(a => Array.isArray(a) && Array.isArray(a[2])).map(a => ({
+      at: int(a[0], 1e8) * 6e4, end: int(a[1], 1e8) * 6e4, s: TR.map((t, i) => int(a[2][i], 999)), ahead: int(a[3], (1 << TR.length) - 1), t: int(a[4], 1e4) * 6e4,
+    }));
+    return h.length ? { n: cleanName(d.n), h } : null;
+  }
+  function trialFromLink() {
+    const m = location.hash.match(/^#trial=([A-Za-z0-9_-]{8,4000})$/);
+    if (!m || SHOW) return null;
+    history.replaceState(null, '', location.href.split('#')[0]);
+    try { return cleanTrial(JSON.parse(b64dec(m[1]))); } catch (e) { return null; }
+  }
+  $('#trShareBtn').addEventListener('click', () => {
+    const box = $('#trShare');
+    box.hidden = !box.hidden;
+    if (box.hidden) return;
+    $('#trShareSum').textContent = '';
+    trialOutput();
+    box.scrollIntoView({ block: 'nearest', behavior: reduceMotion ? 'auto' : 'smooth' });
+    $('#trCopyMsg').focus({ preventScroll: true });
+  });
+  $('#trCopyMsg').addEventListener('click', () => copyField('#trMsg', 'Сообщение скопировано — вставь его в чат с родителем.', '#trShareSum'));
+  $('#trCopyUrl').addEventListener('click', () => copyField('#trUrl', 'Ссылка скопирована.', '#trShareSum'));
+  $('#trDone').addEventListener('click', closeTrialResult);
+  $('#trOpenGame').addEventListener('click', closeTrialResult);
+  $('#trClose').addEventListener('click', closeTrialResult);
+  $('#trialRes').addEventListener('click', e => { if (e.target.id === 'trialRes') closeTrialResult(); });
+  addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    if (!$('#trialRes').hidden) closeTrialResult();
+    else if (!$('#trialCard').hidden) closeTrialCard();
   });
 
   /* ---------- Итог пролога: карточка для ученика и родителя после пробного занятия ---------- */
@@ -3322,7 +3653,7 @@
     };
     const onKey = e => {
       if (['Tab', 'Shift', 'Alt', 'Control', 'Meta'].includes(e.key)) return;
-      if (!$('#heroPage').hidden) return; // поверх заставки открыта страница героя по ссылке
+      if (!$('#heroPage').hidden || !$('#trialRes').hidden) return; // поверх заставки открыта страница по ссылке
       e.preventDefault(); e.stopPropagation(); go();
     };
     addEventListener('keydown', onKey, true);
@@ -3334,7 +3665,8 @@
   resize();
   selectTask(taskIdx);
   if (!save.awards || save.gemsSeen === undefined) checkAwards(true); // полученное до появления достижений и кристаллов — без поздравлений
-  const openHero = heroFromLink();
+  const openHero = heroFromLink(), openTrial = !openHero && trialFromLink();
+  if (!SHOW && !openHw && !openOwn && trialData().cur && trialData().cur.active) enterTrial(); // испытание шло, когда закрыли вкладку
   if (openHw) { // домашка по ссылке — сразу первое нерешённое задание (вступление урока покажет заставка)
     const items = hwItems(), first = items.find(x => !solvedTask(x.t)) || items[0];
     goTask(first.t.id, false);
@@ -3345,6 +3677,7 @@
     if (ci >= 0) { selectTask(ci); log(`Тебе прислали уровень «${TASKS[ci].title}». Реши его!`, 'tip'); }
   }
   if (openHero) openHeroPage(openHero); // страница героя по ссылке — поверх заставки, только смотреть
+  if (openTrial) openTrialResult(openTrial.h.length - 1, openTrial); // итог испытания по ссылке — тоже
   requestAnimationFrame(t => { last = t; frame(t); });
   if (SHOW) startReel();
 })();
