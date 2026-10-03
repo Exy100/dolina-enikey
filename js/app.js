@@ -249,14 +249,23 @@
     const rest = (o, visible = true) => { o.visible = visible; o.userData.rest = { p: o.position.toArray(), s: o.scale.toArray(), r: [o.rotation.x, o.rotation.y, o.rotation.z], v: visible }; return o; };
     const eyeGeo = new THREE.SphereGeometry(0.065, 12, 10), pupilGeo = new THREE.SphereGeometry(0.032, 10, 8);
     const arcGeo = new THREE.TorusGeometry(0.042, 0.014, 6, 12, Math.PI); // дуга ∩: закрытый от радости глаз «^»
-    const eyes = [], pupils = [], joy = [], feet = [];
+    const eyes = [], pupils = [], joy = [], squint = [], feet = [];
+    const armGeo = new THREE.BoxGeometry(0.075, 0.018, 0.018);
     // слева от Бита — +x (он смотрит в +z)
     [0.085, -0.085].forEach(x => {
       const e = new THREE.Mesh(eyeGeo, white); e.position.set(x, 0.65, 0.165); e.name = 'eye';
       const p = new THREE.Mesh(pupilGeo, black); p.position.set(x, 0.65, 0.218); p.name = 'pupil';
       const j = new THREE.Mesh(arcGeo, black); j.position.set(x, 0.645, 0.195); j.rotation.set(-0.25, Math.sign(x) * 0.45, 0); // внешний край — назад по голове
-      hero.add(e, p, j);
-      eyes.push(e); pupils.push(p); joy.push(j);
+      // «> <»: зажмурился от удара — галочки острыми концами к середине лица
+      const q = new THREE.Group(), sx = Math.sign(x);
+      q.position.set(x, 0.65, 0.2); q.rotation.y = sx * 0.4;
+      [1, -1].forEach(up => {
+        const arm = new THREE.Mesh(armGeo, black);
+        arm.position.y = up * 0.017; arm.rotation.z = up * sx * 0.46;
+        q.add(arm);
+      });
+      hero.add(e, p, j, q);
+      eyes.push(e); pupils.push(p); joy.push(j); squint.push(q);
     });
     // рот виден только с настроением: улыбка ∪ или грусть ∩
     const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.013, 6, 14, Math.PI), black);
@@ -278,8 +287,8 @@
     arrow.name = 'arrow'; // стрелка «куда смотрит»: в портрете её прячем
     hero.add(body, head, mouth, antPivot, arrow);
     [head, antPivot, bulb, ...eyes, ...pupils, ...feet].forEach(o => rest(o));
-    [...joy, mouth].forEach(o => rest(o, false));
-    Object.assign(heroParts, { body, head, violet, violetLight, ant, bulb, antPivot, eyes, pupils, joy, mouth, feet });
+    [...joy, ...squint, mouth].forEach(o => rest(o, false));
+    Object.assign(heroParts, { body, head, violet, violetLight, ant, bulb, antPivot, eyes, pupils, joy, squint, mouth, feet });
   })();
   // Копия героя для другой сцены — со спокойным лицом и ногами на месте
   function faceRest(root) {
@@ -627,20 +636,23 @@
         else lid = 1 - 0.9 * Math.sin(p * Math.PI);
       }
     }
-    face.ouch = Math.max(0, face.ouch - dt * 2); // зажмурился от удара
-    const sy = lid * (sad ? 0.72 : 1) * (1 - 0.8 * Math.min(1, face.ouch * 1.5));
+    face.ouch = Math.max(0, face.ouch - dt * 1.6); // зажмурился от удара: «> <» чуть больше полсекунды
+    const ouch = face.ouch > 0.1 && !happy;
+    // глаза не сплющиваем ни от грусти, ни от удара: узкие глаза читаются как злость
+    const sy = lid;
     const a = face.look[0] * 0.8, b = face.look[1] * 0.55, R = 0.053;
     P.eyes.forEach((e, i) => {
       const r = e.userData.rest.p, p = P.pupils[i];
-      e.visible = p.visible = !happy;
+      e.visible = p.visible = !happy && !ouch;
       P.joy[i].visible = happy;
+      P.squint[i].visible = ouch;
       e.scale.y = p.scale.y = sy;
       p.position.set(r[0] + R * Math.sin(a) * Math.cos(b), r[1] + R * Math.sin(b) * sy, r[2] + R * Math.cos(a) * Math.cos(b));
     });
     // рот: улыбка ∪ (дуга перевёрнута) или грусть ∩
-    P.mouth.visible = happy || sad;
+    P.mouth.visible = happy || sad || ouch;
     if (happy) { P.mouth.position.set(0, 0.565, 0.19); P.mouth.rotation.set(0.35, 0, Math.PI); }
-    else if (sad) { P.mouth.position.set(0, 0.515, 0.184); P.mouth.rotation.set(0.35, 0, 0); }
+    else { P.mouth.position.set(0, 0.515, 0.184); P.mouth.rotation.set(0.35, 0, 0); }
     // антенна от грусти никнет, от радости качается; лампочка мигает
     face.wiggle = Math.max(0, face.wiggle - dt * 0.6);
     const ap = P.antPivot.rotation, sway = happy && !calm;
