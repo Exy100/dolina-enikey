@@ -56,6 +56,13 @@ const HeroGear = (() => {
     { id: 'jetpack', name: 'Ракетный ранец', slot: 'back', price: 140 },
   ];
   const DEFAULT_COLORS = [0x6a55ea, 0x8f7cff]; // корпус и голова
+  // Облики героя: другая форма тела и головы, лицо и ноги те же. colors — цвета корпуса и головы, пока не надет цвет из вещей;
+  // ant — есть ли антенна (у «Ушек» вместо неё ушки и хвост). Сами модели собирает buildHeroParts в app.js
+  const SKINS = [
+    { id: 'bit', name: 'Классика', note: 'круглая голова и антенна', colors: DEFAULT_COLORS, ant: true },
+    { id: 'pixel', name: 'Кубик', note: 'робот из кубиков', colors: [0x1e9e7e, 0x5fd3b0], ant: true },
+    { id: 'iskra', name: 'Ушки', note: 'ушки и хвост', colors: [0xe5774a, 0xffa877], ant: false },
+  ];
 
   const SHOP = ITEMS.filter(it => it.price);
 
@@ -219,6 +226,6 @@ const HeroGear = (() => {
     return g;
   }
 
-  return { LEVELS, SLOTS, ITEMS, SHOP, DEFAULT_COLORS, levelFor, build };
+  return { LEVELS, SLOTS, ITEMS, SHOP, SKINS, DEFAULT_COLORS, levelFor, build };
 })();
 if (typeof module !== 'undefined') module.exports = HeroGear;
