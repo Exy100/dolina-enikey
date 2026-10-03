@@ -230,11 +230,11 @@ const HeroWorld = (() => {
     if (st.level.basic && h.x === f.x && h.z === f.z)
       throw new WorldError('Бит уже стоял на флаге, но пошёл дальше: после флага в программе лишние команды. Убери их.', line, 'extra');
   }
-  // Датчик: вопрос Биту, ответ показывается в облачке
-  function sense(st, line, text, value) {
+  // Датчик: вопрос Биту, ответ показывается в облачке; look — куда Бит при этом смотрит (ahead, left, right, down, up)
+  function sense(st, line, text, value, look = 'ahead') {
     st.idle++;
     tick(st, line);
-    return { type: 'check', text, value };
+    return { type: 'check', text, value, look };
   }
 
   function commands(st) {
@@ -340,7 +340,7 @@ const HeroWorld = (() => {
         if (!L.signs.has(k))
           throw new WorldError('Под Битом нет таблички: прочитать её можно, только стоя на ней. Запомни число заранее: n = табличка()', line, 'nosign');
         const v = L.signs.get(k);
-        yield sense(st, line, `на табличке: ${v}`, v);
+        yield sense(st, line, `на табличке: ${v}`, v, 'down');
         return v;
       }),
       'стена_впереди': fn('стена_впереди', 0, function* (args, line) {
@@ -350,12 +350,12 @@ const HeroWorld = (() => {
       }),
       'стена_слева': fn('стена_слева', 0, function* (args, line) {
         const a = side(st, 1), v = cellAt(L, a.x, a.z) === 'wall';
-        yield sense(st, line, `стена слева? ${yesNo(v)}`, v);
+        yield sense(st, line, `стена слева? ${yesNo(v)}`, v, 'left');
         return v;
       }),
       'стена_справа': fn('стена_справа', 0, function* (args, line) {
         const a = side(st, 3), v = cellAt(L, a.x, a.z) === 'wall';
-        yield sense(st, line, `стена справа? ${yesNo(v)}`, v);
+        yield sense(st, line, `стена справа? ${yesNo(v)}`, v, 'right');
         return v;
       }),
       'лава_впереди': fn('лава_впереди', 0, function* (args, line) {
@@ -370,17 +370,17 @@ const HeroWorld = (() => {
       }),
       'есть_монета': fn('есть_монета', 0, function* (args, line) {
         const v = st.coins.has(K(st.hero.x, st.hero.z));
-        yield sense(st, line, `монета здесь? ${yesNo(v)}`, v);
+        yield sense(st, line, `монета здесь? ${yesNo(v)}`, v, 'down');
         return v;
       }),
       'на_финише': fn('на_финише', 0, function* (args, line) {
         if (L.hidden) throw new WorldError('Флаг спрятан, поэтому на_финише() тут не подскажет. Считай шаги в переменной.', line, 'hidden');
         const f = L.finish, v = st.hero.x === f.x && st.hero.z === f.z;
-        yield sense(st, line, `я на финише? ${yesNo(v)}`, v);
+        yield sense(st, line, `я на финише? ${yesNo(v)}`, v, 'down');
         return v;
       }),
       'монет_собрано': fn('монет_собрано', 0, function* (args, line) {
-        yield sense(st, line, `монет у меня: ${st.collected}`, st.collected);
+        yield sense(st, line, `монет у меня: ${st.collected}`, st.collected, 'up');
         return st.collected;
       }),
     };

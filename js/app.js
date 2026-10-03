@@ -243,26 +243,54 @@
     body.position.y = 0.26; body.castShadow = true;
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 20, 16), violetLight);
     head.position.y = 0.62; head.castShadow = true;
+    body.name = 'body'; head.name = 'head';
+    // Лицо и ноги двигаются (раздел «Живой Бит»). rest — спокойное положение: копии героя (остров, портреты)
+    // возвращаются к нему, чтобы не застыть с закрытыми глазами или грустным ртом (faceRest)
+    const rest = (o, visible = true) => { o.visible = visible; o.userData.rest = { p: o.position.toArray(), s: o.scale.toArray(), r: [o.rotation.x, o.rotation.y, o.rotation.z], v: visible }; return o; };
     const eyeGeo = new THREE.SphereGeometry(0.065, 12, 10), pupilGeo = new THREE.SphereGeometry(0.032, 10, 8);
-    [-0.085, 0.085].forEach(x => {
-      const e = new THREE.Mesh(eyeGeo, white); e.position.set(x, 0.65, 0.165);
-      const p = new THREE.Mesh(pupilGeo, black); p.position.set(x, 0.65, 0.218);
-      hero.add(e, p);
+    const arcGeo = new THREE.TorusGeometry(0.042, 0.014, 6, 12, Math.PI); // дуга ∩: закрытый от радости глаз «^»
+    const eyes = [], pupils = [], joy = [], feet = [];
+    // слева от Бита — +x (он смотрит в +z)
+    [0.085, -0.085].forEach(x => {
+      const e = new THREE.Mesh(eyeGeo, white); e.position.set(x, 0.65, 0.165); e.name = 'eye';
+      const p = new THREE.Mesh(pupilGeo, black); p.position.set(x, 0.65, 0.218); p.name = 'pupil';
+      const j = new THREE.Mesh(arcGeo, black); j.position.set(x, 0.645, 0.195); j.rotation.set(-0.25, Math.sign(x) * 0.45, 0); // внешний край — назад по голове
+      hero.add(e, p, j);
+      eyes.push(e); pupils.push(p); joy.push(j);
     });
+    // рот виден только с настроением: улыбка ∪ или грусть ∩
+    const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.013, 6, 14, Math.PI), black);
+    mouth.position.set(0, 0.54, 0.192);
+    // антенна на шарнире у макушки: от грусти никнет, от радости качается
+    const antPivot = new THREE.Group();
+    antPivot.position.y = 0.8;
     const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.2, 6), black);
-    ant.position.y = 0.9;
+    ant.position.y = 0.1; ant.name = 'ant';
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), gold);
-    bulb.position.y = 1.02;
+    bulb.position.y = 0.22; bulb.name = 'bulb';
+    antPivot.add(ant, bulb);
     const feetGeo = new THREE.SphereGeometry(0.09, 10, 8);
-    [-0.1, 0.1].forEach(x => { const f = new THREE.Mesh(feetGeo, black); f.position.set(x, 0.05, 0.03); f.scale.set(1, 0.6, 1.3); hero.add(f); });
+    [0.1, -0.1].forEach(x => { const f = new THREE.Mesh(feetGeo, black); f.position.set(x, 0.05, 0.03); f.scale.set(1, 0.6, 1.3); hero.add(f); feet.push(f); });
     const tri = new THREE.Shape();
     tri.moveTo(-0.16, 0); tri.lineTo(0.16, 0); tri.lineTo(0, 0.2); tri.lineTo(-0.16, 0);
     const arrow = new THREE.Mesh(new THREE.ShapeGeometry(tri), new THREE.MeshBasicMaterial({ color: 0xffc83d, transparent: true, opacity: 0.9 }));
     arrow.rotation.x = -Math.PI / 2; arrow.position.set(0, 0.012, 0.3);
     arrow.name = 'arrow'; // стрелка «куда смотрит»: в портрете её прячем
-    hero.add(body, head, ant, bulb, arrow);
-    Object.assign(heroParts, { body, head, violet, violetLight, ant, bulb });
+    hero.add(body, head, mouth, antPivot, arrow);
+    [head, antPivot, bulb, ...eyes, ...pupils, ...feet].forEach(o => rest(o));
+    [...joy, mouth].forEach(o => rest(o, false));
+    Object.assign(heroParts, { body, head, violet, violetLight, ant, bulb, antPivot, eyes, pupils, joy, mouth, feet });
   })();
+  // Копия героя для другой сцены — со спокойным лицом и ногами на месте
+  function faceRest(root) {
+    root.traverse(o => {
+      const r = o.userData.rest;
+      if (!r) return;
+      o.position.fromArray(r.p); o.scale.fromArray(r.s); o.rotation.set(r.r[0], r.r[1], r.r[2]);
+      if (o.name !== 'bulb') o.visible = r.v; // лампочку прячет шапка — это решает снаряжение
+    });
+    return root;
+  }
   const heroRig = new THREE.Group(); // для прыжков и сдвигов
   heroRig.add(hero);
   scene.add(heroRig);
@@ -483,7 +511,8 @@
     }
     scene.add(levelGroup);
 
-    // герой в начало
+    // герой в начало; поглядывает на флаг (или на Сбоя)
+    face.goal = level.hidden ? null : new THREE.Vector3(f.x, level.boss ? 0.85 : 0.75, f.z);
     placeHero(level.start);
     heroParts.violet.emissive.setHex(0x000000);
     hero.scale.set(1, 1, 1);
@@ -526,6 +555,7 @@
   }
 
   function placeHero(p) {
+    setMood(''); feetRest();
     heroRig.position.set(p.x, 0, p.z);
     hero.position.set(0, 0, 0);
     heroAngle = DIR_ANGLE[p.dir];
@@ -548,6 +578,107 @@
   const easeBack = t => 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2); // с лёгким перелётом
   // Пружина героя: вытягивается в движении, сплющивается при касании земли
   function squash(k) { if (!reduceMotion) hero.scale.set(1 - k * 0.5, 1 + k, 1 - k * 0.5); }
+
+  /* ---------- Живой Бит: моргает, переступает ногами, смотрит, куда пойдёт, радуется и грустит.
+     Взгляд — [вбок, вверх] от −1 до 1 в координатах Бита: +1 вбок — налево ---------- */
+  const face = { mood: '', look: [0, 0], aim: null, aimUntil: 0, blinkAt: 2, blinkT: -1, idle: 'goal', idleUntil: 0, wiggle: 0, ouch: 0, goal: null };
+  // Настроение: '' — спокойный; 'happy' — дошёл: глаза «^ ^», улыбка, антенна качается; 'sad' — программа сломалась
+  function setMood(m) { face.mood = m; if (m === 'happy') face.wiggle = 1; }
+  // Посмотреть на миг: [вбок, вверх] или 'cam' — на того, кто за экраном
+  function glance(look, ms = 500) { face.aim = look; face.aimUntil = performance.now() / 1000 + ms / 1000 / Math.min(tempo(), 3); }
+  const LOOK_AT = { ahead: [0, -0.35], left: [1, -0.2], right: [-1, -0.2], down: [0, -1], up: [0.35, 0.9] };
+  const clamp1 = v => Math.max(-1, Math.min(1, v));
+  // Точка мира → взгляд Бита (null — точка прямо под ним)
+  function lookToward(x, y, z) {
+    const dx = x - heroRig.position.x, dz = z - heroRig.position.z, dist = Math.hypot(dx, dz);
+    if (dist < 0.4) return null;
+    const yaw = Math.atan2(dx, dz) - hero.rotation.y;
+    return [clamp1(Math.atan2(Math.sin(yaw), Math.cos(yaw)) / 1.1), clamp1(Math.atan2(y - 0.65, dist) / 0.9)];
+  }
+  const camLook = () => lookToward(camera.position.x, camera.position.y, camera.position.z) || [0, 0.5];
+  const goalLook = () => face.goal && lookToward(face.goal.x, face.goal.y, face.goal.z);
+  // Без дела Бит поглядывает то на флаг, то на того, кто за экраном; в кадрах для Авито — на цель
+  function idleLook(time) {
+    if (SHOTS) return goalLook() || camLook();
+    if (time > face.idleUntil) {
+      face.idle = face.idle === 'cam' ? 'goal' : 'cam';
+      face.idleUntil = time + (face.idle === 'cam' ? 1.8 : 2.6) + Math.random() * 2;
+    }
+    return (face.idle === 'goal' && goalLook()) || camLook();
+  }
+  function animateFace(time, dt) {
+    const P = heroParts, calm = reduceMotion, happy = face.mood === 'happy', sad = face.mood === 'sad';
+    let goal;
+    if (face.aim && time < face.aimUntil) goal = face.aim === 'cam' ? camLook() : face.aim;
+    else if (sad) goal = [0, -0.8];
+    else if (running || calm) goal = [0, -0.25]; // под ноги впереди — туда, куда пойдёт
+    else goal = idleLook(time);
+    const k = 1 - Math.exp(-dt * 14);
+    face.look[0] += (goal[0] - face.look[0]) * k;
+    face.look[1] += (goal[1] - face.look[1]) * k;
+    // моргает раз в 2–5 секунд, иногда дважды подряд; в кадрах для Авито не моргает
+    let lid = 1;
+    if (!calm && !SHOTS) {
+      if (face.blinkT < 0 && time > face.blinkAt) face.blinkT = 0;
+      if (face.blinkT >= 0) {
+        face.blinkT += dt;
+        const p = face.blinkT / 0.16;
+        if (p >= 1) { face.blinkT = -1; face.blinkAt = time + (Math.random() < 0.2 ? 0.12 : 2 + Math.random() * 3); }
+        else lid = 1 - 0.9 * Math.sin(p * Math.PI);
+      }
+    }
+    face.ouch = Math.max(0, face.ouch - dt * 2); // зажмурился от удара
+    const sy = lid * (sad ? 0.72 : 1) * (1 - 0.8 * Math.min(1, face.ouch * 1.5));
+    const a = face.look[0] * 0.8, b = face.look[1] * 0.55, R = 0.053;
+    P.eyes.forEach((e, i) => {
+      const r = e.userData.rest.p, p = P.pupils[i];
+      e.visible = p.visible = !happy;
+      P.joy[i].visible = happy;
+      e.scale.y = p.scale.y = sy;
+      p.position.set(r[0] + R * Math.sin(a) * Math.cos(b), r[1] + R * Math.sin(b) * sy, r[2] + R * Math.cos(a) * Math.cos(b));
+    });
+    // рот: улыбка ∪ (дуга перевёрнута) или грусть ∩
+    P.mouth.visible = happy || sad;
+    if (happy) { P.mouth.position.set(0, 0.565, 0.19); P.mouth.rotation.set(0.35, 0, Math.PI); }
+    else if (sad) { P.mouth.position.set(0, 0.515, 0.184); P.mouth.rotation.set(0.35, 0, 0); }
+    // антенна от грусти никнет, от радости качается; лампочка мигает
+    face.wiggle = Math.max(0, face.wiggle - dt * 0.6);
+    const ap = P.antPivot.rotation, sway = happy && !calm;
+    ap.x += ((sad ? 0.55 : 0) - ap.x) * k;
+    ap.z = sway ? Math.sin(time * 14) * 0.3 * (0.3 + face.wiggle) : ap.z + ((sad ? 0.4 : 0) - ap.z) * k;
+    P.bulb.scale.setScalar(sway ? 1 + Math.max(0, Math.sin(time * 7)) * 0.3 : 1);
+    // грустный Бит чуть оседает; после остановки посреди шага пружина возвращается
+    if (!running) {
+      const y = sad && !calm ? 0.95 : 1;
+      hero.scale.y += (y - hero.scale.y) * k;
+      hero.scale.x = hero.scale.z = 1 + (1 - hero.scale.y) * 0.5;
+    }
+  }
+  // Ноги по очереди: левая шагает в первой половине шага, правая — во второй; amp — размах.
+  // В покое ноги под корпусом, в шаге ступня выходит вперёд — так шаг видно и сверху
+  function stepFeet(t, amp = 1) {
+    heroParts.feet.forEach((f, i) => {
+      const r = f.userData.rest.p, ph = Math.sin((t * 2 + i) * Math.PI);
+      f.position.set(r[0], r[1] + Math.max(0, ph) * 0.08 * amp, r[2] + ph * 0.16 * amp);
+    });
+  }
+  function tuckFeet(k) { heroParts.feet.forEach(f => { const r = f.userData.rest.p; f.position.set(r[0], r[1] + k * 0.06, r[2] - k * 0.03); }); }
+  function feetRest() { heroParts.feet.forEach(f => f.position.fromArray(f.userData.rest.p)); }
+  // Копии Бита (остров на странице героя, портрет в «Итоге пролога») тоже моргают: у каждой свои часы
+  function makeBlinker(root) {
+    const lids = []; let at = 1 + Math.random() * 2, t0 = -1;
+    root.traverse(o => { if (o.name === 'eye' || o.name === 'pupil') lids.push(o); });
+    return time => {
+      if (reduceMotion) return;
+      let lid = 1;
+      if (t0 < 0 && time > at) t0 = time;
+      if (t0 >= 0) {
+        const p = (time - t0) / 0.16;
+        if (p >= 1) { t0 = -1; at = time + (Math.random() < 0.2 ? 0.12 : 2 + Math.random() * 3); } else lid = 1 - 0.9 * Math.sin(p * Math.PI);
+      }
+      lids.forEach(o => { o.scale.y = lid; });
+    };
+  }
 
   const particles = [];
   function confetti(x, z, n = 70) {
@@ -631,6 +762,7 @@
     if (boss && boss.visible) animateSboy(boss, time, dt);
     if (cut) animateCut(time, dt);
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
+    animateFace(time, dt);
     if (BLOB.hero.visible) { // в прыжке пятно меньше и бледнее, в лаве пропадает
       const h = hero.position.y;
       heroBlob.scale.setScalar(heroBlob.userData.size / (1 + Math.max(0, h) * 0.8));
@@ -750,7 +882,7 @@
     flat(TRAIL.dot, TRAIL.mat, b.x, b.z, 0.021);
   }
   // Где программа сломалась — красное кольцо
-  function markFail(st) { if (st) failRing = flat(TRAIL.ring, TRAIL.fail, st.hero.x, st.hero.z, 0.035); }
+  function markFail(st) { if (st) failRing = flat(TRAIL.ring, TRAIL.fail, st.hero.x, st.hero.z, 0.035); setMood('sad'); }
 
   /* ---------- «Угадай»: на карте три варианта — А, Б, В. Один верный, два — частые ошибки.
      Ученик выбирает кнопкой, значком или клеткой, программа запускается, верный вариант загорается зелёным ---------- */
@@ -932,6 +1064,7 @@
     const score = `Угадано: ${save.predict.hits} из ${save.predict.tries}.`;
     if (right) {
       say('Верно!', 'yes', 1400);
+      setMood('happy');
       confetti(o.x, o.z, 30);
       Sound.play('right');
       log(`Верно! Ответ — ${o.letter}. ${score}`, 'ok');
@@ -1094,6 +1227,7 @@
         return;
       case 'check':
         Sound.play('tick');
+        glance(LOOK_AT[ev.look] || LOOK_AT.ahead, 600); // смотрит туда, о чём спросили
         say(ev.text, typeof ev.value === 'boolean' ? (ev.value ? 'yes' : 'no') : '', 850);
         await wait(380);
         return;
@@ -1105,10 +1239,11 @@
           const e = ease(t);
           heroRig.position.set(fx + (tx - fx) * e, 0, fz + (tz - fz) * e);
           hero.position.y = Math.sin(t * Math.PI) * 0.14;
-          // вытягивается в полёте, в конце шага сплющивается
+          // вытягивается в полёте, в конце шага сплющивается; ноги шагают по очереди
           squash(t < 0.7 ? 0.07 * Math.sin(t / 0.7 * Math.PI) : -0.09 * Math.sin((t - 0.7) / 0.3 * Math.PI));
+          stepFeet(t);
         });
-        hero.position.y = 0; hero.scale.set(1, 1, 1);
+        hero.position.y = 0; hero.scale.set(1, 1, 1); feetRest();
         trailStep(ev.from, ev.to);
         return;
       }
@@ -1121,8 +1256,9 @@
           heroRig.position.set(fx + (tx - fx) * e, 0, fz + (tz - fz) * e);
           hero.position.y = Math.sin(t * Math.PI) * 1.05;
           squash(t < 0.85 ? 0.12 * Math.sin(t / 0.85 * Math.PI) : -0.14 * Math.sin((t - 0.85) / 0.15 * Math.PI));
+          tuckFeet(Math.sin(t * Math.PI)); // в прыжке поджимает ноги
         });
-        hero.position.y = 0; hero.scale.set(1, 1, 1);
+        hero.position.y = 0; hero.scale.set(1, 1, 1); feetRest();
         dust(tx, tz, 7);
         Sound.play('land');
         trailHop(ev.from, ev.to);
@@ -1132,12 +1268,15 @@
         Sound.play('turn');
         const a0 = heroAngle, a1 = heroAngle + ev.side * Math.PI / 2;
         heroAngle = a1;
-        await tween(260, t => { hero.rotation.y = a0 + (a1 - a0) * easeBack(t); });
+        glance([ev.side, -0.1], 220); // сначала глаза, потом весь Бит
+        await tween(260, t => { hero.rotation.y = a0 + (a1 - a0) * easeBack(t); stepFeet(t, 0.5); });
+        feetRest();
         return;
       }
       case 'take': {
         const k = K(ev.x, ev.z), c = coinMeshes.get(k);
         say(`+1 монета (${ev.count} из ${ev.total})`, 'yes', 800);
+        glance(LOOK_AT.down, 500);
         Sound.play('coin', { n: ev.count });
         updateCoins(ev.count, ev.total);
         if (c) {
@@ -1153,6 +1292,7 @@
       case 'bump': {
         say('Бум! Стена', 'bad', 1400);
         Sound.play('bump');
+        face.ouch = 1;
         const [dx, dz] = HeroWorld.DIRS[st.hero.dir];
         if (!reduceMotion) cam.shake = 0.25;
         await tween(300, t => { const s = Math.sin(t * Math.PI) * 0.25; hero.position.set(dx * s, 0, dz * s); });
@@ -1162,6 +1302,7 @@
       case 'burn': {
         say('Горячо!', 'bad', 1400);
         Sound.play('burn');
+        face.ouch = 1;
         sparks(st.hero.x, st.hero.z, 0xff5a1f, 24);
         heroParts.violet.emissive.setHex(0xff2a00);
         await tween(700, t => { hero.position.y = -t * 0.55; });
@@ -1170,6 +1311,7 @@
       case 'grab-air': {
         say('Пусто…', 'bad', 1400);
         Sound.play('air');
+        glance(LOOK_AT.down, 1000); // где же монета?
         await tween(320, t => { const s = Math.sin(t * Math.PI); hero.scale.set(1 + s * 0.12, 1 - s * 0.18, 1 + s * 0.12); });
         hero.scale.set(1, 1, 1);
         return;
@@ -1177,6 +1319,7 @@
       case 'full': {
         say('Рюкзак полон!', 'bad', 1400);
         Sound.play('nope');
+        glance(LOOK_AT.up, 800);
         await tween(360, t => { hero.rotation.z = Math.sin(t * Math.PI * 3) * 0.12; });
         hero.rotation.z = 0;
         return;
@@ -1184,6 +1327,7 @@
       case 'shrug': {
         say(ev.text || 'Зачем прыгать?', 'bad', 1400);
         Sound.play('nope');
+        glance(LOOK_AT.up, 800);
         await tween(360, t => { hero.rotation.z = Math.sin(t * Math.PI * 3) * 0.12; });
         hero.rotation.z = 0;
         return;
@@ -1198,10 +1342,12 @@
       case 'say': {
         say(`«${ev.text}»`, 'yes', 1600);
         Sound.play('talk');
+        glance('cam', 1600); // отвечает — смотрит на того, кто за экраном
         await wait(700);
         return;
       }
       case 'win': {
+        setMood('happy');
         if (boss) { // Бит добрался до Сбоя — ошибка найдена: Сбой успокаивается, светлеет и поднимается над Битом
           say('Сбой починен!', 'yes', 1600);
           Sound.play('fixed');
@@ -2887,7 +3033,7 @@
      в этом краю (по значку на карте долины), монеты, облака; Бит в своём снаряжении. Остров можно крутить мышью или пальцем */
   // Бит для другой сцены: копия героя со своим снаряжением и своими цветами корпуса
   function makeHeroModel(gear) {
-    const bot = hero.clone(true);
+    const bot = faceRest(hero.clone(true));
     bot.children.filter(o => o.userData.gear).forEach(o => bot.remove(o));
     bot.position.set(0, 0, 0); bot.rotation.set(0, 0, 0); bot.scale.set(1, 1, 1);
     bot.getObjectByName('arrow').visible = false;
@@ -2900,10 +3046,10 @@
       bot.add(g);
       if (it.slot === 'head') onHead = true;
     });
-    const at = part => bot.children[hero.children.indexOf(part)];
-    at(heroParts.body).material = new THREE.MeshStandardMaterial({ color: colors[0], flatShading: true, roughness: 0.55 });
-    at(heroParts.head).material = new THREE.MeshStandardMaterial({ color: colors[1], roughness: 0.45 });
-    at(heroParts.ant).visible = at(heroParts.bulb).visible = !onHead;
+    const at = name => bot.getObjectByName(name);
+    at('body').material = new THREE.MeshStandardMaterial({ color: colors[0], flatShading: true, roughness: 0.55 });
+    at('head').material = new THREE.MeshStandardMaterial({ color: colors[1], roughness: 0.45 });
+    at('ant').visible = at('bulb').visible = !onHead;
     return bot;
   }
   function buildIsland(icon, done) {
@@ -3100,6 +3246,7 @@
     const setGear = gear => {
       if (bot) spin.remove(bot);
       bot = makeHeroModel(gear);
+      bot.userData.blink = makeBlinker(bot);
       bot.scale.setScalar(1.35);
       bot.position.set(0.35, 0, 1.05);
       bot.traverse(o => { if (o.isMesh) o.castShadow = true; });
@@ -3133,6 +3280,7 @@
       spin.rotation.y += (goal - spin.rotation.y) * (drag ? 0.35 : 0.05);
       if (!reduceMotion) {
         bot.position.y = Math.max(0, Math.sin(t * 2.2)) * 0.05; // Бит пританцовывает
+        bot.userData.blink(t);
         const pet = bot.children.find(o => o.userData.gear === 'pet');
         if (pet) { const a = t * 1.7; pet.position.set(Math.cos(a) * 0.5, 0.8 + Math.sin(a * 2) * 0.08, Math.sin(a) * 0.5); pet.rotation.y = -a; }
       }
@@ -3959,7 +4107,7 @@
     const key = new THREE.DirectionalLight(0xffffff, 0.75);
     key.position.set(2, 4, 3);
     sc.add(key);
-    const bot = hero.clone(true);
+    const bot = faceRest(hero.clone(true));
     bot.position.set(0, 0, 0);
     bot.rotation.set(0, 0, 0);
     bot.scale.set(1, 1, 1);
@@ -3969,8 +4117,10 @@
     c.position.set(0, 0.9, 2.35);
     c.lookAt(0, 0.5, 0);
     let raf = 0;
+    const blink = makeBlinker(bot);
     const loop = t => {
       bot.rotation.y = reduceMotion ? 0.45 : 0.35 + Math.sin(t / 1500) * 0.65;
+      blink(t / 1000);
       r.render(sc, c);
       raf = requestAnimationFrame(loop);
     };
