@@ -280,6 +280,8 @@ body.is-running .ed-code textarea { cursor: default; }
   border: 1.5px solid var(--line); background: var(--panel); color: var(--ink); font-size: 14px; text-align: left; }
 .gear-item[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 6px 14px color-mix(in srgb, var(--accent) 22%, transparent); }
 .gear-item:disabled { color: var(--muted); border-style: dashed; }
+.gear-head { grid-column: 1 / -1; margin: 8px 0 0; font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.gear-head:first-child { margin-top: 0; }
 .gi-state { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .gear-item[aria-pressed="true"] .gi-state { color: var(--accent); font-weight: 600; }
 

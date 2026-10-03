@@ -230,19 +230,25 @@
   let flag = null, finishRing = null, boss = null;
   let gateMeshes = new Map(); // клетка ворот → створка
 
-  /* Герой */
+  /* Герой. Облик (HeroGear.SKINS) — форма тела и головы; лицо, ноги и антенна двигаются одинаково у всех, поэтому
+     каждая модель собирается из тех же именованных частей (heroParts). Модель можно собрать и для другой сцены
+     (buildHeroParts возвращает свою группу и свои материалы) */
   const hero = new THREE.Group();
   const heroParts = {};
-  (function buildHero() {
+  const skinOf = id => (HeroGear.SKINS.find(s => s.id === id) || HeroGear.SKINS[0]);
+  function buildHeroParts(skinId) {
+    const sk = skinOf(skinId).id, box = sk === 'pixel', cat = sk === 'iskra', root = new THREE.Group();
     const violet = new THREE.MeshStandardMaterial({ color: 0x6b4bd8, flatShading: true, roughness: 0.55 });
     const violetLight = new THREE.MeshStandardMaterial({ color: 0x8f7cff, roughness: 0.45 });
     const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
     const black = new THREE.MeshStandardMaterial({ color: 0x3a2a4d, roughness: 0.3 });
     const gold = new THREE.MeshStandardMaterial({ color: 0xffc83d, emissive: 0x6b4500, emissiveIntensity: 0.4 });
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.25, 0.4, 10), violet);
-    body.position.y = 0.26; body.castShadow = true;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 20, 16), violetLight);
+    const pink = new THREE.MeshStandardMaterial({ color: 0xffc2b0, roughness: 0.6 });
+    const body = new THREE.Mesh(box ? new THREE.BoxGeometry(0.38, 0.34, 0.3) : new THREE.CylinderGeometry(cat ? 0.17 : 0.2, cat ? 0.22 : 0.25, 0.4, 10), violet);
+    body.position.y = box ? 0.25 : 0.26; body.castShadow = true;
+    const head = new THREE.Mesh(box ? new THREE.BoxGeometry(0.4, 0.36, 0.34) : new THREE.SphereGeometry(0.21, 20, 16), violetLight);
     head.position.y = 0.62; head.castShadow = true;
+    if (cat) head.scale.x = 1.08;
     body.name = 'body'; head.name = 'head';
     // Лицо и ноги двигаются (раздел «Живой Бит»). rest — спокойное положение: копии героя (остров, портреты)
     // возвращаются к нему, чтобы не застыть с закрытыми глазами или грустным ртом (faceRest)
@@ -251,9 +257,9 @@
     const arcGeo = new THREE.TorusGeometry(0.042, 0.014, 6, 12, Math.PI); // дуга ∩: закрытый от радости глаз «^»
     const eyes = [], pupils = [], joy = [], squint = [], feet = [];
     const armGeo = new THREE.BoxGeometry(0.075, 0.018, 0.018);
-    // слева от Бита — +x (он смотрит в +z)
+    // слева от героя — +x (он смотрит в +z)
     [0.085, -0.085].forEach(x => {
-      const e = new THREE.Mesh(eyeGeo, white); e.position.set(x, 0.65, 0.165); e.name = 'eye';
+      const e = new THREE.Mesh(eyeGeo, white); e.position.set(x, 0.65, box ? 0.17 : 0.165); e.name = 'eye';
       const p = new THREE.Mesh(pupilGeo, black); p.position.set(x, 0.65, 0.218); p.name = 'pupil';
       const j = new THREE.Mesh(arcGeo, black); j.position.set(x, 0.645, 0.195); j.rotation.set(-0.25, Math.sign(x) * 0.45, 0); // внешний край — назад по голове
       // «> <»: зажмурился от удара — галочки острыми концами к середине лица
@@ -264,7 +270,7 @@
         arm.position.y = up * 0.017; arm.rotation.z = up * sx * 0.46;
         q.add(arm);
       });
-      hero.add(e, p, j, q);
+      root.add(e, p, j, q);
       eyes.push(e); pupils.push(p); joy.push(j); squint.push(q);
     });
     // рот виден только с настроением: улыбка ∪ или грусть ∩
@@ -275,21 +281,75 @@
     antPivot.position.y = 0.8;
     const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.2, 6), black);
     ant.position.y = 0.1; ant.name = 'ant';
-    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), gold);
+    const bulb = new THREE.Mesh(box ? new THREE.BoxGeometry(0.075, 0.075, 0.075) : new THREE.SphereGeometry(0.05, 10, 8), gold);
     bulb.position.y = 0.22; bulb.name = 'bulb';
+    if (box) bulb.rotation.set(0.6, 0.78, 0);
     antPivot.add(ant, bulb);
-    const feetGeo = new THREE.SphereGeometry(0.09, 10, 8);
-    [0.1, -0.1].forEach(x => { const f = new THREE.Mesh(feetGeo, black); f.position.set(x, 0.05, 0.03); f.scale.set(1, 0.6, 1.3); hero.add(f); feet.push(f); });
+    const feetGeo = box ? new THREE.BoxGeometry(0.14, 0.08, 0.2) : new THREE.SphereGeometry(0.09, 10, 8);
+    [0.1, -0.1].forEach(x => {
+      const f = new THREE.Mesh(feetGeo, black); f.position.set(x, box ? 0.045 : 0.05, 0.03);
+      if (!box) f.scale.set(1, 0.6, 1.3);
+      root.add(f); feet.push(f);
+    });
     const tri = new THREE.Shape();
     tri.moveTo(-0.16, 0); tri.lineTo(0.16, 0); tri.lineTo(0, 0.2); tri.lineTo(-0.16, 0);
     const arrow = new THREE.Mesh(new THREE.ShapeGeometry(tri), new THREE.MeshBasicMaterial({ color: 0xffc83d, transparent: true, opacity: 0.9 }));
     arrow.rotation.x = -Math.PI / 2; arrow.position.set(0, 0.012, 0.3);
     arrow.name = 'arrow'; // стрелка «куда смотрит»: в портрете её прячем
-    hero.add(body, head, mouth, antPivot, arrow);
+    root.add(body, head, mouth, antPivot, arrow);
+    const ears = []; let tail = null;
+    if (box) { // кубик: тёмный экран под глазами, болты по бокам головы, огонёк на груди
+      const screen = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.02), black);
+      screen.position.set(0, 0.645, 0.172);
+      const bolts = [0.205, -0.205].map(x => { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.07, 8), black); b.rotation.z = Math.PI / 2; b.position.set(x, 0.62, 0); return b; });
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.07, 0.02), gold);
+      lamp.position.set(0, 0.27, 0.152);
+      root.add(screen, lamp, ...bolts);
+    }
+    if (cat) { // ушки: снаружи цвет головы, внутри розовое; хвост виляет; щёчки и усики
+      [1, -1].forEach(s => {
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.22, 4), violetLight);
+        ear.position.set(s * 0.125, 0.82, 0); ear.rotation.z = -s * 0.28; ear.castShadow = true;
+        const inner = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.14, 4), pink);
+        inner.position.set(0, -0.005, 0.03);
+        ear.add(inner); ear.name = 'ear'; ears.push(ear);
+        const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), pink);
+        cheek.position.set(s * 0.13, 0.585, 0.14); cheek.scale.z = 0.4;
+        root.add(ear, cheek);
+        [-1, 0, 1].forEach(k => {
+          const w = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.007, 0.007), black);
+          w.position.set(s * 0.215, 0.58 + k * 0.022, 0.07); w.rotation.set(0, -s * 0.5, s * k * 0.2);
+          root.add(w);
+        });
+      });
+      tail = new THREE.Group(); tail.name = 'tail';
+      tail.position.set(0, 0.2, -0.2);
+      const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.04, -0.12), new THREE.Vector3(0.06, 0.16, -0.2), new THREE.Vector3(0.1, 0.32, -0.17)]);
+      const stem = new THREE.Mesh(new THREE.TubeGeometry(curve, 16, 0.032, 6), violet); stem.castShadow = true;
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), gold); tip.position.set(0.1, 0.32, -0.17);
+      tail.add(stem, tip);
+      root.add(tail);
+    }
     [head, antPivot, bulb, ...eyes, ...pupils, ...feet].forEach(o => rest(o));
     [...joy, ...squint, mouth].forEach(o => rest(o, false));
-    Object.assign(heroParts, { body, head, violet, violetLight, ant, bulb, antPivot, eyes, pupils, joy, squint, mouth, feet });
-  })();
+    const parts = { skin: sk, body, head, violet, violetLight, ant, bulb, antPivot, eyes, pupils, joy, squint, mouth, feet, ears, tail };
+    headDecor(parts, false, false);
+    return { root, parts };
+  }
+  // Что прячет надетая вещь: шляпа — антенну и ушки, вещь на спину — хвост. У «Ушек» антенны нет совсем
+  function headDecor(P, onHead, onBack) {
+    P.ant.visible = P.bulb.visible = skinOf(P.skin).ant && !onHead;
+    P.ears.forEach(e => { e.visible = !onHead; });
+    if (P.tail) P.tail.visible = !onBack;
+  }
+  function setHeroSkin(id) {
+    const b = buildHeroParts(id);
+    hero.clear();
+    Object.keys(heroParts).forEach(k => delete heroParts[k]);
+    Object.assign(heroParts, b.parts);
+    b.root.children.slice().forEach(c => hero.add(c));
+  }
+  setHeroSkin(save.gear.skin);
   // Копия героя для другой сцены — со спокойным лицом и ногами на месте
   function faceRest(root) {
     root.traverse(o => {
@@ -317,7 +377,7 @@
   const isOpen = it => (it.price ? !!(save.shop || {})[it.id] : it.level <= heroLevel()); // вещь из лавки — если куплена
   function applyGear() {
     Object.keys(gearOn).forEach(slot => { hero.remove(gearOn[slot]); delete gearOn[slot]; });
-    let colors = HeroGear.DEFAULT_COLORS;
+    let colors = skinOf(heroParts.skin).colors;
     ITEMS.forEach(it => {
       if (save.gear[it.slot] !== it.id || !isOpen(it)) return;
       if (it.colors) colors = it.colors;
@@ -328,7 +388,7 @@
     });
     heroParts.violet.color.setHex(colors[0]);
     heroParts.violetLight.color.setHex(colors[1]);
-    heroParts.ant.visible = heroParts.bulb.visible = !gearOn.head; // шляпа и корона надеваются вместо антенны
+    headDecor(heroParts, !!gearOn.head, !!gearOn.back); // шляпа и корона надеваются вместо антенны и ушек
   }
   applyGear();
 
@@ -679,9 +739,11 @@
   // Копии Бита (остров на странице героя, портрет в «Итоге пролога») тоже моргают: у каждой свои часы
   function makeBlinker(root) {
     const lids = []; let at = 1 + Math.random() * 2, t0 = -1;
-    root.traverse(o => { if (o.name === 'eye' || o.name === 'pupil') lids.push(o); });
+    let tail = null;
+    root.traverse(o => { if (o.name === 'eye' || o.name === 'pupil') lids.push(o); else if (o.name === 'tail') tail = o; });
     return time => {
       if (reduceMotion) return;
+      if (tail) tail.rotation.y = Math.sin(time * 3) * 0.3;
       let lid = 1;
       if (t0 < 0 && time > at) t0 = time;
       if (t0 >= 0) {
@@ -774,6 +836,7 @@
     if (boss && boss.visible) animateSboy(boss, time, dt);
     if (cut) animateCut(time, dt);
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
+    if (heroParts.tail && !reduceMotion) heroParts.tail.rotation.y = Math.sin(time * (running ? 7 : 3)) * 0.3;
     animateFace(time, dt);
     if (BLOB.hero.visible) { // в прыжке пятно меньше и бледнее, в лаве пропадает
       const h = hero.position.y;
@@ -2698,6 +2761,7 @@
     const lastId = save.lastWin && findTask(save.lastWin) && solvedTask(findTask(save.lastWin).t) ? save.lastWin : (won[won.length - 1] || {}).id;
     const lt = lastId ? findTask(lastId).t : null, g = {};
     ITEMS.forEach(it => { if (save.gear[it.slot] === it.id && isOpen(it)) g[it.slot] = it.id; });
+    if (skinOf(save.gear.skin).id !== 'bit') g.skin = skinOf(save.gear.skin).id; // облик
     return {
       v: 1, n: cleanName(save.name), r: lessonIdx, g, t: save.badge || '', s,
       f: won.filter(t => (save.first || {})[t.id] || !save.fails[t.id]).length, // решено с первого запуска
@@ -2753,6 +2817,7 @@
     };
     const lvl = heroSummary(D).level;
     ITEMS.forEach(it => { if (d.g && d.g[it.slot] === it.id && (it.price ? D.b.includes(it.id) : it.level <= lvl)) D.g[it.slot] = it.id; });
+    if (d.g && HeroGear.SKINS.some(s => s.id === d.g.skin)) D.g.skin = d.g.skin;
     if (Array.isArray(d.c) && typeof d.c[1] === 'string' && findTask(d.c[0])) D.c = [d.c[0], clipCode(d.c[1])];
     return D;
   }
@@ -3012,9 +3077,36 @@
 
   // Снаряжение на странице героя: вещи за уровни и купленные в лавке, нажатие — надеть или снять
   function renderGear() {
-    $('#gearSub').textContent = 'Вещи открываются за уровни, а в лавке Ады их покупают за кристаллы. Нажми на вещь, чтобы надеть её или снять.';
+    $('#gearSub').textContent = 'Выбери облик героя. Вещи открываются за уровни, а в лавке Ады их покупают за кристаллы: нажми на вещь, чтобы надеть её или снять.';
     const list = $('#gearList');
     list.innerHTML = '';
+    const sec = text => { const li = document.createElement('li'); li.className = 'gear-head'; li.textContent = text; list.append(li); };
+    sec('Облик');
+    HeroGear.SKINS.forEach(s => {
+      const on = skinOf(save.gear.skin).id === s.id;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'gear-item';
+      b.dataset.skin = s.id;
+      b.setAttribute('aria-pressed', String(on));
+      const name = document.createElement('span');
+      name.textContent = s.name;
+      const state = document.createElement('span');
+      state.className = 'gi-state';
+      state.textContent = on ? 'выбран' : s.note;
+      b.append(name, state);
+      b.addEventListener('click', () => {
+        save.gear.skin = s.id;
+        persist(); setHeroSkin(s.id); applyGear(); tryOn(null);
+        renderHeroPage();
+        const again = $(`#gearList .gear-item[data-skin="${s.id}"]`);
+        if (again) again.focus({ preventScroll: true });
+      });
+      const li = document.createElement('li');
+      li.append(b);
+      list.append(li);
+    });
+    sec('Вещи');
     ITEMS.filter(it => !it.price || isOpen(it)).forEach(it => {
       const on = save.gear[it.slot] === it.id, open = isOpen(it);
       const b = document.createElement('button');
@@ -3043,13 +3135,11 @@
 
   /* 3D-остров для страницы героя: своя маленькая сцена. Земля — низкие многогранники, на ней то, что стоит
      в этом краю (по значку на карте долины), монеты, облака; Бит в своём снаряжении. Остров можно крутить мышью или пальцем */
-  // Бит для другой сцены: копия героя со своим снаряжением и своими цветами корпуса
+  // Герой для другой сцены: своя модель выбранного облика (gear.skin), своё снаряжение и свои цвета
   function makeHeroModel(gear) {
-    const bot = faceRest(hero.clone(true));
-    bot.children.filter(o => o.userData.gear).forEach(o => bot.remove(o));
-    bot.position.set(0, 0, 0); bot.rotation.set(0, 0, 0); bot.scale.set(1, 1, 1);
+    const { root: bot, parts: P } = buildHeroParts(gear.skin);
     bot.getObjectByName('arrow').visible = false;
-    let colors = HeroGear.DEFAULT_COLORS, onHead = false;
+    let colors = skinOf(P.skin).colors, onHead = false, onBack = false;
     ITEMS.forEach(it => {
       if (gear[it.slot] !== it.id) return;
       if (it.colors) { colors = it.colors; return; }
@@ -3057,11 +3147,11 @@
       g.userData.gear = it.slot;
       bot.add(g);
       if (it.slot === 'head') onHead = true;
+      if (it.slot === 'back') onBack = true;
     });
-    const at = name => bot.getObjectByName(name);
-    at('body').material = new THREE.MeshStandardMaterial({ color: colors[0], flatShading: true, roughness: 0.55 });
-    at('head').material = new THREE.MeshStandardMaterial({ color: colors[1], roughness: 0.45 });
-    at('ant').visible = at('bulb').visible = !onHead;
+    P.violet.color.setHex(colors[0]);
+    P.violetLight.color.setHex(colors[1]);
+    headDecor(P, onHead, onBack);
     return bot;
   }
   function buildIsland(icon, done) {

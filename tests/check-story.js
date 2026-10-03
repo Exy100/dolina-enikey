@@ -171,6 +171,20 @@ if (!ev[0].done || ev.some((a, i) => i && a.done && a.key !== 'solved')) fail('H
 const courseGems = AW.LIST.reduce((n, a) => n + a.gems, 0) + reach.bonus * AW.GEMS.bonus;
 G.SHOP.forEach(it => { if (it.price > courseGems) fail(`${it.id}: цена ${it.price} больше, чем можно заработать за курс (${courseGems})`); });
 if (G.SHOP.length !== G.ITEMS.filter(it => it.price).length) fail('HeroGear.SHOP — это вещи с ценой');
+// Облики героя: первый — классика, у каждого id, имя, подпись и два цвета; ids не повторяются; в app.js для каждого есть своя ветка модели
+(() => {
+  const ids = new Set();
+  if (!G.SKINS || G.SKINS.length < 3 || G.SKINS[0].id !== 'bit') fail('HeroGear.SKINS: первым должен идти облик bit, всего не меньше трёх');
+  (G.SKINS || []).forEach(sk => {
+    if (ids.has(sk.id)) fail(`облик ${sk.id} повторяется`);
+    ids.add(sk.id);
+    if (!sk.name || !sk.note || !Array.isArray(sk.colors) || sk.colors.length !== 2 || typeof sk.ant !== 'boolean') fail(`облик ${sk.id}: нужны name, note, два цвета и ant`);
+  });
+  const app = fs.readFileSync(path.join(__dirname, '..', 'js', 'app.js'), 'utf8');
+  (G.SKINS || []).filter(sk => sk.id !== 'bit').forEach(sk => {
+    if (!app.includes(`'${sk.id}'`)) fail(`облик ${sk.id}: в app.js нет ветки для его модели`);
+  });
+})();
 if (!/<script src="js\/awards\.js"><\/script>/.test(fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8'))) fail('js/awards.js не подключён в index.html');
 
 console.log(errors ? `Ошибок: ${errors}` : `Сюжет и прокачка в порядке: уроков ${W.LESSONS.length}, уровней ${G.LEVELS.length}, вещей ${G.ITEMS.length}, достижений ${AW.LIST.length}.`);
