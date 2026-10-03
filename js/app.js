@@ -163,7 +163,9 @@
     stoneA: new THREE.MeshStandardMaterial({ color: 0x6c6690, flatShading: true, roughness: 0.95 }),
     stoneB: new THREE.MeshStandardMaterial({ color: 0x5d5880, flatShading: true, roughness: 0.95 }),
     lava: new THREE.MeshStandardMaterial({ color: 0xff5a1f, emissive: 0xff3b0a, emissiveIntensity: 0.9, flatShading: true, roughness: 0.6 }),
-    coin: new THREE.MeshStandardMaterial({ color: 0xf5b82e, emissive: 0x7a4b00, emissiveIntensity: 0.35, metalness: 0.55, roughness: 0.3 }),
+    // золото и железо — почти без «металла»: отражать в сцене нечего (карты отражений нет), и металл темнеет до бурого.
+    // Блеск даёт блик солнца, тёплый цвет — свечение. Так же в gear.js и на острове героя
+    coin: new THREE.MeshStandardMaterial({ color: 0xffc83d, emissive: 0xa86400, emissiveIntensity: 0.35, metalness: 0.15, roughness: 0.35 }),
     trunk: new THREE.MeshStandardMaterial({ color: 0x7b4f2e, flatShading: true }),
     leaf: new THREE.MeshStandardMaterial({ color: 0x4cb070, flatShading: true }),
     pole: new THREE.MeshStandardMaterial({ color: 0xf3f0ff, roughness: 0.5 }),
@@ -173,10 +175,33 @@
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
   Object.assign(M, {
     gate: new THREE.MeshStandardMaterial({ color: 0xb8742e, roughness: 0.8 }),
-    gateBar: new THREE.MeshStandardMaterial({ color: 0x4a4f6a, metalness: 0.5, roughness: 0.4 }),
+    gateBar: new THREE.MeshStandardMaterial({ color: 0x6a6f92, metalness: 0.15, roughness: 0.5 }),
     boss: new THREE.MeshStandardMaterial({ color: 0x1b1e3c, emissive: 0xff2bd6, emissiveIntensity: 0.6, roughness: 0.4 }),
     bossFixed: new THREE.MeshStandardMaterial({ color: 0x8f7cff, emissive: 0x1fb89a, emissiveIntensity: 0.35, roughness: 0.4 }), // починенный Сбой
   });
+  // Пятно тени под Битом и монетами: в «Лёгкой графике» теней нет, и без пятна герой будто висит в воздухе.
+  // Видно только в лёгкой графике (applyLite)
+  const BLOB = (() => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const c = cv.getContext('2d'), gr = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(58,42,77,.55)'); gr.addColorStop(0.5, 'rgba(58,42,77,.35)'); gr.addColorStop(1, 'rgba(58,42,77,0)');
+    c.fillStyle = gr; c.fillRect(0, 0, 64, 64);
+    const map = new THREE.CanvasTexture(cv);
+    const mat = () => new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, visible: false });
+    return { geo: new THREE.PlaneGeometry(1, 1), hero: mat(), coin: mat() };
+  })();
+  const blobGroup = new THREE.Group(); // пятна монет: живут отдельно от levelGroup, чтобы общая текстура не выбрасывалась вместе с картой
+  scene.add(blobGroup);
+  function addBlob(parent, mat, x, z, size) {
+    const b = new THREE.Mesh(BLOB.geo, mat);
+    b.rotation.x = -Math.PI / 2;
+    b.position.set(x, 0.01, z);
+    b.scale.setScalar(size);
+    b.userData.size = size;
+    parent.add(b);
+    return b;
+  }
 
   /* День и ночь: в тёмной теме мир освещён луной — свет холодный и тусклый, земля темнее и зеленее,
      а монеты, флаг и лава светятся сильнее, чтобы их было видно */
@@ -241,6 +266,7 @@
   const heroRig = new THREE.Group(); // для прыжков и сдвигов
   heroRig.add(hero);
   scene.add(heroRig);
+  const heroBlob = addBlob(heroRig, BLOB.hero, 0, 0, 0.95); // на heroRig: в прыжке остаётся на земле
   let heroAngle = 0;
   const DIR_ANGLE = [Math.PI / 2, Math.PI, Math.PI * 1.5, 0];
 
@@ -321,10 +347,11 @@
     clearTrail();
     scene.remove(levelGroup);
     levelGroup.traverse(o => {
-      if (o.geometry && o.geometry !== boxGeo) o.geometry.dispose();
+      if (o.geometry && o.geometry !== boxGeo && !o.isSprite) o.geometry.dispose(); // геометрия спрайтов общая на всех
       if (o.material && o.material.isMaterial && o.material.map) o.material.map.dispose(); // у блоков — массив материалов
     });
     levelGroup = new THREE.Group();
+    while (blobGroup.children.length) blobGroup.remove(blobGroup.children[0]);
     coinMeshes = new Map();
     gateMeshes = new Map();
     particles.splice(0).forEach(p => scene.remove(p.m));
@@ -387,6 +414,7 @@
       c.add(disc);
       c.position.set(x, 0.42, z);
       c.userData.phase = hash(x, z) * 6;
+      c.userData.blob = addBlob(blobGroup, BLOB.coin, x, z, 0.4);
       levelGroup.add(c);
       coinMeshes.set(k, c);
     });
@@ -420,23 +448,16 @@
       levelGroup.add(g);
       gateMeshes.set(k, door);
     });
-    // таблички: столбик и дощечка с числом, повёрнутая к камере
+    // таблички: столбик и дощечка с числом. Дощечка — спрайт: всегда повёрнута к камере, число видно и сверху
     level.signs.forEach((v, k) => {
       const [x, z] = k.split(',').map(Number);
-      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.5, 6), M.trunk);
-      post.position.set(x + 0.3, 0.25, z + 0.3);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, SIGN.post, 6), M.trunk);
+      post.position.set(x + SIGN.dx, SIGN.post / 2, z + SIGN.dz);
       post.castShadow = true;
-      const cv = document.createElement('canvas');
-      cv.width = cv.height = 64;
-      const c = cv.getContext('2d');
-      c.fillStyle = '#f3e2bf'; c.fillRect(0, 0, 64, 64);
-      c.strokeStyle = '#8a5a2b'; c.lineWidth = 6; c.strokeRect(3, 3, 58, 58);
-      c.fillStyle = '#1b1e3c'; c.font = 'bold 44px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
-      c.fillText(String(v), 32, 35);
-      const board = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 0.3),
-        new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), side: THREE.DoubleSide }));
-      board.position.set(x + 0.3, 0.58, z + 0.3);
-      board.rotation.y = cam.az;
+      const board = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTexture(v), alphaTest: 0.2 }));
+      board.center.set(0.5, 0); // низ дощечки — на верхушке столбика
+      board.scale.set(SIGN.size, SIGN.size, 1);
+      board.position.set(x + SIGN.dx, SIGN.post - 0.02, z + SIGN.dz);
       levelGroup.add(post, board);
     });
     // финиш: флаг; на карте с боссом — Великий Сбой; спрятанный флаг не рисуется
@@ -478,6 +499,22 @@
     sc.updateProjectionMatrix();
     sun.position.set(cam.target.x + 5, 12, cam.target.z + 6);
     sun.target.position.copy(cam.target);
+  }
+
+  // Табличка: справа от Бита и чуть позади (с обычной камеры Бит её не закрывает, а она — его), дощечка крупнее прежней
+  const SIGN = { dx: 0.36, dz: -0.15, post: 0.42, size: 0.5 };
+  function signTexture(v) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 128;
+    const c = cv.getContext('2d');
+    const board = (x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+    board(6, 6, 116, 116, 22);
+    c.fillStyle = '#8a5a2b'; c.fill();
+    board(16, 16, 96, 96, 14);
+    c.fillStyle = '#f3e2bf'; c.fill();
+    c.fillStyle = '#1b1e3c'; c.font = '700 76px Rubik, "Segoe UI", sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillText(String(v), 64, 68, 84);
+    return new THREE.CanvasTexture(cv);
   }
 
   function fitCamera() {
@@ -594,6 +631,11 @@
     if (boss && boss.visible) animateSboy(boss, time, dt);
     if (cut) animateCut(time, dt);
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
+    if (BLOB.hero.visible) { // в прыжке пятно меньше и бледнее, в лаве пропадает
+      const h = hero.position.y;
+      heroBlob.scale.setScalar(heroBlob.userData.size / (1 + Math.max(0, h) * 0.8));
+      BLOB.hero.opacity = h < -0.05 ? 0 : 1 / (1 + Math.max(0, h) * 1.5);
+    }
     for (let i = particles.length - 1; i >= 0; i--) {
       const p = particles[i];
       p.v.y -= (p.g === undefined ? 9 : p.g) * dt;
@@ -631,6 +673,7 @@
   let lite = save.lite === undefined ? !!LITE_AUTO : !!save.lite;
   function applyLite() {
     document.body.classList.toggle('lite', lite);
+    BLOB.hero.visible = BLOB.coin.visible = lite;
     renderer.setPixelRatio(lite ? 1 : Math.min(devicePixelRatio, 2));
     if (renderer.shadowMap.enabled === lite) {
       renderer.shadowMap.enabled = !lite;
@@ -905,7 +948,7 @@
   /* ---------- Сцена конца пролога: Ада показывает Ключ-код, Сбой его крадёт.
      Эффекты привязаны к репликам (третий элемент реплики, список — STORY.fx) и идут, пока реплика на экране ---------- */
   const world = $('.world');
-  const KEY_MAT = new THREE.MeshStandardMaterial({ color: 0xffc83d, emissive: 0xb86b00, emissiveIntensity: 0.55, metalness: 0.7, roughness: 0.25 });
+  const KEY_MAT = new THREE.MeshStandardMaterial({ color: 0xffc83d, emissive: 0xb86b00, emissiveIntensity: 0.55, metalness: 0.2, roughness: 0.3 });
   let glowTex = null;
   function glowTexture() {
     if (glowTex) return glowTex;
@@ -1101,8 +1144,9 @@
           c.userData.taken = true;
           const y0 = c.position.y;
           sparks(ev.x, ev.z, 0xffc83d);
-          await tween(380, t => { c.position.y = y0 + t * 0.9; const s = 1 - t; c.scale.set(s, s, s); });
-          c.visible = false;
+          const blob = c.userData.blob;
+          await tween(380, t => { c.position.y = y0 + t * 0.9; const s = 1 - t; c.scale.set(s, s, s); blob.scale.setScalar(blob.userData.size * s); });
+          c.visible = blob.visible = false;
         }
         return;
       }
@@ -2898,7 +2942,7 @@
         add(new THREE.BoxGeometry(0.16, 0.42, 0.16), M.rock, -0.4, 1.3, -1.25);
         add(new THREE.BoxGeometry(0.8, 0.08, 0.45), M.trunk, 1.1, 0.42, -0.75);
         [-0.33, 0.33].forEach(dx => add(new THREE.BoxGeometry(0.06, 0.4, 0.4), M.trunk, 1.1 + dx, 0.2, -0.75));
-        const cog = add(new THREE.TorusGeometry(0.14, 0.05, 6, 8), mat(0xb8c0d8, { metalness: 0.5, roughness: 0.4 }), 1.1, 0.64, -0.75);
+        const cog = add(new THREE.TorusGeometry(0.14, 0.05, 6, 8), mat(0xb8c0d8, { metalness: 0.15, roughness: 0.4 }), 1.1, 0.64, -0.75);
         anim.push(t => { cog.rotation.z = t * 1.2; });
         tree(1.75, -1.45, 0.9); tree(-1.85, 0.35, 0.75); stone(1.6, 0.6);
       },
@@ -2955,12 +2999,12 @@
         tree(1.7, -1.3, 0.85); stone(-1.6, 0.6); stone(1.5, 0.7, 0.8);
       },
       anvil() { // кузница приёмов: наковальня, горн с огнём, молот
-        add(new THREE.BoxGeometry(0.34, 0.3, 0.3), mat(0x3d4060, { metalness: 0.5, roughness: 0.5 }), 1.45, 0.15, -0.75);
-        add(new THREE.BoxGeometry(0.7, 0.2, 0.34), mat(0x4a4f6a, { metalness: 0.6, roughness: 0.4 }), 1.45, 0.4, -0.75);
-        add(new THREE.ConeGeometry(0.12, 0.35, 6), mat(0x4a4f6a, { metalness: 0.6, roughness: 0.4 }), 1.96, 0.42, -0.75).rotation.z = -Math.PI / 2;
+        add(new THREE.BoxGeometry(0.34, 0.3, 0.3), mat(0x3d4060, { metalness: 0.15, roughness: 0.5 }), 1.45, 0.15, -0.75);
+        add(new THREE.BoxGeometry(0.7, 0.2, 0.34), mat(0x5d6385, { metalness: 0.15, roughness: 0.45 }), 1.45, 0.4, -0.75);
+        add(new THREE.ConeGeometry(0.12, 0.35, 6), mat(0x5d6385, { metalness: 0.15, roughness: 0.45 }), 1.96, 0.42, -0.75).rotation.z = -Math.PI / 2;
         const hammer = new THREE.Group();
         add(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 6), M.trunk, 0, 0.25, 0, hammer);
-        add(new THREE.BoxGeometry(0.22, 0.12, 0.12), mat(0x3d4060, { metalness: 0.6 }), 0, 0.5, 0, hammer);
+        add(new THREE.BoxGeometry(0.22, 0.12, 0.12), mat(0x3d4060, { metalness: 0.15, roughness: 0.5 }), 0, 0.5, 0, hammer);
         hammer.position.set(1.45, 0.5, -0.75);
         g.add(hammer);
         anim.push(t => { hammer.rotation.z = -0.6 + Math.max(0, Math.sin(t * 3)) * 0.9; });
@@ -2997,7 +3041,7 @@
     });
     // долина пройдена — над островом Ключ-код
     if (done) {
-      const key = new THREE.Group(), gold = mat(0xffc83d, { emissive: 0x6b4500, emissiveIntensity: 0.5, metalness: 0.5, roughness: 0.3 });
+      const key = new THREE.Group(), gold = mat(0xffc83d, { emissive: 0xa86400, emissiveIntensity: 0.45, metalness: 0.15, roughness: 0.35 });
       add(new THREE.TorusGeometry(0.16, 0.05, 6, 14), gold, -0.25, 0, 0, key);
       add(new THREE.BoxGeometry(0.42, 0.07, 0.07), gold, 0.13, 0, 0, key);
       add(new THREE.BoxGeometry(0.06, 0.13, 0.07), gold, 0.25, -0.08, 0, key);

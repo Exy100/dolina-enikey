@@ -988,6 +988,21 @@ body.shots-mode { overflow: hidden; }
 .hero-badge.gem-pulse { animation: gemPulse .5s cubic-bezier(.3,1.6,.5,1); }
 @keyframes gemPulse { 40% { transform: scale(1.12); } }
 
+/* Плашка тестирования: полоска над всеми экранами. Страница начинается под ней, карточки во весь экран — тоже.
+   В ролике для Авито (?show) и при печати её нет */
+:root { --beta-h: 26px; padding-top: calc(env(safe-area-inset-top, 0px) + var(--beta-h)); }
+.beta { position: fixed; top: 0; left: 0; right: 0; z-index: 100; display: flex; align-items: center; justify-content: center; gap: 8px;
+  height: calc(env(safe-area-inset-top, 0px) + var(--beta-h)); padding: env(safe-area-inset-top, 0px) 12px 0;
+  background: color-mix(in srgb, var(--gold-star) 30%, var(--panel)); border-bottom: 1px solid color-mix(in srgb, var(--gold-star) 55%, var(--line));
+  color: var(--ink); font: 500 12.5px/1 var(--ui); white-space: nowrap; overflow: hidden; pointer-events: none; }
+.beta i { width: 7px; height: 7px; border-radius: 50%; background: var(--gold); flex: none; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .beta { background: var(--panel-2); } }
+:root[data-theme="dark"] .beta { background: var(--panel-2); }
+.splash, .reel, .valley, .recap, .hp, .shots { top: calc(env(safe-area-inset-top, 0px) + var(--beta-h)); }
+:root:has(body.show-mode) { --beta-h: 0px; }
+body.show-mode .beta { display: none; }
+@media print { :root { --beta-h: 0px; } .beta { display: none; } }
+
 /* Лёгкая графика: без размытия, лишних теней и бесконечных анимаций */
 body.lite * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 body.lite .valley, body.lite .hp, body.lite .recap, body.lite .recap-card, body.lite .valley-card, body.lite .hp-card { animation: none; }
