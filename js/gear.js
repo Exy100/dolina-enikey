@@ -107,7 +107,7 @@ const HeroGear = (() => {
           new THREE.MeshStandardMaterial({ color: 0xd8ff7a, emissive: 0xb6ff3a, emissiveIntensity: 1 }), 0, 0, 0);
         break;
       case 'glasses': {
-        const m = mat(0x1b1e3c, { metalness: 0.4 });
+        const m = mat(0x1b1e3c, { roughness: 0.35 });
         [-0.085, 0.085].forEach(x => add(new THREE.TorusGeometry(0.06, 0.012, 8, 20), m, x, 0.65, 0.225));
         add(new THREE.BoxGeometry(0.06, 0.015, 0.015), m, 0, 0.66, 0.225);
         break;
@@ -125,7 +125,7 @@ const HeroGear = (() => {
           new THREE.MeshStandardMaterial({ color: 0xffb36b, emissive: 0xff6a00, emissiveIntensity: 1 }), 0, 0, 0);
         break;
       case 'helmet': {
-        const m = mat(0xb8c0d8, { metalness: 0.6, roughness: 0.35 });
+        const m = mat(0xc4cbe0, { metalness: 0.15, roughness: 0.35 });
         add(new THREE.SphereGeometry(0.225, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), m, 0, 0.64, 0);
         add(new THREE.BoxGeometry(0.04, 0.12, 0.3), mat(0xe4572e), 0, 0.9, -0.02);
         break;
@@ -149,7 +149,7 @@ const HeroGear = (() => {
         break;
       }
       case 'shades': {
-        const m = mat(0x111322, { metalness: 0.6, roughness: 0.15 });
+        const m = mat(0x111322, { roughness: 0.2 });
         [-0.085, 0.085].forEach(x => add(new THREE.BoxGeometry(0.12, 0.07, 0.02), m, x, 0.655, 0.225));
         add(new THREE.BoxGeometry(0.06, 0.015, 0.015), m, 0, 0.67, 0.225);
         break;
@@ -163,7 +163,7 @@ const HeroGear = (() => {
       case 'medal': {
         const rib = mat(0x3c83e0);
         [-1, 1].forEach(s => { const o = add(new THREE.BoxGeometry(0.04, 0.16, 0.01), rib, s * 0.035, 0.38, 0.225); o.rotation.z = -s * 0.35; });
-        add(new THREE.CylinderGeometry(0.055, 0.055, 0.02, 16), mat(0xffc83d, { metalness: 0.5, roughness: 0.3, emissive: 0x6b4500, emissiveIntensity: 0.4 }), 0, 0.29, 0.24).rotation.x = Math.PI / 2;
+        add(new THREE.CylinderGeometry(0.055, 0.055, 0.02, 16), mat(0xffc83d, { metalness: 0.15, roughness: 0.35, emissive: 0xa86400, emissiveIntensity: 0.35 }), 0, 0.29, 0.24).rotation.x = Math.PI / 2;
         break;
       }
       case 'wreath': { // венок: зелёное кольцо и цветы
@@ -197,7 +197,7 @@ const HeroGear = (() => {
         break;
       }
       case 'jetpack': { // ракетный ранец: два баллона и огонь вниз
-        const m = mat(0xb8c0d8, { metalness: 0.6, roughness: 0.35 });
+        const m = mat(0xc4cbe0, { metalness: 0.15, roughness: 0.35 });
         [-1, 1].forEach(s => {
           add(new THREE.CylinderGeometry(0.065, 0.065, 0.3, 12), m, s * 0.08, 0.32, -0.27);
           add(new THREE.ConeGeometry(0.065, 0.08, 12), mat(0xe4572e), s * 0.08, 0.51, -0.27);
@@ -207,7 +207,7 @@ const HeroGear = (() => {
         break;
       }
       case 'crown': {
-        const m = mat(0xffc83d, { emissive: 0x6b4500, emissiveIntensity: 0.4, metalness: 0.5, roughness: 0.3, side: THREE.DoubleSide });
+        const m = mat(0xffc83d, { emissive: 0xa86400, emissiveIntensity: 0.35, metalness: 0.15, roughness: 0.35, side: THREE.DoubleSide });
         add(new THREE.CylinderGeometry(0.15, 0.15, 0.09, 20, 1, true), m, 0, 0.8, 0);
         for (let i = 0; i < 5; i++) {
           const a = (i / 5) * Math.PI * 2;
