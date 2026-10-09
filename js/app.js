@@ -230,6 +230,7 @@
   let coinMeshes = new Map();
   let flag = null, finishRing = null, boss = null;
   let gateMeshes = new Map(); // клетка ворот → створка
+  let leverMeshes = new Map(); // клетка рычага → ручка
 
   /* Герой. Облик (HeroGear.SKINS) — форма тела и головы; лицо, ноги и антенна двигаются одинаково у всех, поэтому
      каждая модель собирается из тех же именованных частей (heroParts). Модель можно собрать и для другой сцены
@@ -452,6 +453,7 @@
     while (blobGroup.children.length) blobGroup.remove(blobGroup.children[0]);
     coinMeshes = new Map();
     gateMeshes = new Map();
+    leverMeshes = new Map();
     particles.splice(0).forEach(p => scene.remove(p.m));
     const floorKeys = [...level.floor];
     const cells = floorKeys.map(k => k.split(',').map(Number));
@@ -519,6 +521,7 @@
       coinMeshes.set(k, c);
     });
     // ворота: столбы и створка поперёк дороги; при открытии створка уходит под землю
+    const remote = new Set(level.levers ? level.levers.values() : []); // ворота, которые открывает рычаг
     level.gates.forEach(k => {
       const [x, z] = k.split(',').map(Number);
       const g = new THREE.Group();
@@ -551,6 +554,13 @@
       beam.position.y = 1.02;
       beam.castShadow = true;
       g.add(beam);
+      // ворота рычага: над перекладиной красная лампа, при открытии зеленеет
+      if (remote.has(k)) {
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), new THREE.MeshStandardMaterial({ color: 0xff5a4a, emissive: 0xff2a1a, emissiveIntensity: 0.7, flatShading: true }));
+        lamp.position.y = 1.2;
+        g.add(lamp);
+        door.userData.lamp = lamp;
+      }
       g.position.set(x, 0, z);
       // дорога идёт вдоль x — створка встаёт поперёк неё
       if (level.floor.has(K(x - 1, z)) || level.floor.has(K(x + 1, z))) g.rotation.y = Math.PI / 2;
@@ -568,6 +578,22 @@
       board.scale.set(SIGN.size, SIGN.size, 1);
       board.position.set(x + SIGN.dx, SIGN.post - 0.02, z + SIGN.dz);
       levelGroup.add(post, board);
+    });
+    // рычаги: каменное основание и ручка, которая переключается при дёрганье
+    (level.levers ? [...level.levers.keys()] : []).forEach(k => {
+      const [x, z] = k.split(',').map(Number);
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.5), M.stoneA);
+      base.position.set(x, 0.06, z); base.receiveShadow = true;
+      const arm = new THREE.Group();
+      arm.position.set(x, 0.12, z + 0.1);
+      arm.rotation.x = -0.6;
+      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.46, 6), M.gateBar);
+      stick.position.y = 0.23; stick.castShadow = true;
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), M.lava);
+      knob.position.y = 0.48; knob.castShadow = true;
+      arm.add(stick, knob);
+      levelGroup.add(base, arm);
+      leverMeshes.set(k, arm);
     });
     // финиш: флаг; на карте с боссом — Великий Сбой; спрятанный флаг не рисуется
     const f = level.finish;
@@ -1425,10 +1451,19 @@
         hero.rotation.z = 0;
         return;
       }
+      case 'pull': {
+        const arm = leverMeshes.get(K(ev.x, ev.z));
+        say('Рычаг!', 'yes', 800);
+        glance(LOOK_AT.down, 700);
+        Sound.play('gate');
+        if (arm) await tween(380, t => { arm.rotation.x = -0.6 + 1.2 * ease(t); });
+        return;
+      }
       case 'open': {
         say('Открыто!', 'yes', 900);
         Sound.play('gate');
         const door = gateMeshes.get(K(ev.x, ev.z));
+        if (door && door.userData.lamp) { door.userData.lamp.material.color.setHex(0x6fdc6f); door.userData.lamp.material.emissive.setHex(0x2fbf2f); }
         if (door) await tween(450, t => { door.position.y = 0.36 - t * 0.8; });
         return;
       }

@@ -23,7 +23,7 @@ const HeroWorld = (() => {
 
   function blankLevel() {
     return {
-      floor: new Set(), lava: new Set(), ice: new Set(), locks: new Map(), coins: new Set(), gates: new Set(), signs: new Map(),
+      floor: new Set(), lava: new Set(), ice: new Set(), locks: new Map(), levers: new Map(), coins: new Set(), gates: new Set(), signs: new Map(),
       start: { x: 0, z: 0, dir: 0 }, finish: { x: 0, z: 0 },
     };
   }
@@ -198,7 +198,7 @@ const HeroWorld = (() => {
   // Английские имена — мост к обычному Python. На картах english: true работают только они.
   const EN = {
     'вперед': 'move', 'налево': 'turn_left', 'направо': 'turn_right', 'взять': 'take', 'прыгнуть': 'jump',
-    'открыть': 'open_gate', 'сказать': 'say',
+    'открыть': 'open_gate', 'дернуть': 'pull_lever', 'сказать': 'say',
     'стена_впереди': 'wall_in_front', 'стена_слева': 'wall_on_left', 'стена_справа': 'wall_on_right',
     'лава_впереди': 'lava_in_front', 'ворота_впереди': 'gate_in_front', 'есть_монета': 'coin_here',
     'на_финише': 'at_goal', 'монет_собрано': 'coins_taken', 'табличка': 'read_sign',
@@ -230,6 +230,13 @@ const HeroWorld = (() => {
     const h = st.hero, f = st.level.finish;
     if (st.level.basic && h.x === f.x && h.z === f.z)
       throw new WorldError('Бит уже стоял на флаге, но пошёл дальше: после флага в программе лишние команды. Убери их.', line, 'extra');
+  }
+  // Закрытые ворота: обычные открывает открыть(), а ворота рычага рукой не открыть — рычаг где-то рядом с дорогой
+  function gateError(st, at, line, jump) {
+    const k = K(at.x, at.z);
+    if ([...st.level.levers.values()].includes(k))
+      return new WorldError('Ворота закрыты, и открыть() им не поможет: замка у них нет. Их открывает рычаг где-то рядом с дорогой: встань на него и дёрни: дёрнуть()', line, 'lever');
+    return new WorldError(jump ? 'Через закрытые ворота не перепрыгнуть. Открой их: открыть()' : 'Ворота закрыты. Сначала открой их: открыть()', line, 'gate');
   }
   // Датчик: вопрос Биту, ответ показывается в облачке; look — куда Бит при этом смотрит (ahead, left, right, down, up)
   function sense(st, line, text, value, look = 'ahead') {
@@ -268,7 +275,7 @@ const HeroWorld = (() => {
           const c = cellOf(st, to.x, to.z);
           if (c === 'wall' || c === 'gate') {
             yield { type: 'bump' };
-            if (c === 'gate') throw new WorldError('Ворота закрыты. Сначала открой их: открыть()', line, 'gate');
+            if (c === 'gate') throw gateError(st, to, line);
             throw new WorldError('Бум! Впереди стена, туда не пройти.', line, 'wall');
           }
           const from = { ...st.hero };
@@ -323,7 +330,7 @@ const HeroWorld = (() => {
         const mid = ahead(st, 1), to = ahead(st, 2);
         const cm = cellOf(st, mid.x, mid.z);
         if (cm === 'wall') { yield { type: 'bump' }; throw new WorldError('Впереди стена, её не перепрыгнуть.', line, 'wall'); }
-        if (cm === 'gate') { yield { type: 'bump' }; throw new WorldError('Через закрытые ворота не перепрыгнуть. Открой их: открыть()', line, 'gate'); }
+        if (cm === 'gate') { yield { type: 'bump' }; throw gateError(st, mid, line, true); }
         if (cm !== 'lava') {
           yield { type: 'shrug' };
           throw new WorldError('Впереди нет лавы, прыгать незачем: прыжок только через лаву. По обычной клетке иди командой вперёд()', line, 'nojump');
@@ -345,6 +352,10 @@ const HeroWorld = (() => {
           yield { type: 'shrug', text: 'Тут нечего открывать' };
           throw new WorldError('Впереди нет закрытых ворот — открывать нечего. Перед этим проверь: ворота_впереди()', line, 'nogate');
         }
+        if ([...L.levers.values()].includes(k)) {
+          yield { type: 'shrug', text: 'Нет замка' };
+          throw gateError(st, a, line);
+        }
         // кодовый замок: нужен код с таблички, открыть(код)
         if (L.locks.has(k)) {
           if (!args.length) {
@@ -358,6 +369,23 @@ const HeroWorld = (() => {
         }
         st.opened.add(k);
         yield { type: 'open', x: a.x, z: a.z };
+        return null;
+      }),
+      'дернуть': fn('дёрнуть', 0, function* (args, line) {
+        const k = K(st.hero.x, st.hero.z);
+        if (!L.levers.has(k)) {
+          yield { type: 'shrug', text: 'Тут нет рычага' };
+          throw new WorldError('Здесь нет рычага, дёргать нечего. Рычаг стоит в нише у дороги: сначала зайди в неё.', line, 'nolever');
+        }
+        st.idle++;
+        tick(st, line);
+        yield { type: 'pull', x: st.hero.x, z: st.hero.z };
+        const gate = L.levers.get(k);
+        if (!st.opened.has(gate)) {
+          st.opened.add(gate);
+          const [gx, gz] = gate.split(',').map(Number);
+          yield { type: 'open', x: gx, z: gz };
+        }
         return null;
       }),
       'сказать': fn('сказать', 1, function* (args) {
