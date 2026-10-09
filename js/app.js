@@ -162,6 +162,8 @@
     rock: new THREE.MeshStandardMaterial({ color: 0x7e7090, flatShading: true, roughness: 1 }),
     stoneA: new THREE.MeshStandardMaterial({ color: 0x6c6690, flatShading: true, roughness: 0.95 }),
     stoneB: new THREE.MeshStandardMaterial({ color: 0x5d5880, flatShading: true, roughness: 0.95 }),
+    enemy: new THREE.MeshStandardMaterial({ color: 0xd9534f, emissive: 0x7a1f1a, emissiveIntensity: 0.25, flatShading: true, roughness: 0.6 }),
+    lane: new THREE.MeshStandardMaterial({ color: 0xe8806f, flatShading: true, roughness: 0.9 }),
     ice: new THREE.MeshStandardMaterial({ color: 0xbfe8ff, emissive: 0x4a90c8, emissiveIntensity: 0.18, flatShading: true, roughness: 0.25, metalness: 0.1 }),
     lava: new THREE.MeshStandardMaterial({ color: 0xff5a1f, emissive: 0xff3b0a, emissiveIntensity: 0.9, flatShading: true, roughness: 0.6 }),
     // золото и железо — почти без «металла»: отражать в сцене нечего (карты отражений нет), и металл темнеет до бурого.
@@ -231,6 +233,7 @@
   let flag = null, finishRing = null, boss = null;
   let gateMeshes = new Map(); // клетка ворот → створка
   let leverMeshes = new Map(); // клетка рычага → ручка
+  let enemyMeshes = []; // дозорные, по порядку level.enemies
 
   /* Герой. Облик (HeroGear.SKINS) — форма тела и головы; лицо, ноги и антенна двигаются одинаково у всех, поэтому
      каждая модель собирается из тех же именованных частей (heroParts). Модель можно собрать и для другой сцены
@@ -454,6 +457,7 @@
     coinMeshes = new Map();
     gateMeshes = new Map();
     leverMeshes = new Map();
+    enemyMeshes = [];
     particles.splice(0).forEach(p => scene.remove(p.m));
     const floorKeys = [...level.floor];
     const cells = floorKeys.map(k => k.split(',').map(Number));
@@ -594,6 +598,33 @@
       arm.add(stick, knob);
       levelGroup.add(base, arm);
       leverMeshes.set(k, arm);
+    });
+    // дозорные: красные плитки — их путь, сами дозорные стоят в начале пути
+    (level.enemies || []).forEach(e => {
+      new Set(e.path.map(c => K(c[0], c[1]))).forEach(k => {
+        const [x, z] = k.split(',').map(Number);
+        const m = new THREE.Mesh(boxGeo, M.lane);
+        m.scale.set(0.8, 0.03, 0.8);
+        m.position.set(x, 0.015, z);
+        m.receiveShadow = true;
+        levelGroup.add(m);
+      });
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.4, 8), M.enemy);
+      body.position.y = 0.2; body.castShadow = true;
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.3), M.enemy);
+      head.position.y = 0.52; head.castShadow = true;
+      [-0.08, 0.08].forEach(ex => {
+        const eye = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.04), M.coin);
+        eye.position.set(ex, 0.54, 0.16);
+        g.add(eye);
+      });
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 6), M.coin);
+      horn.position.y = 0.72;
+      g.add(body, head, horn);
+      g.position.set(e.path[0][0], 0, e.path[0][1]);
+      levelGroup.add(g);
+      enemyMeshes.push(g);
     });
     // финиш: флаг; на карте с боссом — Великий Сбой; спрятанный флаг не рисуется
     const f = level.finish;
@@ -1448,6 +1479,31 @@
         Sound.play('nope');
         glance(LOOK_AT.up, 800);
         await tween(360, t => { hero.rotation.z = Math.sin(t * Math.PI * 3) * 0.12; });
+        hero.rotation.z = 0;
+        return;
+      }
+      case 'patrol': {
+        Sound.play('step');
+        const moves = enemyMeshes.map((m, i) => ({ m, a: ev.from[i], b: ev.to[i] }));
+        await tween(320, t => moves.forEach(({ m, a, b }) => {
+          m.position.set(a[0] + (b[0] - a[0]) * ease(t), Math.sin(t * Math.PI) * 0.1, a[1] + (b[1] - a[1]) * ease(t));
+        }));
+        moves.forEach(({ m, b }) => m.position.set(b[0], 0, b[1]));
+        return;
+      }
+      case 'wait': {
+        say('Жду…', '', 700);
+        glance(LOOK_AT.ahead, 600);
+        await tween(380, t => { hero.position.y = Math.sin(t * Math.PI * 2) * 0.03; });
+        hero.position.y = 0;
+        return;
+      }
+      case 'caught': {
+        say('Попался!', 'bad', 1400);
+        Sound.play('bump');
+        face.ouch = 1;
+        if (!reduceMotion) cam.shake = 0.3;
+        await tween(400, t => { hero.rotation.z = Math.sin(t * Math.PI * 4) * 0.2; });
         hero.rotation.z = 0;
         return;
       }

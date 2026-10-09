@@ -23,7 +23,7 @@ const HeroWorld = (() => {
 
   function blankLevel() {
     return {
-      floor: new Set(), lava: new Set(), ice: new Set(), locks: new Map(), levers: new Map(), coins: new Set(), gates: new Set(), signs: new Map(),
+      floor: new Set(), lava: new Set(), ice: new Set(), locks: new Map(), levers: new Map(), enemies: [], coins: new Set(), gates: new Set(), signs: new Map(),
       start: { x: 0, z: 0, dir: 0 }, finish: { x: 0, z: 0 },
     };
   }
@@ -162,6 +162,7 @@ const HeroWorld = (() => {
       idle: 0, // проверок и поворотов подряд без единого шага
       steps: 0, // сколько раз Бит шагнул командой вперёд
       opened: new Set(), // открытые ворота
+      tick: 0, // сколько раз Бит что-то сделал: дозорные шагают по одному шагу на каждое действие
       visits: new Map(), // сколько раз Бит оказывался в одном и том же положении — чтобы поймать вечный цикл
       said: undefined, // что Бит сказал командой сказать()
     };
@@ -198,7 +199,7 @@ const HeroWorld = (() => {
   // Английские имена — мост к обычному Python. На картах english: true работают только они.
   const EN = {
     'вперед': 'move', 'налево': 'turn_left', 'направо': 'turn_right', 'взять': 'take', 'прыгнуть': 'jump',
-    'открыть': 'open_gate', 'дернуть_рычаг': 'pull_lever', 'сказать': 'say',
+    'открыть': 'open_gate', 'дернуть_рычаг': 'pull_lever', 'ждать': 'wait', 'враг_впереди': 'enemy_in_front', 'сказать': 'say',
     'стена_впереди': 'wall_in_front', 'стена_слева': 'wall_on_left', 'стена_справа': 'wall_on_right',
     'лава_впереди': 'lava_in_front', 'ворота_впереди': 'gate_in_front', 'есть_монета': 'coin_here',
     'на_финише': 'at_goal', 'монет_собрано': 'coins_taken', 'табличка': 'read_sign',
@@ -219,9 +220,11 @@ const HeroWorld = (() => {
   function tick(st, line) {
     const h = st.hero, f = st.level.finish;
     if (h.x === f.x && h.z === f.z) return;
-    const key = `${h.x},${h.z},${h.dir},${st.collected},${st.opened.size}`;
+    const key = `${h.x},${h.z},${h.dir},${st.collected},${st.opened.size},${st.level.enemies.length ? st.tick % 8 : ''}`;
     const n = (st.visits.get(key) || 0) + 1;
     st.visits.set(key, n);
+    if (n > LOOP_LIMIT && st.level.enemies.length)
+      throw new WorldError(`Похоже, цикл никогда не закончится: Бит стоит и смотрит, а дозорный не шагает. Время идёт, только когда Бит что-то делает. Чтобы подождать, есть команда ${st.level.english ? 'wait()' : 'ждать()'}.`, line, 'loop');
     if (n > LOOP_LIMIT)
       throw new WorldError('Похоже, цикл никогда не закончится: Бит снова и снова делает одно и то же на одном месте. Проверь, что в цикле что-то меняется — например, есть шаг вперёд().', line, 'loop');
   }
@@ -237,6 +240,24 @@ const HeroWorld = (() => {
     if ([...st.level.levers.values()].includes(k))
       return new WorldError('Ворота закрыты, и открыть() им не поможет: замка у них нет. Их открывает рычаг где-то рядом с дорогой: встань на него и дёрни: дёрнуть_рычаг()', line, 'lever');
     return new WorldError(jump ? 'Через закрытые ворота не перепрыгнуть. Открой их: открыть()' : 'Ворота закрыты. Сначала открой их: открыть()', line, 'gate');
+  }
+  // Дозорные: ходят по кругу (path — клетки по порядку), каждый на один шаг после любого действия Бита.
+  // Сначала действует Бит, потом дозорные: если Бит оказался на дозорном или дозорный пришёл к нему — это беда
+  const enemyCells = (L, t) => L.enemies.map(e => e.path[t % e.path.length]);
+  const onHero = (st, cells) => cells.some(c => c[0] === st.hero.x && c[1] === st.hero.z);
+  function* afterAction(st, line) {
+    const L = st.level;
+    if (!L.enemies.length) return;
+    const caught = function* () {
+      yield { type: 'caught' };
+      throw new WorldError(`Дозорный задел Бита! Перед шагом проверь, не идёт ли он сюда: ${L.english ? 'enemy_in_front()' : 'враг_впереди()'}. Идёт — подожди: ${L.english ? 'wait()' : 'ждать()'}.`, line, 'caught');
+    };
+    if (onHero(st, enemyCells(L, st.tick))) yield* caught();
+    const from = enemyCells(L, st.tick);
+    st.tick++;
+    const to = enemyCells(L, st.tick);
+    yield { type: 'patrol', from, to };
+    if (onHero(st, to)) yield* caught();
   }
   // Датчик: вопрос Биту, ответ показывается в облачке; look — куда Бит при этом смотрит (ahead, left, right, down, up)
   function sense(st, line, text, value, look = 'ahead') {
@@ -291,6 +312,7 @@ const HeroWorld = (() => {
           st.idle = 0; st.moved = true; st.steps++;
           yield* slide(st, line);
           if (arrive(st, line)) { yield { type: 'win' }; throw new WinSignal(); }
+          yield* afterAction(st, line);
         }
         return null;
       }),
@@ -344,6 +366,7 @@ const HeroWorld = (() => {
         if (ct === 'lava') { yield { type: 'burn' }; throw new WorldError('Герой приземлился в лаву!', line, 'lava'); }
         yield* slide(st, line);
         if (arrive(st, line)) { yield { type: 'win' }; throw new WinSignal(); }
+        yield* afterAction(st, line);
         return null;
       }),
       'открыть': fn('открыть', [0, 1], function* (args, line) {
@@ -388,6 +411,12 @@ const HeroWorld = (() => {
         }
         return null;
       }),
+      'ждать': fn('ждать', 0, function* (args, line) {
+        st.idle++;
+        tick(st, line);
+        yield { type: 'wait' };
+        return null;
+      }),
       'сказать': fn('сказать', 1, function* (args) {
         st.said = args[0];
         st.idle++;
@@ -422,6 +451,13 @@ const HeroWorld = (() => {
         yield sense(st, line, `лава впереди? ${yesNo(v)}`, v);
         return v;
       }),
+      'враг_впереди': fn('враг_впереди', 0, function* (args, line) {
+        // враг на клетке впереди сейчас или шагнёт на неё после следующего действия
+        const a = ahead(st), at = c => c[0] === a.x && c[1] === a.z;
+        const v = enemyCells(L, st.tick).some(at) || enemyCells(L, st.tick + 1).some(at);
+        yield sense(st, line, `враг впереди? ${yesNo(v)}`, v);
+        return v;
+      }),
       'ворота_впереди': fn('ворота_впереди', 0, function* (args, line) {
         const a = ahead(st), v = cellOf(st, a.x, a.z) === 'gate';
         yield sense(st, line, `ворота впереди? ${yesNo(v)}`, v);
@@ -443,6 +479,15 @@ const HeroWorld = (() => {
         return st.collected;
       }),
     };
+    // После этих действий дозорные делают шаг (у вперёд() и прыгнуть() — внутри самих команд)
+    if (L.enemies.length) ['налево', 'направо', 'взять', 'открыть', 'дернуть_рычаг', 'сказать', 'ждать'].forEach(name => {
+      const o = cmds[name];
+      cmds[name] = fn(o.name, o.arity, function* (args, line, kw) {
+        const r = yield* o.fn(args, line, kw);
+        yield* afterAction(st, line);
+        return r;
+      });
+    });
     // Те же команды по-английски: move() — это вперёд()
     for (const [ru, en] of Object.entries(EN)) cmds[en] = { ...cmds[ru], name: en };
     if (L.english) for (const [ru, en] of Object.entries(EN)) {

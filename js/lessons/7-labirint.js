@@ -4,7 +4,7 @@
    С 3-го задания Бит понимает только английские команды (english: true) — мост к обычному Python.
    Анимация в лабиринте долгая, поэтому fast: 3 — задания идут втрое быстрее. */
 (() => {
-  const { K, maze, handWalk } = HeroWorld;
+  const { K, randInt, blankLevel, maze, handWalk, runSilent } = HeroWorld;
   const RU = ['вперёд()', 'налево()', 'направо()', 'взять()', 'стена_впереди()', 'стена_справа()', 'стена_слева()', 'есть_монета()', 'на_финише()'];
   const EN = ['move()', 'turn_left()', 'turn_right()', 'take()', 'wall_in_front()', 'wall_on_right()', 'wall_on_left()', 'coin_here()', 'at_goal()', 'say()'];
 
@@ -42,6 +42,31 @@
       const coins = new Set([only[Math.floor(r() * only.length)], ...sample(r, left, 1)]);
       coins.forEach(k => L.coins.add(k));
       L.english = true;
+      return L;
+    }
+  }
+
+  // Дозорные: прямая дорога, на ней 1–2 перекрёстка, через которые ходит дозорный (вверх-вниз по боковой дороге).
+  // Фазу подбираем так, чтобы идти не глядя было нельзя: проверяем это самой игрой
+  const PATROL = [-2, -1, 0, 1, 2, 1, 0, -1];
+  const BLIND = 'while not at_goal():\n    move()\n';
+  function genPatrol(r) {
+    for (let guard = 0; guard < 300; guard++) {
+      const L = blankLevel();
+      const n = randInt(r, 10, 13), count = randInt(r, 1, 2);
+      for (let x = 0; x <= n; x++) L.floor.add(K(x, 0));
+      const xs = sample(r, Array.from({ length: n - 3 }, (_, i) => i + 2), count).sort((a, b) => a - b);
+      if (xs.some((x, i) => i && x - xs[i - 1] < 3)) continue;
+      xs.forEach(x => {
+        const phase = randInt(r, 0, 7);
+        PATROL.forEach(z => L.floor.add(K(x, z)));
+        L.enemies.push({ path: PATROL.map((_, i) => [x, PATROL[(i + phase) % 8]]) });
+      });
+      L.finish = { x: n, z: 0 };
+      L.english = true;
+      L.sig = `${n}|${xs.join(',')}|${L.enemies.map(e => e.path[0][1]).join('')}`;
+      const blind = runSilent(BLIND, L);
+      if (blind.ok || blind.kind !== 'caught') continue;
       return L;
     }
   }
@@ -197,6 +222,24 @@
         star3: 'first',
         fast: 3,
         gen: r => genMaze(r, 3, 4, { extra: { english: true, broken: ['turn_right'] } }),
+      },
+      {
+        id: 'l-patrol',
+        short: 'Дозорные',
+        title: 'Дозорные',
+        goal: 'На дороге перекрёстки, а через них ходит дозорный: вверх-вниз, по кругу. Красные клетки — его путь. Пройди к флагу, не попавшись ему. Только английские команды.',
+        news: 'Дозорный шагает после каждого действия Бита: шага, поворота, ожидания. enemy_in_front() — дозорный на клетке впереди или вот-вот придёт на неё. wait() — постоять на месте.',
+        cmds: [...EN, 'enemy_in_front()', 'wait()'],
+        starter: '# Дозорный ходит по кругу. Идти не глядя нельзя.\nwhile not at_goal():\n    move()\n',
+        hints: [
+          'Бит должен смотреть, свободна ли клетка впереди. Занята — подожди: дозорный пройдёт, и путь откроется.',
+          'Перед каждым шагом: пока впереди дозорный, ждать. Это ещё один while внутри первого.',
+          'while not at_goal():\n    while enemy_in_front():\n        wait()\n    move()',
+        ],
+        best: 5,
+        star3: 'first',
+        fast: 3,
+        gen: r => genPatrol(r),
       },
       {
         id: 'l-boss',

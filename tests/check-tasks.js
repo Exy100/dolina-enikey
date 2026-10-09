@@ -54,6 +54,7 @@ Object.assign(ALSO_OK, {
   'v-sign': ['нужно = табличка()\nwhile монет_собрано() < нужно:\n    вперёд()\n    if есть_монета():\n        взять()\nwhile not на_финише():\n    вперёд()\n'], // два цикла
   'v-lock': ['код = табличка()\nwhile not на_финише():\n    if ворота_впереди():\n        открыть(код)\n    else:\n        вперёд()\n'], // один цикл
   'v-corners': ['while not на_финише():\n    вперёд(табличка())\n    налево()\n'], // без переменной
+  'l-patrol': ['while not at_goal():\n    if enemy_in_front():\n        wait()\n    else:\n        move()\n'], // if/else вместо вложенного while
   'l-right': ['while not на_финише():\n    if not стена_слева():\n        налево()\n        вперёд()\n    elif not стена_впереди():\n        вперёд()\n    else:\n        направо()\n'], // левая рука
   'l-broken': ['while not at_goal():\n    if not wall_on_right():\n        turn_left()\n        turn_left()\n        turn_left()\n        move()\n    elif not wall_in_front():\n        move()\n    else:\n        turn_left()\n'], // без своего приёма
   'f-lever': ['def развернуться():\n    налево()\n    налево()\n\ndef рычаг():\n    налево()\n    вперёд()\n    дёрнуть_рычаг()\n    развернуться()\n    вперёд()\n    налево()\n\nwhile not на_финише():\n    вперёд()\n    if not стена_слева():\n        рычаг()\n'], // проверка после шага: ниш на старте нет
@@ -141,6 +142,8 @@ Object.assign(WRONG, {
   'l-left': [[RIGHT_EN_COINS, 'coins']], // правая рука пропускает монету
   'l-broken': [['STARTER', 'broken']],
   'l-boss': [[RIGHT_RU, 'english']],
+  'l-patrol': [['STARTER', 'caught'], // идёт не глядя
+    ['while not at_goal():\n    if not enemy_in_front():\n        move()\n', 'loop']], // смотрит, но не ждёт: время стоит
   // задания со звёздочкой
   'k-star': [['вперёд()\nпрыгнуть()\nвперёд(2)\nналево()\nвперёд(3)\nвзять()\nналево()\nвперёд()\nпрыгнуть()\nвперёд()\n', 'coins'], // забыл первую монету
     ['вперёд()\nпрыгнуть()\nвперёд(2)\nвзять()\nнаправо()\nвперёд(3)\n', 'wall']],
