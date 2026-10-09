@@ -23,14 +23,14 @@ const HeroWorld = (() => {
 
   function blankLevel() {
     return {
-      floor: new Set(), lava: new Set(), coins: new Set(), gates: new Set(), signs: new Map(),
+      floor: new Set(), lava: new Set(), ice: new Set(), coins: new Set(), gates: new Set(), signs: new Map(),
       start: { x: 0, z: 0, dir: 0 }, finish: { x: 0, z: 0 },
     };
   }
 
   /* ---- Помощники для карт ---- */
   // Карта-рисунок: строки сверху вниз — ряды клеток с севера на юг.
-  // .  пол    $  монета    ~  лава    G  ворота    1–9  табличка с числом    F  флаг    @  флаг с монетой
+  // .  пол    $  монета    ~  лава    I  лёд    G  ворота    1–9  табличка с числом    F  флаг    @  флаг с монетой
   // > ^ < v  старт (куда смотрит герой)    пробел или #  стена
   function fromAscii(rows) {
     const L = blankLevel();
@@ -42,6 +42,7 @@ const HeroWorld = (() => {
       L.floor.add(k);
       if (ch === '$') L.coins.add(k);
       else if (ch === '~') L.lava.add(k);
+      else if (ch === 'I') L.ice.add(k);
       else if (ch === 'G') L.gates.add(k);
       else if (/[1-9]/.test(ch)) L.signs.set(k, Number(ch));
       else if (ch === 'F' || ch === '@') {
@@ -237,6 +238,23 @@ const HeroWorld = (() => {
     return { type: 'check', text, value, look };
   }
 
+  // Лёд: ступил на него — скользишь дальше в ту же сторону, пока лёд не кончится или впереди не встанет стена.
+  // Лава на пути не останавливает: Бит заедет прямо в неё. Флаг и ворота (закрытые) — не лёд, на них и у них Бит останавливается.
+  function* slide(st, line) {
+    const L = st.level;
+    while (L.ice.has(K(st.hero.x, st.hero.z))) {
+      const to = ahead(st), c = cellOf(st, to.x, to.z);
+      if (c === 'wall' || c === 'gate') break;
+      const from = { ...st.hero };
+      st.hero.x = to.x; st.hero.z = to.z;
+      yield { type: 'move', from, to, slide: true };
+      if (c === 'lava') {
+        yield { type: 'burn' };
+        throw new WorldError('Ой! Бит скользил по льду и заехал прямо в лаву. На льду шаг не остановить: убедись, что за ним нет лавы.', line, 'lava');
+      }
+    }
+  }
+
   function commands(st) {
     const L = st.level;
     const cmds = {
@@ -264,6 +282,7 @@ const HeroWorld = (() => {
           }
           yield { type: 'move', from, to };
           st.idle = 0; st.moved = true; st.steps++;
+          yield* slide(st, line);
           if (arrive(st, line)) { yield { type: 'win' }; throw new WinSignal(); }
         }
         return null;
@@ -316,6 +335,7 @@ const HeroWorld = (() => {
         yield { type: 'jump', from, to };
         st.idle = 0; st.moved = true;
         if (ct === 'lava') { yield { type: 'burn' }; throw new WorldError('Герой приземлился в лаву!', line, 'lava'); }
+        yield* slide(st, line);
         if (arrive(st, line)) { yield { type: 'win' }; throw new WinSignal(); }
         return null;
       }),

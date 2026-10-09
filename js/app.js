@@ -162,6 +162,7 @@
     rock: new THREE.MeshStandardMaterial({ color: 0x7e7090, flatShading: true, roughness: 1 }),
     stoneA: new THREE.MeshStandardMaterial({ color: 0x6c6690, flatShading: true, roughness: 0.95 }),
     stoneB: new THREE.MeshStandardMaterial({ color: 0x5d5880, flatShading: true, roughness: 0.95 }),
+    ice: new THREE.MeshStandardMaterial({ color: 0xbfe8ff, emissive: 0x4a90c8, emissiveIntensity: 0.18, flatShading: true, roughness: 0.25, metalness: 0.1 }),
     lava: new THREE.MeshStandardMaterial({ color: 0xff5a1f, emissive: 0xff3b0a, emissiveIntensity: 0.9, flatShading: true, roughness: 0.6 }),
     // золото и железо — почти без «металла»: отражать в сцене нечего (карты отражений нет), и металл темнеет до бурого.
     // Блеск даёт блик солнца, тёплый цвет — свечение. Так же в gear.js и на острове героя
@@ -470,6 +471,8 @@
       const k = K(x, z);
       if (level.lava.has(k)) {
         addBlock(x, z, 0.8, -0.14, [M.rock, M.rock, M.lava, M.rock, M.rock, M.rock]);
+      } else if (level.ice && level.ice.has(k)) {
+        addBlock(x, z, 0.9, -0.04, [M.dirt, M.dirt, M.ice, M.dirt, M.dirt, M.dirt]);
       } else {
         const g = (x + z) % 2 === 0 ? M.grassA : M.grassB;
         addBlock(x, z, 0.9 + hash(x, z) * 0.25, 0, [M.dirt, M.dirt, g, M.dirt, M.dirt, M.dirt]);
@@ -1307,8 +1310,14 @@
         await wait(380);
         return;
       case 'move': {
-        Sound.play('step');
         const fx = ev.from.x, fz = ev.from.z, tx = ev.to.x, tz = ev.to.z;
+        if (ev.slide) { // скользит по льду: быстро, без шагов
+          sparks(fx, fz, 0xcfefff, 3);
+          await tween(170, t => { heroRig.position.set(fx + (tx - fx) * t, 0, fz + (tz - fz) * t); });
+          trailStep(ev.from, ev.to);
+          return;
+        }
+        Sound.play('step');
         dust(fx, fz, 4);
         await tween(360, t => {
           const e = ease(t);
