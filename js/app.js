@@ -1500,7 +1500,8 @@
   /* ================= Редактор ================= */
   const ta = $('#code'), hl = $('#hl'), gutter = $('#gutter'), band = $('#band');
   // команды героя по-русски и по-английски (move() — это вперёд())
-  const HERO_CMDS = ['вперёд', ...Object.keys(HeroWorld.EN), ...Object.values(HeroWorld.EN)];
+  // имена в EN — без «ё» (как в интерпретаторе), поэтому в коде ученика «ё» заменяем на «е» перед сравнением
+  const HERO_CMDS = [...Object.keys(HeroWorld.EN), ...Object.values(HeroWorld.EN)];
   const KWS = ['for', 'in', 'if', 'elif', 'else', 'while', 'and', 'or', 'not', 'True', 'False', 'None', 'pass', 'break', 'continue', 'def', 'return'];
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const tokRe = new RegExp(
@@ -1513,7 +1514,7 @@
       else if (str) out += `<span class="t-str">${esc(str)}</span>`;
       else if (num) out += `<span class="t-num">${num}</span>`;
       else if (KWS.includes(name)) out += `<span class="t-kw">${name}</span>`;
-      else if (HERO_CMDS.includes(name)) out += `<span class="t-hero">${name}</span>`;
+      else if (HERO_CMDS.includes(name.replace(/ё/g, 'е'))) out += `<span class="t-hero">${name}</span>`;
       else if (['print', 'input', 'range', 'len', 'str', 'int', 'abs'].includes(name)) out += `<span class="t-fn">${name}</span>`;
       else out += esc(name);
       lastI = off + m.length;

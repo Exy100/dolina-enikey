@@ -198,7 +198,7 @@ const HeroWorld = (() => {
   // Английские имена — мост к обычному Python. На картах english: true работают только они.
   const EN = {
     'вперед': 'move', 'налево': 'turn_left', 'направо': 'turn_right', 'взять': 'take', 'прыгнуть': 'jump',
-    'открыть': 'open_gate', 'дернуть': 'pull_lever', 'сказать': 'say',
+    'открыть': 'open_gate', 'дернуть_рычаг': 'pull_lever', 'сказать': 'say',
     'стена_впереди': 'wall_in_front', 'стена_слева': 'wall_on_left', 'стена_справа': 'wall_on_right',
     'лава_впереди': 'lava_in_front', 'ворота_впереди': 'gate_in_front', 'есть_монета': 'coin_here',
     'на_финише': 'at_goal', 'монет_собрано': 'coins_taken', 'табличка': 'read_sign',
@@ -235,7 +235,7 @@ const HeroWorld = (() => {
   function gateError(st, at, line, jump) {
     const k = K(at.x, at.z);
     if ([...st.level.levers.values()].includes(k))
-      return new WorldError('Ворота закрыты, и открыть() им не поможет: замка у них нет. Их открывает рычаг где-то рядом с дорогой: встань на него и дёрни: дёрнуть()', line, 'lever');
+      return new WorldError('Ворота закрыты, и открыть() им не поможет: замка у них нет. Их открывает рычаг где-то рядом с дорогой: встань на него и дёрни: дёрнуть_рычаг()', line, 'lever');
     return new WorldError(jump ? 'Через закрытые ворота не перепрыгнуть. Открой их: открыть()' : 'Ворота закрыты. Сначала открой их: открыть()', line, 'gate');
   }
   // Датчик: вопрос Биту, ответ показывается в облачке; look — куда Бит при этом смотрит (ahead, left, right, down, up)
@@ -371,7 +371,7 @@ const HeroWorld = (() => {
         yield { type: 'open', x: a.x, z: a.z };
         return null;
       }),
-      'дернуть': fn('дёрнуть', 0, function* (args, line) {
+      'дернуть_рычаг': fn('дёрнуть_рычаг', 0, function* (args, line) {
         const k = K(st.hero.x, st.hero.z);
         if (!L.levers.has(k)) {
           yield { type: 'shrug', text: 'Тут нет рычага' };
