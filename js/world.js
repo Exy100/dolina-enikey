@@ -23,7 +23,7 @@ const HeroWorld = (() => {
 
   function blankLevel() {
     return {
-      floor: new Set(), lava: new Set(), ice: new Set(), coins: new Set(), gates: new Set(), signs: new Map(),
+      floor: new Set(), lava: new Set(), ice: new Set(), locks: new Map(), coins: new Set(), gates: new Set(), signs: new Map(),
       start: { x: 0, z: 0, dir: 0 }, finish: { x: 0, z: 0 },
     };
   }
@@ -339,11 +339,22 @@ const HeroWorld = (() => {
         if (arrive(st, line)) { yield { type: 'win' }; throw new WinSignal(); }
         return null;
       }),
-      'открыть': fn('открыть', 0, function* (args, line) {
+      'открыть': fn('открыть', [0, 1], function* (args, line) {
         const a = ahead(st), k = K(a.x, a.z);
         if (cellOf(st, a.x, a.z) !== 'gate') {
           yield { type: 'shrug', text: 'Тут нечего открывать' };
           throw new WorldError('Впереди нет закрытых ворот — открывать нечего. Перед этим проверь: ворота_впереди()', line, 'nogate');
+        }
+        // кодовый замок: нужен код с таблички, открыть(код)
+        if (L.locks.has(k)) {
+          if (!args.length) {
+            yield { type: 'shrug', text: 'Нужен код' };
+            throw new WorldError('На воротах кодовый замок. Код написан на табличке в начале пути: запомни его в переменную и открой так: открыть(код)', line, 'code');
+          }
+          if (args[0] !== L.locks.get(k)) {
+            yield { type: 'shrug', text: 'Не тот код' };
+            throw new WorldError(`Замок не открылся: код ${repr(args[0])} не подходит. Прочитай число с таблички — табличка() — и открой им.`, line, 'wrongcode');
+          }
         }
         st.opened.add(k);
         yield { type: 'open', x: a.x, z: a.z };

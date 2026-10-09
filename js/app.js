@@ -530,6 +530,15 @@
         bar.position.x = bx;
         door.add(bar);
       });
+      // кодовый замок: золотой замок с дужкой на обеих сторонах створки (уходит вниз вместе с ней)
+      if (level.locks && level.locks.has(k)) [1, -1].forEach(sd => {
+        const lock = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.22, 0.08), M.coin);
+        lock.position.set(0, 0, sd * 0.14);
+        const shackle = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.025, 6, 12, Math.PI), M.coin);
+        shackle.position.set(0, 0.11, 0);
+        lock.add(shackle);
+        door.add(lock);
+      });
       g.add(door);
       // столбы и перекладина сверху: с камеры, которая смотрит вдоль створки, ворота видно по ним
       [-0.47, 0.47].forEach(px => {
