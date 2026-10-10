@@ -233,6 +233,10 @@
      цвет граней — в самой форме (серый камень, мох на верхушке, тень у земли). Ставятся InstancedMesh по форме */
   Object.assign(M, {
     boulder: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, flatShading: true, roughness: 0.92 }),
+    // лиственные деревья: крона теплее и желтее, чем у ёлок (M.leaf), два оттенка — чтобы соседние не сливались
+    leafB: new THREE.MeshStandardMaterial({ color: 0x7cbf4a, flatShading: true, roughness: 0.9 }),
+    leafC: new THREE.MeshStandardMaterial({ color: 0x93c952, flatShading: true, roughness: 0.9 }),
+    apple: new THREE.MeshStandardMaterial({ color: 0xe8453a, emissive: 0x6a0f0a, emissiveIntensity: 0.25, roughness: 0.5 }),
     moss: new THREE.MeshStandardMaterial({ color: 0x7c9c5a, flatShading: true, roughness: 1 }), // земля под камнями: темнее дороги
     bush: new THREE.MeshStandardMaterial({ color: 0x3f9a5a, flatShading: true, roughness: 0.9 }),
     berry: new THREE.MeshStandardMaterial({ color: 0xe2465a, emissive: 0x6a0f1a, emissiveIntensity: 0.3, roughness: 0.5 }),
@@ -445,10 +449,10 @@
   let night = false;
   const LOOK = {
     day: { hemi: [0xffe6d4, 0x7a5f8a, 0.6], sun: [0xffd9b0, 0.82], grassA: 0x86c76a, grassB: 0x79bb5f, dirt: 0xb08258, rock: 0x7e7090, stoneA: 0x6c6690, stoneB: 0x5d5880, leaf: 0x4cb070, coinGlow: 0.35, flagGlow: 0, lava: 1,
-      boulder: 0xffffff, moss: 0x7c9c5a, water: [0x58c2ea, 0xf2fbff, 0.88], pool: [0x3aa6d8, 0x0f5f8f],
+      boulder: 0xffffff, moss: 0x7c9c5a, leafB: 0x7cbf4a, leafC: 0x93c952, water: [0x58c2ea, 0xf2fbff, 0.88], pool: [0x3aa6d8, 0x0f5f8f],
       under: 0xffffff, underBit: 0x8a7aa0, cloud: 0xffffff, cloudGlow: 0xffe4ea, cloudGlowK: 0.62, cloudOp: 1 },
     night: { hemi: [0xb4bff2, 0x3a2f60, 0.62], sun: [0xc9d0ff, 0.5], grassA: 0x5aaa6c, grassB: 0x4f9e61, dirt: 0x87624a, rock: 0x6a6088, stoneA: 0x58557f, stoneB: 0x4e4b72, leaf: 0x3a9461, coinGlow: 0.8, flagGlow: 0.3, lava: 1.3,
-      boulder: 0x9894bc, moss: 0x3f6a50, water: [0x2f7fb8, 0xbfe6ff, 0.8], pool: [0x2a5f96, 0x10365e],
+      boulder: 0x9894bc, moss: 0x3f6a50, leafB: 0x4f9a4c, leafC: 0x5ea652, water: [0x2f7fb8, 0xbfe6ff, 0.8], pool: [0x2a5f96, 0x10365e],
       under: 0x8e86b4, underBit: 0x5c547e, cloud: 0x51487a, cloudGlow: 0x221a44, cloudGlowK: 0.5, cloudOp: 0.7 },
   };
   function applyNight() {
@@ -461,7 +465,7 @@
     M.coin.emissiveIntensity = L.coinGlow;
     M.flag.emissive.setHex(0x1fa88f); M.flag.emissiveIntensity = L.flagGlow;
     M.under.color.setHex(L.under); M.underBit.color.setHex(L.underBit);
-    M.boulder.color.setHex(L.boulder); M.moss.color.setHex(L.moss); M.pool.color.setHex(L.pool[0]); M.pool.emissive.setHex(L.pool[1]);
+    M.boulder.color.setHex(L.boulder); M.moss.color.setHex(L.moss); M.leafB.color.setHex(L.leafB); M.leafC.color.setHex(L.leafC); M.pool.color.setHex(L.pool[0]); M.pool.emissive.setHex(L.pool[1]);
     WATER.uniforms.deep.value.setHex(L.water[0]); WATER.uniforms.foam.value.setHex(L.water[1]); WATER.uniforms.op.value = L.water[2];
     cloudMats.forEach((m, i) => { m.color.setHex(L.cloud); m.emissive.setHex(L.cloudGlow); m.emissiveIntensity = L.cloudGlowK; m.opacity = CLOUD_LAYERS[i].op * L.cloudOp; });
   }
@@ -952,6 +956,14 @@
         if (r > 0.4) pebble(r3 > 0.5 ? 0.34 : -0.34, r2 > 0.5 ? 0.32 : -0.32, 0.1);
         return;
       }
+      if (r < 0.2 && r2 < 0.45) { // лиственное дерево: круглая крона из нескольких комков
+        const g = new THREE.Group();
+        g.position.set(x, 0, z); g.rotation.y = r3 * 6.28;
+        makeLeafTree(g, r3);
+        levelGroup.add(g);
+        if (r3 > 0.6) pebble(-0.3, 0.3, 0.09);
+        return;
+      }
       if (r < 0.2) {
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.35, 6), M.trunk);
         trunk.position.set(x, 0.17, z); trunk.castShadow = true;
@@ -1004,6 +1016,15 @@
     [[0, 0.17, 0, 0.21], [0.16, 0.12, 0.07, 0.15], [-0.15, 0.12, -0.05, 0.16], [0.02, 0.1, -0.17, 0.12]].forEach(([x, y, z, s]) => part(g, NATURE.blob, M.bush, x, y, z, s, s * 0.85, s));
     [[0.1, 0.3, 0.12], [-0.14, 0.24, 0.1], [0.2, 0.2, -0.05], [-0.05, 0.22, -0.2], [0.04, 0.36, -0.02]].slice(0, 3 + Math.floor(r * 3))
       .forEach(([x, y, z]) => part(g, NATURE.berry, M.berry, x, y, z, 1, 1, 1, false));
+  }
+  function makeLeafTree(g, r) { // ствол с веткой, крона из 4–5 комков; на каждом третьем — яблоки
+    const leaf = r > 0.5 ? M.leafB : M.leafC, s = 1.08 + r * 0.17;
+    part(g, NATURE.stem, M.trunk, 0, 0.22, 0, 0.075, 0.44, 0.075);
+    const br = part(g, NATURE.stem, M.trunk, 0.06, 0.4, 0, 0.03, 0.18, 0.03);
+    br.rotation.z = -0.7;
+    [[0, 0.74, 0, 0.3], [0.17, 0.64, 0.07, 0.21], [-0.16, 0.66, -0.05, 0.22], [0.03, 0.9, -0.03, 0.2], [-0.05, 0.62, 0.17, 0.18]].forEach(([x, y, z, k]) =>
+      part(g, NATURE.blob, leaf, x * s, y * s, z * s, k * s, k * s * 0.88, k * s));
+    if (r < 0.34) [[0.3, 0.62, 0.12], [-0.3, 0.7, 0.08], [0.1, 0.68, -0.3], [-0.06, 0.8, 0.3], [0.2, 0.88, -0.14]].forEach(([x, y, z]) => part(g, NATURE.berry, M.apple, x * s, y * s, z * s, 1.6, 1.6, 1.6, false));
   }
   function makeMushrooms(g, r) { // грибы: красные в белый горошек и один бурый
     [[0, 0, 0.16, 0.11, M.cap], [0.17, 0.08, 0.11, 0.08, M.cap], [-0.13, 0.12, 0.09, 0.07, M.capBrown]].slice(0, 2 + (r > 0.4 ? 1 : 0)).forEach(([x, z, h, c, cap]) => {
