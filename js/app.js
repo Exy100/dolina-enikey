@@ -243,6 +243,17 @@
     petals: [0xffd166, 0xff8fb8, 0xfff4f0, 0xb79cff].map(c => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.12, flatShading: true, roughness: 0.8 })),
     pool: new THREE.MeshStandardMaterial({ color: 0x3aa6d8, emissive: 0x0f5f8f, emissiveIntensity: 0.3, roughness: 0.15 }),
     fstone: new THREE.MeshStandardMaterial({ color: 0xe6dccf, flatShading: true, roughness: 0.85 }), // светлый камень фонтана
+    // спутниковые тарелки и упавшая НЛО: металл почти без metalness (отражать нечего), блеск даёт солнце
+    dish: new THREE.MeshStandardMaterial({ color: 0xf3f0ff, flatShading: true, roughness: 0.45, metalness: 0.1, side: THREE.DoubleSide }),
+    dishLamp: new THREE.MeshStandardMaterial({ color: 0xff5a4a, emissive: 0xff2a1a, emissiveIntensity: 0.8 }),
+    ufo: new THREE.MeshStandardMaterial({ color: 0xc8c6dc, flatShading: true, roughness: 0.35, metalness: 0.15 }),
+    ufoGlass: new THREE.MeshStandardMaterial({ color: 0x7ef0d6, emissive: 0x1fb89a, emissiveIntensity: 0.45, roughness: 0.1, transparent: true, opacity: 0.8 }),
+    ufoLights: [0xffd166, 0x5be3c6].map(c => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.9 })),
+    soil: new THREE.MeshStandardMaterial({ color: 0x6e5040, flatShading: true, roughness: 1 }), // сырая земля: у НЛО и берег озерца
+    reed: new THREE.MeshStandardMaterial({ color: 0x6f9a3c, flatShading: true, roughness: 0.9 }),
+    cattail: new THREE.MeshStandardMaterial({ color: 0x7a4a2a, flatShading: true, roughness: 0.9 }),
+    lily: new THREE.MeshStandardMaterial({ color: 0x4fa85a, flatShading: true, roughness: 0.8, side: THREE.DoubleSide }),
+    smoke: [0, 1, 2].map(() => new THREE.MeshStandardMaterial({ color: 0x9a94a8, flatShading: true, roughness: 1, transparent: true, opacity: 0.5, depthWrite: false })),
     ripple: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }),
   });
   const keep = g => { g.userData.keep = true; return g; }; // общая геометрия: не выбрасывать вместе с картой
@@ -291,6 +302,14 @@
     }
     return { big: [1, 2, 3, 4, 5, 6].map(i => rock(i, 2)), small: [7, 8, 9].map(i => rock(i, 1)) };
   })();
+  function blobShape(r, seed) { // неровный круг в плоскости XZ
+    const sh = new THREE.Shape();
+    for (let i = 0; i <= 20; i++) {
+      const a = i / 20 * Math.PI * 2, k = r * (1 + 0.12 * Math.sin(a * 3 + seed) + 0.06 * Math.sin(a * 5 + seed * 2));
+      i ? sh.lineTo(Math.cos(a) * k, Math.sin(a) * k) : sh.moveTo(Math.cos(a) * k, Math.sin(a) * k);
+    }
+    return new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2);
+  }
   const NATURE = {
     blob: keep(new THREE.IcosahedronGeometry(1, 1)),
     berry: keep(new THREE.SphereGeometry(0.035, 6, 5)),
@@ -306,6 +325,20 @@
     column: keep(new THREE.CylinderGeometry(0.055, 0.08, 0.24, 8)),
     bowl: keep(new THREE.LatheGeometry([[0, 0], [0.05, 0], [0.17, 0.06], [0.19, 0.095], [0.16, 0.095], [0, 0.05]].map(([x, y]) => new THREE.Vector2(x, y)), 8)),
     knob: keep(new THREE.OctahedronGeometry(0.035, 0)),
+    // спутниковая тарелка: чаша-парабола, стойка, облучатель на трёх штангах
+    dishBowl: keep(new THREE.LatheGeometry([0, 0.04, 0.08, 0.12, 0.16, 0.19, 0.2].map(r => new THREE.Vector2(r, r * r * 1.6)), 16)),
+    post: keep(new THREE.CylinderGeometry(1, 1, 1, 6)),
+    box: keep(new THREE.BoxGeometry(1, 1, 1)),
+    // НЛО: плоская тарелка с бортиком, сверху стеклянный купол
+    saucer: keep(new THREE.LatheGeometry([[0, -0.05], [0.26, -0.03], [0.34, 0], [0.3, 0.025], [0.13, 0.05], [0, 0.055]].map(([x, y]) => new THREE.Vector2(x, y)), 14)),
+    dome: keep(new THREE.SphereGeometry(0.12, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2)),
+    bulb: keep(new THREE.SphereGeometry(0.022, 6, 4)),
+    // озерцо: неровное пятно воды, вокруг — тёмный сырой берег чуть шире; камыш — тонкий лист, на части — початок
+    pond: keep(blobShape(0.3, 3)),
+    shore: keep(blobShape(0.35, 5)),
+    blade: keep(new THREE.ConeGeometry(0.014, 1, 4).translate(0, 0.5, 0)),
+    cob: keep(new THREE.CylinderGeometry(0.02, 0.02, 0.075, 6)),
+    pad: keep(new THREE.CircleGeometry(0.055, 10, 0.4, Math.PI * 2 - 0.5).rotateX(-Math.PI / 2)),
     // завеса воды с края верхней чаши: открытый конус; v развёрнут, чтобы 0 был сверху — полосы бегут вниз
     curtain: (() => {
       const g = new THREE.CylinderGeometry(0.18, 0.27, 0.27, 24, 1, true);
@@ -328,6 +361,32 @@
         gl_FragColor = vec4(mix(deep, foam, streak + vUv.y * 0.3), op * (0.55 + 0.45 * streak) * fade);
       }`,
   };
+  /* Светлячки и бабочки. Светлячок — светящееся пятнышко (спрайт, складывает свет), бабочка — тельце и два крыла,
+     крылья машут вокруг тельца. Цвета бабочек — те же, что у цветов */
+  const CRIT = (() => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const c = cv.getContext('2d'), gr = c.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, 'rgba(255,255,220,1)'); gr.addColorStop(0.18, 'rgba(230,255,140,.9)'); gr.addColorStop(0.45, 'rgba(190,255,90,.28)'); gr.addColorStop(1, 'rgba(190,255,90,0)');
+    c.fillStyle = gr; c.fillRect(0, 0, 64, 64);
+    const glow = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(cv), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+    // крыло: передняя доля крупнее задней; лежит в плоскости XZ и растёт в +x от тельца
+    const w = new THREE.Shape();
+    w.moveTo(0, 0.01);
+    w.bezierCurveTo(0.03, 0.09, 0.11, 0.1, 0.1, 0.035);
+    w.bezierCurveTo(0.1, 0.01, 0.06, 0.0, 0.0, 0.0);
+    w.bezierCurveTo(0.06, -0.01, 0.08, -0.05, 0.05, -0.07);
+    w.bezierCurveTo(0.025, -0.08, 0.005, -0.04, 0, -0.01);
+    const wing = new THREE.ShapeGeometry(w, 6);
+    wing.rotateX(Math.PI / 2); // верхняя доля — вперёд (+z), туда бабочка и летит
+    return {
+      glow,
+      wing: keep(wing),
+      body: keep(new THREE.CylinderGeometry(0.008, 0.006, 0.07, 5).rotateX(Math.PI / 2)),
+      bodyMat: new THREE.MeshStandardMaterial({ color: 0x3a2a4d, roughness: 0.8 }),
+      wings: [0xff9a3c, 0x8fd0ff, 0xff8fb8, 0xffd166, 0xb79cff].map(col => new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.2, side: THREE.DoubleSide, roughness: 0.7 })),
+    };
+  })();
   M.water = new THREE.ShaderMaterial({ uniforms: WATER.uniforms, vertexShader: WATER.vertexShader, fragmentShader: WATER.fragmentShader, transparent: true, depthWrite: false, side: THREE.DoubleSide });
   // Пятно тени под Битом и монетами: в «Лёгкой графике» теней нет, и без пятна герой будто висит в воздухе.
   // Видно только в лёгкой графике (applyLite)
@@ -634,7 +693,7 @@
     levelGroup.traverse(o => {
       if (o.geometry && o.geometry !== boxGeo && !o.isSprite && !o.geometry.userData.keep) o.geometry.dispose(); // геометрия спрайтов и природы общая
       if (o.isInstancedMesh) o.dispose();
-      if (o.material && o.material.isMaterial && o.material.map) o.material.map.dispose(); // у блоков — массив материалов
+      if (o.material && o.material.isMaterial && o.material.map && o.material !== CRIT.glow) o.material.map.dispose(); // у блоков — массив материалов; свет светлячков общий
     });
     levelGroup = new THREE.Group();
     while (blobGroup.children.length) blobGroup.remove(blobGroup.children[0]);
@@ -858,14 +917,41 @@
         if (score < best) { best = score; fountain = { x, z }; }
       });
     });
+    // спутниковые тарелки (1–5, на больших картах больше) и иногда упавшая НЛО — на внешнем краю, не рядом друг с другом
+    const special = new Map();
+    {
+      const pool = [...ring].filter(k => k !== (fountain && K(fountain.x, fountain.z)))
+        .map(k => k.split(',').map(Number))
+        .filter(([x, z]) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !land(K(x + dx, z + dz))))
+        .sort((a, b) => hash(a[0] * 5 + 1, a[1] * 3 - 2) - hash(b[0] * 5 + 1, b[1] * 3 - 2));
+      const seed = hash(level.start.x * 13 + ring.size, level.start.z * 7 + level.floor.size);
+      const dishes = Math.max(1, Math.min(5, 1 + Math.floor(pool.length / 14) + (seed > 0.5 ? 1 : 0)));
+      const want = [...(seed < 0.5 ? ['ufo'] : []), ...Array(dishes).fill('dish')];
+      const far = ([x, z]) => [...special.keys()].every(k => { const [a, b] = k.split(',').map(Number); return Math.max(Math.abs(a - x), Math.abs(b - z)) > 1; });
+      for (const c of pool) {
+        if (!want.length) break;
+        if (far(c)) special.set(K(c[0], c[1]), want.shift());
+      }
+    }
+    gadgets.dishes.length = 0; gadgets.smoke.length = 0; gadgets.reeds.length = 0;
     const big = ROCKS.big.map(() => []), small = ROCKS.small.map(() => []);
+    const blooms = [], edge = []; // где бабочкам садиться: цветы и кусты; где светлячкам кружить: внешний край
     ring.forEach(k => {
       const [x, z] = k.split(',').map(Number);
       const r = hash(x, z), r2 = hash(z * 3 + 1, x * 5 + 2), r3 = hash(x + 17, z - 9);
       addBlock(x, z, 0.9 + r * 0.2, 0, [M.dirt, M.dirt, M.moss, M.dirt, M.dirt, M.dirt]);
       const outer = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !land(K(x + dx, z + dz)));
+      if (outer) edge.push([x, z]);
       const pebble = (px, pz, w) => small[Math.floor(r2 * 3)].push([x + px, z + pz, w, w * 0.65, r * 6.28]);
       if (fountain && fountain.x === x && fountain.z === z) { addFountain(fountain); return; }
+      if (special.has(k)) {
+        const g = new THREE.Group();
+        g.position.set(x, 0, z); g.rotation.y = r2 * 6.28;
+        (special.get(k) === 'ufo' ? makeUfo : makeDish)(g, r3);
+        levelGroup.add(g);
+        if (r > 0.4) pebble(r3 > 0.5 ? 0.34 : -0.34, r2 > 0.5 ? 0.32 : -0.32, 0.1);
+        return;
+      }
       if (r < 0.2) {
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.35, 6), M.trunk);
         trunk.position.set(x, 0.17, z); trunk.castShadow = true;
@@ -875,10 +961,11 @@
         if (r3 > 0.5) pebble(r3 > 0.75 ? 0.3 : -0.3, 0.28, 0.1);
         return;
       }
-      if (outer && r < 0.48) {
+      if (outer && r < 0.5) {
         const g = new THREE.Group();
         g.position.set(x, 0, z); g.rotation.y = r2 * 6.28;
-        (r < 0.29 ? makeBush : r < 0.36 ? makeMushrooms : r < 0.43 ? makeFlowers : makeStump)(g, r3);
+        (r < 0.27 ? makeBush : r < 0.33 ? makeMushrooms : r < 0.39 ? makeFlowers : r < 0.43 ? makeStump : makePond)(g, r3);
+        if (r < 0.27 || (r >= 0.33 && r < 0.39) || r >= 0.43) blooms.push([x, z]);
         levelGroup.add(g);
         pebble(r3 > 0.5 ? 0.32 : -0.32, r2 > 0.5 ? 0.3 : -0.3, 0.09 + r3 * 0.05);
         return;
@@ -905,6 +992,7 @@
       m.castShadow = true; m.receiveShadow = true;
       levelGroup.add(m);
     }));
+    addCritters(blooms, edge.length ? edge : [...ring].map(k => k.split(',').map(Number)));
   }
   const part = (g, geo, mat, x, y, z, sx, sy = sx, sz = sx, shadow = true) => {
     const m = new THREE.Mesh(geo, mat);
@@ -940,6 +1028,98 @@
     part(g, NATURE.stem, M.stem, 0.17, 0.035, 0.08, 0.018, 0.07, 0.018, false);
     part(g, NATURE.cap, r > 0.5 ? M.capBrown : M.cap, 0.17, 0.065, 0.08, 0.05, 0.035, 0.05, false);
   }
+  // Техника на кайме: тарелки медленно поворачиваются и мигают лампой, у НЛО перемигиваются огни и курится дымок
+  const gadgets = { dishes: [], smoke: [], reeds: [] };
+  function makeDish(g, r) {
+    g.scale.setScalar(1.3);
+    part(g, NATURE.box, M.fstone, 0, 0.03, 0, 0.24, 0.06, 0.24);
+    part(g, NATURE.post, M.gateBar, 0, 0.15, 0, 0.025, 0.18, 0.025);
+    const head = new THREE.Group(); // поворачивается вокруг стойки
+    head.position.y = 0.24;
+    const tilt = new THREE.Group(); // чаша смотрит в небо под углом
+    tilt.rotation.x = -0.4 - r * 0.25;
+    const bowl = new THREE.Mesh(NATURE.dishBowl, M.dish);
+    bowl.castShadow = true;
+    tilt.add(bowl);
+    // три штанги от края чаши к облучателю в фокусе
+    const focus = new THREE.Vector3(0, 0.16, 0);
+    [0, 2.09, 4.19].forEach(a => {
+      const from = new THREE.Vector3(Math.cos(a) * 0.18, 0.05, Math.sin(a) * 0.18), mid = from.clone().add(focus).multiplyScalar(0.5);
+      const rod = new THREE.Mesh(NATURE.post, M.gateBar);
+      rod.position.copy(mid); rod.scale.set(0.006, from.distanceTo(focus), 0.006);
+      rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), focus.clone().sub(from).normalize());
+      tilt.add(rod);
+    });
+    const feed = new THREE.Mesh(NATURE.box, M.gateBar);
+    feed.position.copy(focus); feed.scale.set(0.04, 0.04, 0.04);
+    const lamp = new THREE.Mesh(NATURE.bulb, M.dishLamp);
+    lamp.position.set(0, 0.19, 0);
+    tilt.add(feed, lamp);
+    head.add(tilt);
+    g.add(head);
+    gadgets.dishes.push({ head, sp: (r > 0.5 ? 1 : -1) * (0.15 + r * 0.2), base: head.rotation.y });
+  }
+  function makeUfo(g, r) {
+    const ship = new THREE.Group();
+    ship.position.set(0, 0.03, 0);
+    ship.rotation.set(0.16, 0, 0.38); // носом в землю: один край ушёл под траву
+    const body = new THREE.Mesh(NATURE.saucer, M.ufo);
+    body.castShadow = true;
+    ship.add(body);
+    part(ship, NATURE.dome, M.ufoGlass, 0, 0.045, 0, 1, 0.9, 1, false);
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * Math.PI * 2;
+      part(ship, NATURE.bulb, M.ufoLights[i % 2], Math.cos(a) * 0.31, 0.012, Math.sin(a) * 0.31, 1, 1, 1, false);
+    }
+    // гнутая антенна на куполе
+    const ant = part(ship, NATURE.post, M.gateBar, 0.03, 0.2, 0, 0.006, 0.09, 0.006, false);
+    ant.rotation.z = -0.6;
+    g.add(ship);
+    // комья земли у зарывшегося края
+    [[-0.3, -0.08, 0.07], [-0.28, 0.12, 0.06], [-0.36, 0.02, 0.05], [-0.18, -0.2, 0.045]].forEach(([x, z, s]) => part(g, NATURE.blob, M.soil, x, s * 0.2, z, s * 1.2, s * 0.45, s));
+    // дымок: три клуба поднимаются по очереди и тают
+    M.smoke.forEach((mat, i) => {
+      const puff = part(g, NATURE.blob, mat, 0.12, 0.2, 0, 0.05, 0.05, 0.05, false);
+      gadgets.smoke.push({ puff, mat, ph: i / 3 });
+    });
+  }
+  function animateGadgets(t) {
+    gadgets.reeds.forEach((g, i) => { g.rotation.z = Math.sin(t * 1.3 + i) * 0.06; g.rotation.x = Math.sin(t * 0.9 + i * 2) * 0.04; }); // камыш качается на ветру
+    gadgets.dishes.forEach(d => { d.head.rotation.y = d.base + Math.sin(t * d.sp) * 1.2; });
+    M.dishLamp.emissiveIntensity = (t * 1.3) % 1 < 0.15 ? 1.4 : 0.25;
+    const on = Math.floor(t * 2) % 2;
+    M.ufoLights.forEach((m, i) => { m.emissiveIntensity = i === on ? 1.2 : 0.25; });
+    gadgets.smoke.forEach(s => {
+      const k = (t * 0.35 + s.ph) % 1;
+      s.puff.position.set(0.12 + k * 0.08, 0.2 + k * 0.45, k * 0.05);
+      s.puff.scale.setScalar(0.04 + k * 0.08);
+      s.mat.opacity = 0.5 * (1 - k) * Math.min(1, k * 6);
+    });
+  }
+  function makePond(g, r) { // озерцо с камышами и кувшинками
+    part(g, NATURE.shore, M.soil, 0, 0.006, 0, 1, 1, 1, false).receiveShadow = true;
+    part(g, NATURE.pond, M.pool, 0, 0.014, 0, 1, 1, 1, false);
+    // камыш с одного бока: листья разной высоты, на некоторых — коричневый початок
+    const reeds = new THREE.Group();
+    reeds.position.set(0.2, 0, -0.14);
+    for (let i = 0; i < 13; i++) {
+      const a = i * 2.3 + r * 4, d = 0.02 + (i % 4) * 0.035, h = 0.24 + ((i * 0.37 + r) % 1) * 0.18;
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      const b = part(reeds, NATURE.blade, M.reed, x, 0, z, 1, h, 1);
+      b.rotation.set(Math.sin(a) * 0.12, 0, Math.cos(a) * 0.12);
+      if (i % 3 === 0) part(reeds, NATURE.cob, M.cattail, x + Math.cos(a) * 0.12 * h, h * 0.86, z - Math.sin(a) * 0.12 * h, 1, 1, 1);
+    }
+    g.add(reeds);
+    gadgets.reeds.push(reeds);
+    // кувшинки, на одной — розовый цветок
+    [[-0.1, 0.06, 0.4], [0.02, -0.12, 2.1], [-0.15, -0.08, 4]].slice(0, 2 + (r > 0.5 ? 1 : 0)).forEach(([x, z, a], i) => {
+      part(g, NATURE.pad, M.lily, x, 0.02, z, 1, 1, 1, false).rotation.y = a;
+      if (!i) part(g, NATURE.petal, M.petals[1], x, 0.035, z, 0.8, 0.5, 0.8, false);
+    });
+    const ripple = part(g, NATURE.ripple, M.ripple, -0.04, 0.018, 0.02, 0.1, 0.1, 0.1, false);
+    ripple.rotation.x = -Math.PI / 2;
+    fountains.push({ ripple, small: true });
+  }
   function addFountain({ x, z }) {
     const g = new THREE.Group();
     g.position.set(x, 0, z);
@@ -958,11 +1138,64 @@
     levelGroup.add(g);
     fountains.push({ ripple });
   }
+  /* Бабочки кружат над цветами и кустами (днём), светлячки — над краем острова (ночью, в тёмной теме).
+     Летают сами по себе, по своим петлям вокруг «дома»: на дорогу не садятся и ничего не задевают */
+  const fireflies = [], butterflies = [];
+  function addCritters(blooms, edge) {
+    fireflies.length = 0; butterflies.length = 0;
+    const pick = (list, i) => list[Math.floor(hash(i * 7 + 3, list.length + i) * list.length) % list.length];
+    const nFly = Math.min(18, Math.max(6, Math.round(edge.length * 0.6)));
+    for (let i = 0; i < nFly; i++) {
+      const [hx, hz] = pick(edge, i);
+      const m = new THREE.Sprite(CRIT.glow);
+      m.userData = { hx, hz, ph: hash(i, 91) * 6.28, sp: 0.35 + hash(91, i) * 0.3, y: 0.25 + hash(i, i + 5) * 0.55 };
+      levelGroup.add(m);
+      fireflies.push(m);
+    }
+    const homes = blooms.length ? blooms : edge;
+    const nBut = Math.min(5, 2 + Math.floor(edge.length / 10));
+    for (let i = 0; i < nBut; i++) {
+      const [hx, hz] = pick(homes, i + 40);
+      const g = new THREE.Group(), mat = CRIT.wings[i % CRIT.wings.length];
+      g.add(new THREE.Mesh(CRIT.body, CRIT.bodyMat));
+      const right = new THREE.Mesh(CRIT.wing, mat), left = new THREE.Mesh(CRIT.wing, mat);
+      left.scale.x = -1;
+      g.add(right, left);
+      g.scale.setScalar(1.35);
+      g.userData = { hx, hz, ph: hash(i, 17) * 6.28, sp: 0.5 + hash(17, i) * 0.35, dir: i % 2 ? 1 : -1, right, left, prev: new THREE.Vector3() };
+      levelGroup.add(g);
+      butterflies.push(g);
+    }
+    moveCritters(0, true);
+  }
+  function moveCritters(t, first) {
+    fireflies.forEach(f => {
+      f.visible = night;
+      if (!night) return;
+      const u = f.userData, a = t * u.sp + u.ph;
+      f.position.set(u.hx + Math.sin(a) * 0.45 + Math.sin(a * 2.7) * 0.12, u.y + Math.sin(a * 1.3) * 0.15, u.hz + Math.cos(a * 0.8) * 0.45);
+      const k = 0.5 + 0.5 * Math.sin(t * 3 + u.ph * 3); // мигают не в такт
+      f.scale.setScalar(0.14 + 0.26 * k * k);
+    });
+    butterflies.forEach(b => {
+      b.visible = !night;
+      if (night) return;
+      const u = b.userData, a = t * u.sp * u.dir + u.ph;
+      u.prev.copy(b.position);
+      b.position.set(u.hx + Math.cos(a) * 0.38 + Math.sin(a * 2.1) * 0.1, 0.42 + Math.sin(a * 1.7) * 0.13 + Math.sin(t * 9 + u.ph) * 0.02, u.hz + Math.sin(a * 1.4) * 0.38);
+      if (!first) b.rotation.y = Math.atan2(b.position.x - u.prev.x, b.position.z - u.prev.z);
+      const flap = first ? 0.3 : Math.sin(t * 16 + u.ph) * 0.85 + 0.25;
+      u.right.rotation.z = flap; u.left.rotation.z = -flap;
+    });
+  }
   function animateNature(time) {
-    if (!fountains.length || reduceMotion) return;
+    if (reduceMotion) { moveCritters(0, true); return; } // без движения: бабочки и светлячки замирают на местах
+    moveCritters(time);
+    animateGadgets(time);
+    if (!fountains.length) return;
     WATER.uniforms.t.value = time;
     const k = (time * 0.7) % 1;
-    fountains.forEach(f => f.ripple.scale.setScalar(0.27 + k * 0.08));
+    fountains.forEach(f => f.ripple.scale.setScalar(f.small ? 0.04 + k * 0.14 : 0.27 + k * 0.08));
     M.ripple.opacity = 0.7 * (1 - k);
   }
 
