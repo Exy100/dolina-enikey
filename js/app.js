@@ -203,6 +203,9 @@
     rock: new THREE.MeshStandardMaterial({ color: 0x7e7090, flatShading: true, roughness: 1 }),
     stoneA: new THREE.MeshStandardMaterial({ color: 0x6c6690, flatShading: true, roughness: 0.95 }),
     stoneB: new THREE.MeshStandardMaterial({ color: 0x5d5880, flatShading: true, roughness: 0.95 }),
+    enemy: new THREE.MeshStandardMaterial({ color: 0xd9534f, emissive: 0x7a1f1a, emissiveIntensity: 0.25, flatShading: true, roughness: 0.6 }),
+    lane: new THREE.MeshStandardMaterial({ color: 0xe8806f, flatShading: true, roughness: 0.9 }),
+    ice: new THREE.MeshStandardMaterial({ color: 0xbfe8ff, emissive: 0x4a90c8, emissiveIntensity: 0.18, flatShading: true, roughness: 0.25, metalness: 0.1 }),
     lava: new THREE.MeshStandardMaterial({ color: 0xff5a1f, emissive: 0xff3b0a, emissiveIntensity: 0.9, flatShading: true, roughness: 0.6 }),
     // золото и железо — почти без «металла»: отражать в сцене нечего (карты отражений нет), и металл темнеет до бурого.
     // Блеск даёт блик солнца, тёплый цвет — свечение. Так же в gear.js и на острове героя
@@ -306,6 +309,8 @@
   let coinMeshes = new Map();
   let flag = null, finishRing = null, boss = null;
   let gateMeshes = new Map(); // клетка ворот → створка
+  let leverMeshes = new Map(); // клетка рычага → ручка
+  let enemyMeshes = []; // дозорные, по порядку level.enemies
 
   /* Герой. Облик (HeroGear.SKINS) — форма тела и головы; лицо, ноги и антенна двигаются одинаково у всех, поэтому
      каждая модель собирается из тех же именованных частей (heroParts). Модель можно собрать и для другой сцены
@@ -529,6 +534,8 @@
     while (blobGroup.children.length) blobGroup.remove(blobGroup.children[0]);
     coinMeshes = new Map();
     gateMeshes = new Map();
+    leverMeshes = new Map();
+    enemyMeshes = [];
     particles.splice(0).forEach(p => scene.remove(p.m));
     const floorKeys = [...level.floor];
     const cells = floorKeys.map(k => k.split(',').map(Number));
@@ -548,6 +555,8 @@
       const k = K(x, z);
       if (level.lava.has(k)) {
         addBlock(x, z, 0.8, -0.14, [M.rock, M.rock, M.lava, M.rock, M.rock, M.rock]);
+      } else if (level.ice && level.ice.has(k)) {
+        addBlock(x, z, 0.9, -0.04, [M.dirt, M.dirt, M.ice, M.dirt, M.dirt, M.dirt]);
       } else {
         const g = (x + z) % 2 === 0 ? M.grassA : M.grassB;
         addBlock(x, z, 0.9 + hash(x, z) * 0.25, 0, [M.dirt, M.dirt, g, M.dirt, M.dirt, M.dirt]);
@@ -595,6 +604,7 @@
       coinMeshes.set(k, c);
     });
     // ворота: столбы и створка поперёк дороги; при открытии створка уходит под землю
+    const remote = new Set(level.levers ? level.levers.values() : []); // ворота, которые открывает рычаг
     level.gates.forEach(k => {
       const [x, z] = k.split(',').map(Number);
       const g = new THREE.Group();
@@ -605,6 +615,15 @@
         const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.72, 0.24), M.gateBar);
         bar.position.x = bx;
         door.add(bar);
+      });
+      // кодовый замок: золотой замок с дужкой на обеих сторонах створки (уходит вниз вместе с ней)
+      if (level.locks && level.locks.has(k)) [1, -1].forEach(sd => {
+        const lock = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.22, 0.08), M.coin);
+        lock.position.set(0, 0, sd * 0.14);
+        const shackle = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.025, 6, 12, Math.PI), M.coin);
+        shackle.position.set(0, 0.11, 0);
+        lock.add(shackle);
+        door.add(lock);
       });
       g.add(door);
       // столбы и перекладина сверху: с камеры, которая смотрит вдоль створки, ворота видно по ним
@@ -618,6 +637,13 @@
       beam.position.y = 1.02;
       beam.castShadow = true;
       g.add(beam);
+      // ворота рычага: над перекладиной красная лампа, при открытии зеленеет
+      if (remote.has(k)) {
+        const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), new THREE.MeshStandardMaterial({ color: 0xff5a4a, emissive: 0xff2a1a, emissiveIntensity: 0.7, flatShading: true }));
+        lamp.position.y = 1.2;
+        g.add(lamp);
+        door.userData.lamp = lamp;
+      }
       g.position.set(x, 0, z);
       // дорога идёт вдоль x — створка встаёт поперёк неё
       if (level.floor.has(K(x - 1, z)) || level.floor.has(K(x + 1, z))) g.rotation.y = Math.PI / 2;
@@ -635,6 +661,49 @@
       board.scale.set(SIGN.size, SIGN.size, 1);
       board.position.set(x + SIGN.dx, SIGN.post - 0.02, z + SIGN.dz);
       levelGroup.add(post, board);
+    });
+    // рычаги: каменное основание и ручка, которая переключается при дёрганье
+    (level.levers ? [...level.levers.keys()] : []).forEach(k => {
+      const [x, z] = k.split(',').map(Number);
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.12, 0.5), M.stoneA);
+      base.position.set(x, 0.06, z); base.receiveShadow = true;
+      const arm = new THREE.Group();
+      arm.position.set(x, 0.12, z + 0.1);
+      arm.rotation.x = -0.6;
+      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.46, 6), M.gateBar);
+      stick.position.y = 0.23; stick.castShadow = true;
+      const knob = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), M.lava);
+      knob.position.y = 0.48; knob.castShadow = true;
+      arm.add(stick, knob);
+      levelGroup.add(base, arm);
+      leverMeshes.set(k, arm);
+    });
+    // дозорные: красные плитки — их путь, сами дозорные стоят в начале пути
+    (level.enemies || []).forEach(e => {
+      new Set(e.path.map(c => K(c[0], c[1]))).forEach(k => {
+        const [x, z] = k.split(',').map(Number);
+        const m = new THREE.Mesh(boxGeo, M.lane);
+        m.scale.set(0.8, 0.03, 0.8);
+        m.position.set(x, 0.015, z);
+        m.receiveShadow = true;
+        levelGroup.add(m);
+      });
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.4, 8), M.enemy);
+      body.position.y = 0.2; body.castShadow = true;
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.3), M.enemy);
+      head.position.y = 0.52; head.castShadow = true;
+      [-0.08, 0.08].forEach(ex => {
+        const eye = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.04), M.coin);
+        eye.position.set(ex, 0.54, 0.16);
+        g.add(eye);
+      });
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 6), M.coin);
+      horn.position.y = 0.72;
+      g.add(body, head, horn);
+      g.position.set(e.path[0][0], 0, e.path[0][1]);
+      levelGroup.add(g);
+      enemyMeshes.push(g);
     });
     // финиш: флаг; на карте с боссом — Великий Сбой; спрятанный флаг не рисуется
     const f = level.finish;
@@ -1463,8 +1532,14 @@
         await wait(380);
         return;
       case 'move': {
-        Sound.play('step');
         const fx = ev.from.x, fz = ev.from.z, tx = ev.to.x, tz = ev.to.z;
+        if (ev.slide) { // скользит по льду: быстро, без шагов
+          sparks(fx, fz, 0xcfefff, 3);
+          await tween(170, t => { heroRig.position.set(fx + (tx - fx) * t, 0, fz + (tz - fz) * t); });
+          trailStep(ev.from, ev.to);
+          return;
+        }
+        Sound.play('step');
         dust(fx, fz, 4);
         await tween(360, t => {
           const e = ease(t);
@@ -1563,10 +1638,44 @@
         hero.rotation.z = 0;
         return;
       }
+      case 'patrol': {
+        Sound.play('step');
+        const moves = enemyMeshes.map((m, i) => ({ m, a: ev.from[i], b: ev.to[i] }));
+        await tween(320, t => moves.forEach(({ m, a, b }) => {
+          m.position.set(a[0] + (b[0] - a[0]) * ease(t), Math.sin(t * Math.PI) * 0.1, a[1] + (b[1] - a[1]) * ease(t));
+        }));
+        moves.forEach(({ m, b }) => m.position.set(b[0], 0, b[1]));
+        return;
+      }
+      case 'wait': {
+        say('Жду…', '', 700);
+        glance(LOOK_AT.ahead, 600);
+        await tween(380, t => { hero.position.y = Math.sin(t * Math.PI * 2) * 0.03; });
+        hero.position.y = 0;
+        return;
+      }
+      case 'caught': {
+        say('Попался!', 'bad', 1400);
+        Sound.play('bump');
+        face.ouch = 1;
+        if (!reduceMotion) cam.shake = 0.3;
+        await tween(400, t => { hero.rotation.z = Math.sin(t * Math.PI * 4) * 0.2; });
+        hero.rotation.z = 0;
+        return;
+      }
+      case 'pull': {
+        const arm = leverMeshes.get(K(ev.x, ev.z));
+        say('Рычаг!', 'yes', 800);
+        glance(LOOK_AT.down, 700);
+        Sound.play('gate');
+        if (arm) await tween(380, t => { arm.rotation.x = -0.6 + 1.2 * ease(t); });
+        return;
+      }
       case 'open': {
         say('Открыто!', 'yes', 900);
         Sound.play('gate');
         const door = gateMeshes.get(K(ev.x, ev.z));
+        if (door && door.userData.lamp) { door.userData.lamp.material.color.setHex(0x6fdc6f); door.userData.lamp.material.emissive.setHex(0x2fbf2f); }
         if (door) await tween(450, t => { door.position.y = 0.36 - t * 0.8; });
         return;
       }
@@ -1603,7 +1712,8 @@
   /* ================= Редактор ================= */
   const ta = $('#code'), hl = $('#hl'), gutter = $('#gutter'), band = $('#band');
   // команды героя по-русски и по-английски (move() — это вперёд())
-  const HERO_CMDS = ['вперёд', ...Object.keys(HeroWorld.EN), ...Object.values(HeroWorld.EN)];
+  // имена в EN — без «ё» (как в интерпретаторе), поэтому в коде ученика «ё» заменяем на «е» перед сравнением
+  const HERO_CMDS = [...Object.keys(HeroWorld.EN), ...Object.values(HeroWorld.EN)];
   const KWS = ['for', 'in', 'if', 'elif', 'else', 'while', 'and', 'or', 'not', 'True', 'False', 'None', 'pass', 'break', 'continue', 'def', 'return'];
   const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const tokRe = new RegExp(
@@ -1616,7 +1726,7 @@
       else if (str) out += `<span class="t-str">${esc(str)}</span>`;
       else if (num) out += `<span class="t-num">${num}</span>`;
       else if (KWS.includes(name)) out += `<span class="t-kw">${name}</span>`;
-      else if (HERO_CMDS.includes(name)) out += `<span class="t-hero">${name}</span>`;
+      else if (HERO_CMDS.includes(name.replace(/ё/g, 'е'))) out += `<span class="t-hero">${name}</span>`;
       else if (['print', 'input', 'range', 'len', 'str', 'int', 'abs'].includes(name)) out += `<span class="t-fn">${name}</span>`;
       else out += esc(name);
       lastI = off + m.length;
