@@ -3,6 +3,7 @@
   --accent: #6B4BD8; --accent-ink: #FFFFFF; --accent-soft: #EFE6FF; --accent-deep: #4B32A6;
   --gold: #C9850A; --gold-star: #F5B82E; --mint: #1E9E7E; --danger: #D9482B; --coral: #FF9F6B;
   --sky1: #FFC9A8; --sky-mid: #F9BFC4; --sky2: #D9C2FF; --hud: rgba(255,255,255,.8);
+  --sky-isle: rgba(196,128,170,.30); --sky-bank: #FFFFFF; --sky-bank-near: #FFF7FA; --sky-bank-op: .5; --sky-bank-near-op: .7; --sky-star: #FFF4E0; --stars: 0; --birds: .5; --sky-bird: #8A5A8C;
   --sun: radial-gradient(circle at 84% 16%, rgba(255,243,196,.95) 0, rgba(255,212,121,.55) 5%, rgba(255,212,121,0) 24%);
   --glow1: #FFD9C2; --glow2: #E6DBFF;
   --code: #2E2447; --code-bar: #3A2D5C; --code-line: #45376B; --code-ink: #F3E9FF; --code-dim: #75688F; --code-com: #8F82A8; --code-chip: #45376B;
@@ -19,6 +20,7 @@
     --accent: #A996FF; --accent-ink: #1B1530; --accent-soft: #3A2F70; --accent-deep: #6B58C9;
     --gold: #FFC83D; --gold-star: #FFC83D; --mint: #3FD3B5; --danger: #FF7456; --coral: #FFA877;
     --sky1: #2A1B4F; --sky-mid: #4A2560; --sky2: #6A2F66; --hud: rgba(39,31,69,.82);
+    --sky-isle: rgba(22,14,46,.42); --sky-bank: #9A70C2; --sky-bank-near: #A982CC; --sky-bank-op: .18; --sky-bank-near-op: .24; --sky-star: #FFF4E0; --stars: 1; --birds: 0; --sky-bird: #8A5A8C;
     --sun: radial-gradient(circle at 84% 16%, rgba(255,240,220,.9) 0, rgba(255,240,220,.28) 3%, rgba(255,240,220,0) 11%);
     --glow1: rgba(255,168,119,.12); --glow2: rgba(169,150,255,.14);
     --code: #150F29; --code-bar: #211A3F; --code-line: #3A3162; --code-ink: #F3E9FF; --code-dim: #6F638F; --code-com: #8F82A8; --code-chip: #3A3162;
@@ -32,6 +34,7 @@
   --accent: #A996FF; --accent-ink: #1B1530; --accent-soft: #3A2F70; --accent-deep: #6B58C9;
   --gold: #FFC83D; --gold-star: #FFC83D; --mint: #3FD3B5; --danger: #FF7456; --coral: #FFA877;
   --sky1: #2A1B4F; --sky-mid: #4A2560; --sky2: #6A2F66; --hud: rgba(39,31,69,.82);
+  --sky-isle: rgba(22,14,46,.42); --sky-bank: #9A70C2; --sky-bank-near: #A982CC; --sky-bank-op: .18; --sky-bank-near-op: .24; --sky-star: #FFF4E0; --stars: 1; --birds: 0; --sky-bird: #8A5A8C;
   --sun: radial-gradient(circle at 84% 16%, rgba(255,240,220,.9) 0, rgba(255,240,220,.28) 3%, rgba(255,240,220,0) 11%);
   --glow1: rgba(255,168,119,.12); --glow2: rgba(169,150,255,.14);
   --code: #150F29; --code-bar: #211A3F; --code-line: #3A3162; --code-ink: #F3E9FF; --code-dim: #6F638F; --code-com: #8F82A8; --code-chip: #3A3162;
@@ -205,6 +208,31 @@ body.is-running .ed-code textarea { cursor: default; }
 .world { position: relative; min-height: 0; border-radius: 28px; overflow: hidden; box-shadow: var(--shadow);
   background: var(--sun), linear-gradient(180deg, var(--sky1), var(--sky-mid) 45%, var(--sky2)); }
 #stage { position: absolute; inset: 0; z-index: 1; }
+/* Небо за 3D (paintSky в app.js): звёзды ночью, дальние островки, облачные гряды внизу, птицы днём. Под сценой Сбоя (::before) */
+.world { isolation: isolate; }
+.world::before { z-index: 1; }
+.sky { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.sky svg { display: block; width: 100%; height: 100%; }
+.sky-stars { fill: var(--sky-star); opacity: var(--stars); transition: opacity .6s; }
+.sky-stars .tw { animation: twinkle 3.6s ease-in-out infinite; }
+.sky-isles { fill: var(--sky-isle); }
+.sky-banks { fill: var(--sky-bank); opacity: var(--sky-bank-op); }
+.sky-banks.near { fill: var(--sky-bank-near); opacity: var(--sky-bank-near-op); }
+.sky-birds { fill: none; stroke: var(--sky-bird); stroke-width: 2.2; stroke-linecap: round; opacity: var(--birds); }
+.sky .bob { animation: skyBob 9s ease-in-out infinite; }
+.sky .bob.b2 { animation-duration: 11s; animation-delay: -4s; }
+.sky .bob.b3 { animation-duration: 7s; animation-delay: -2s; }
+.sky .drift { animation: skyDrift 40s ease-in-out infinite alternate; }
+.sky .drift.d2 { animation-duration: 52s; animation-direction: alternate-reverse; }
+.sky .drift.d3 { animation-duration: 34s; }
+.sky .fly { animation: skyFly 46s linear infinite; animation-delay: -12s; }
+@keyframes twinkle { 50% { opacity: .25; } }
+@keyframes skyBob { 50% { transform: translateY(-10px); } }
+@keyframes skyDrift { to { transform: translateX(60px); } }
+@keyframes skyFly { from { transform: translate(-80px, 170px); } to { transform: translate(1300px, 110px); } }
+.world.py .sky { display: none; }
+body.lite .sky * { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .sky * { animation: none !important; } }
 #stage canvas { display: block; touch-action: pan-y; cursor: grab; }
 #stage canvas:active { cursor: grabbing; }
 .hud { position: absolute; display: flex; gap: 8px; align-items: center; z-index: 3; }

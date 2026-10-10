@@ -135,6 +135,47 @@
   let stepResolve = null;
   let speed = 1;
 
+  /* Небо за миром (слои под 3D): ночью звёзды, дальние летучие островки, облачные гряды внизу и птицы днём.
+     Цвета — переменные --sky-* из style.css, движение — CSS (без него при prefers-reduced-motion и в лёгкой графике) */
+  (function paintSky() {
+    let seed = 11;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const f = n => n.toFixed(1);
+    let stars = '';
+    for (let i = 0; i < 46; i++) {
+      const x = rnd() * 1200, y = rnd() * 470, r = 0.9 + rnd() * 1.6;
+      stars += `<circle class="${i % 4 ? '' : 'tw'}" style="animation-delay:${f(-rnd() * 4)}s" cx="${f(x)}" cy="${f(y)}" r="${f(r)}"/>`;
+    }
+    // островок: плоская верхушка, каменный клин вниз, ёлочки
+    const isle = (x, y, w, trees) => {
+      const h = w * 0.55, t = w * 0.09;
+      let d = `M${f(x - w / 2)} ${f(y)} Q${f(x)} ${f(y - t)} ${f(x + w / 2)} ${f(y)} L${f(x + w * 0.32)} ${f(y + h * 0.35)} L${f(x + w * 0.12)} ${f(y + h * 0.55)} L${f(x)} ${f(y + h)} L${f(x - w * 0.16)} ${f(y + h * 0.5)} L${f(x - w * 0.36)} ${f(y + h * 0.3)}Z`;
+      trees.forEach(([dx, s]) => { const tx = x + dx * w, ty = y - t * 0.6; d += `M${f(tx - w * 0.08 * s)} ${f(ty)} L${f(tx)} ${f(ty - w * 0.24 * s)} L${f(tx + w * 0.08 * s)} ${f(ty)}Z`; });
+      return `<path d="${d}"/>`;
+    };
+    // облачная гряда: ряд кругов на общей нижней кромке
+    const bank = (x, y, w, n) => {
+      let c = `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="400" rx="40"/>`;
+      for (let i = 0; i < n; i++) { const r = 26 + rnd() * 38; c += `<circle cx="${f(x + (i + 0.5) * w / n)}" cy="${f(y + 18)}" r="${f(r)}"/>`; }
+      return c;
+    };
+    const bird = (x, y, s) => `<path d="M${f(x - 9 * s)} ${f(y - 3 * s)} Q${f(x - 4 * s)} ${f(y - 6 * s)} ${f(x)} ${f(y)} Q${f(x + 4 * s)} ${f(y - 6 * s)} ${f(x + 9 * s)} ${f(y - 3 * s)}"/>`;
+    $('#sky').innerHTML = `<svg viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+      <g class="sky-stars">${stars}</g>
+      <g class="sky-isles">
+        <g class="bob">${isle(150, 250, 120, [[-0.18, 1], [0.05, 0.8]])}</g>
+        <g class="bob b2">${isle(1060, 400, 90, [[0.15, 0.9]])}</g>
+        <g class="bob b3">${isle(330, 470, 60, [[-0.05, 1]])}</g>
+      </g>
+      <g class="sky-banks">
+        <g class="drift">${bank(-120, 690, 620, 7)}</g>
+        <g class="drift d2">${bank(640, 715, 700, 8)}</g>
+      </g>
+      <g class="sky-banks near"><g class="drift d3">${bank(180, 790, 900, 9)}</g></g>
+      <g class="sky-birds"><g class="fly">${bird(0, 0, 1)}${bird(26, 12, 0.75)}${bird(-20, 16, 0.6)}</g></g>
+    </svg>`;
+  })();
+
   /* ================= 3D ================= */
   const stage = $('#stage');
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -181,7 +222,11 @@
     gateBar: new THREE.MeshStandardMaterial({ color: 0x6a6f92, metalness: 0.15, roughness: 0.5 }),
     boss: new THREE.MeshStandardMaterial({ color: 0x1b1e3c, emissive: 0xff2bd6, emissiveIntensity: 0.6, roughness: 0.4 }),
     bossFixed: new THREE.MeshStandardMaterial({ color: 0x8f7cff, emissive: 0x1fb89a, emissiveIntensity: 0.35, roughness: 0.4 }), // починенный Сбой
+    // днище летучего острова: цвет каждой глыбы — в самой глыбе (сверху земля, ниже камень), материал только притеняет ночью
+    under: new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 }),
+    underBit: new THREE.MeshStandardMaterial({ color: 0x8a7aa0, flatShading: true, roughness: 1 }),
   });
+  const UNDER = { top: 0xa47a62, deep: 0x7a6a98 };
   // Пятно тени под Битом и монетами: в «Лёгкой графике» теней нет, и без пятна герой будто висит в воздухе.
   // Видно только в лёгкой графике (applyLite)
   const BLOB = (() => {
@@ -206,12 +251,42 @@
     return b;
   }
 
+  /* Море облаков под островом: пухлые облака из икосаэдров в три слоя (нижние прозрачнее) медленно плывут.
+     Живут в сцене всегда, при новой карте только переезжают под неё */
+  const cloudSea = new THREE.Group();
+  scene.add(cloudSea);
+  const CLOUD_LAYERS = [{ y: -6, op: 0.9 }, { y: -9, op: 0.7 }, { y: -13, op: 0.5 }];
+  const cloudMats = CLOUD_LAYERS.map(l => new THREE.MeshStandardMaterial({ flatShading: true, roughness: 1, transparent: true, opacity: l.op, depthWrite: false }));
+  const CLOUD_R = 16; // облака бродят в квадрате ±CLOUD_R вокруг середины карты (в единицах до масштаба)
+  (function makeClouds() {
+    const puff = new THREE.IcosahedronGeometry(1, 1);
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let n = 0; n < 18; n++) {
+      const layer = n % 3, cl = new THREE.Group();
+      const parts = 3 + Math.floor(rnd() * 3), w = 0.55 + rnd() * 0.5;
+      for (let p = 0; p < parts; p++) {
+        const m = new THREE.Mesh(puff, cloudMats[layer]);
+        const r = (p === 0 ? 1 : 0.55 + rnd() * 0.35) * w;
+        m.position.set((p === 0 ? 0 : (rnd() - 0.5) * 2.6 * w), (rnd() - 0.3) * 0.25 * w, (p === 0 ? 0 : (rnd() - 0.5) * 1.2 * w));
+        m.scale.set(r, r * 0.5, r * 0.8);
+        m.rotation.y = rnd() * 6.28;
+        cl.add(m);
+      }
+      cl.position.set((rnd() * 2 - 1) * CLOUD_R, CLOUD_LAYERS[layer].y + (rnd() - 0.5) * 0.8, (rnd() * 2 - 1) * CLOUD_R);
+      cl.userData.v = 0.18 + rnd() * 0.12 + layer * 0.04;
+      cl.userData.lite = n % 2 === 0; // в лёгкой графике остаётся каждое второе
+      cloudSea.add(cl);
+    }
+  })();
   /* День и ночь: в тёмной теме мир освещён луной — свет холодный и тусклый, земля темнее и зеленее,
      а монеты, флаг и лава светятся сильнее, чтобы их было видно */
   let night = false;
   const LOOK = {
-    day: { hemi: [0xffe6d4, 0x7a5f8a, 0.6], sun: [0xffd9b0, 0.82], grassA: 0x86c76a, grassB: 0x79bb5f, dirt: 0xb08258, rock: 0x7e7090, stoneA: 0x6c6690, stoneB: 0x5d5880, leaf: 0x4cb070, coinGlow: 0.35, flagGlow: 0, lava: 1 },
-    night: { hemi: [0xb4bff2, 0x3a2f60, 0.62], sun: [0xc9d0ff, 0.5], grassA: 0x5aaa6c, grassB: 0x4f9e61, dirt: 0x87624a, rock: 0x6a6088, stoneA: 0x58557f, stoneB: 0x4e4b72, leaf: 0x3a9461, coinGlow: 0.8, flagGlow: 0.3, lava: 1.3 },
+    day: { hemi: [0xffe6d4, 0x7a5f8a, 0.6], sun: [0xffd9b0, 0.82], grassA: 0x86c76a, grassB: 0x79bb5f, dirt: 0xb08258, rock: 0x7e7090, stoneA: 0x6c6690, stoneB: 0x5d5880, leaf: 0x4cb070, coinGlow: 0.35, flagGlow: 0, lava: 1,
+      under: 0xffffff, underBit: 0x8a7aa0, cloud: 0xffffff, cloudGlow: 0xffe4ea, cloudGlowK: 0.62, cloudOp: 1 },
+    night: { hemi: [0xb4bff2, 0x3a2f60, 0.62], sun: [0xc9d0ff, 0.5], grassA: 0x5aaa6c, grassB: 0x4f9e61, dirt: 0x87624a, rock: 0x6a6088, stoneA: 0x58557f, stoneB: 0x4e4b72, leaf: 0x3a9461, coinGlow: 0.8, flagGlow: 0.3, lava: 1.3,
+      under: 0x8e86b4, underBit: 0x5c547e, cloud: 0x51487a, cloudGlow: 0x221a44, cloudGlowK: 0.5, cloudOp: 0.7 },
   };
   function applyNight() {
     const dark = document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -222,6 +297,8 @@
     ['grassA', 'grassB', 'dirt', 'rock', 'stoneA', 'stoneB', 'leaf'].forEach(k => M[k].color.setHex(L[k]));
     M.coin.emissiveIntensity = L.coinGlow;
     M.flag.emissive.setHex(0x1fa88f); M.flag.emissiveIntensity = L.flagGlow;
+    M.under.color.setHex(L.under); M.underBit.color.setHex(L.underBit);
+    cloudMats.forEach((m, i) => { m.color.setHex(L.cloud); m.emissive.setHex(L.cloudGlow); m.emissiveIntensity = L.cloudGlowK; m.opacity = CLOUD_LAYERS[i].op * L.cloudOp; });
   }
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyNight);
   new MutationObserver(applyNight).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
@@ -450,6 +527,7 @@
     scene.remove(levelGroup);
     levelGroup.traverse(o => {
       if (o.geometry && o.geometry !== boxGeo && !o.isSprite) o.geometry.dispose(); // геометрия спрайтов общая на всех
+      if (o.isInstancedMesh) o.dispose();
       if (o.material && o.material.isMaterial && o.material.map) o.material.map.dispose(); // у блоков — массив материалов
     });
     levelGroup = new THREE.Group();
@@ -509,6 +587,7 @@
         }
       }
     }
+    buildUnderside(level, minX, maxX, minZ, maxZ);
     // монеты
     const coinGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.06, 20);
     level.coins.forEach(k => {
@@ -666,6 +745,81 @@
     sc.updateProjectionMatrix();
     sun.position.set(cam.target.x + 5, 12, cam.target.z + 6);
     sun.target.position.copy(cam.target);
+    placeClouds(span);
+  }
+
+  /* Летучий остров: под картой — каменное днище из перевёрнутых конусов (чем дальше от края, тем ниже),
+     рядом парят отколовшиеся камешки. Одна InstancedMesh — дёшево и для больших лабиринтов */
+  const floaters = [];
+  function buildUnderside(level, minX, maxX, minZ, maxZ) {
+    floaters.length = 0;
+    // остров — дорога и кайма вокруг неё; глубина клетки — сколько шагов до края острова
+    const land = new Map();
+    for (let x = minX - 1; x <= maxX + 1; x++) {
+      for (let z = minZ - 1; z <= maxZ + 1; z++) {
+        let near = false;
+        for (let dx = -1; dx <= 1 && !near; dx++) for (let dz = -1; dz <= 1; dz++) if (level.floor.has(K(x + dx, z + dz))) { near = true; break; }
+        if (near) land.set(K(x, z), 0);
+      }
+    }
+    let edge = [...land.keys()].filter(k => {
+      const [x, z] = k.split(',').map(Number);
+      return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !land.has(K(x + dx, z + dz)));
+    });
+    edge.forEach(k => land.set(k, 1));
+    for (let d = 2; edge.length; d++) {
+      const next = [];
+      edge.forEach(k => {
+        const [x, z] = k.split(',').map(Number);
+        [[1, 0], [-1, 0], [0, 1], [0, -1]].forEach(([dx, dz]) => { const n = K(x + dx, z + dz); if (land.get(n) === 0) { land.set(n, d); next.push(n); } });
+      });
+      edge = next;
+    }
+    const geo = new THREE.ConeGeometry(0.72, 1, 5);
+    geo.rotateX(Math.PI); geo.translate(0, -0.5, 0); // острие вниз, основание на нуле
+    const mesh = new THREE.InstancedMesh(geo, M.under, land.size);
+    const o = new THREE.Object3D(), col = new THREE.Color(), top = new THREE.Color(UNDER.top), deep = new THREE.Color(UNDER.deep);
+    let i = 0;
+    land.forEach((d, k) => {
+      const [x, z] = k.split(',').map(Number), r = hash(x * 7 + 3, z * 5 - 1);
+      const h = Math.min(4.2, 0.45 + d * 0.62 + r * 0.55);
+      o.position.set(x + (r - 0.5) * 0.25, -0.88, z + (hash(z, x) - 0.5) * 0.25);
+      o.rotation.set(0, r * 6.28, 0);
+      o.scale.set(0.95 + r * 0.3, h, 0.95 + r * 0.3);
+      o.updateMatrix();
+      mesh.setMatrixAt(i, o.matrix);
+      mesh.setColorAt(i, col.copy(top).lerp(deep, Math.min(1, (d - 1) / 3 + r * 0.2)));
+      i++;
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    levelGroup.add(mesh);
+    // отколовшиеся камешки: висят у краёв острова и чуть покачиваются
+    const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+    const rx = (maxX - minX) / 2 + 2.2, rz = (maxZ - minZ) / 2 + 2.2;
+    [[0.6, -2.2, 0.26], [2.3, -3, 0.2], [3.6, -1.8, 0.16], [5.1, -3.3, 0.24]].forEach(([a, y, s], j) => {
+      const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), M.underBit);
+      m.scale.y = 0.75;
+      const ang = a + hash(minX + j, maxZ - j) * 0.6;
+      m.position.set(cx + Math.cos(ang) * rx, y, cz + Math.sin(ang) * rz);
+      m.rotation.y = ang;
+      m.userData.y0 = y; m.userData.ph = j * 1.7;
+      levelGroup.add(m);
+      floaters.push(m);
+    });
+  }
+
+  function placeClouds(span) {
+    cloudSea.position.set(cam.target.x, 0, cam.target.z);
+    cloudSea.scale.setScalar(Math.max(1, span / 9));
+  }
+  function animateClouds(dt) {
+    if (reduceMotion) return;
+    cloudSea.children.forEach(cl => {
+      cl.position.x += cl.userData.v * dt;
+      if (cl.position.x > CLOUD_R + 3) cl.position.x -= 2 * CLOUD_R + 6;
+    });
+    const t = performance.now() / 1000;
+    floaters.forEach(m => { m.position.y = m.userData.y0 + Math.sin(t * 0.9 + m.userData.ph) * 0.12; m.rotation.y += dt * 0.15; });
   }
 
   // Табличка: справа от Бита и чуть позади (с обычной камеры Бит её не закрывает, а она — его), дощечка крупнее прежней
@@ -904,6 +1058,7 @@
     if (failRing && !reduceMotion) failRing.scale.setScalar(1 + Math.sin(time * 5) * 0.08);
     if (boss && boss.visible) animateSboy(boss, time, dt);
     if (cut) animateCut(time, dt);
+    animateClouds(dt);
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     if (heroParts.tail && !reduceMotion) heroParts.tail.rotation.y = Math.sin(time * (running ? 7 : 3)) * 0.3;
     animateFace(time, dt);
@@ -950,6 +1105,7 @@
   function applyLite() {
     document.body.classList.toggle('lite', lite);
     BLOB.hero.visible = BLOB.coin.visible = lite;
+    cloudSea.children.forEach(cl => { cl.visible = !lite || cl.userData.lite; });
     renderer.setPixelRatio(lite ? 1 : Math.min(devicePixelRatio, 2));
     if (renderer.shadowMap.enabled === lite) {
       renderer.shadowMap.enabled = !lite;
