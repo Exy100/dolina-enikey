@@ -917,7 +917,7 @@
         if (score < best) { best = score; fountain = { x, z }; }
       });
     });
-    // спутниковые тарелки (1–5, на больших картах больше) и иногда упавшая НЛО — на внешнем краю, не рядом друг с другом
+    // спутниковые тарелки (1–5, на больших картах больше) и упавшая НЛО (на каждой карте) — на внешнем краю, не рядом друг с другом
     const special = new Map();
     {
       const pool = [...ring].filter(k => k !== (fountain && K(fountain.x, fountain.z)))
@@ -926,7 +926,7 @@
         .sort((a, b) => hash(a[0] * 5 + 1, a[1] * 3 - 2) - hash(b[0] * 5 + 1, b[1] * 3 - 2));
       const seed = hash(level.start.x * 13 + ring.size, level.start.z * 7 + level.floor.size);
       const dishes = Math.max(1, Math.min(5, 1 + Math.floor(pool.length / 14) + (seed > 0.5 ? 1 : 0)));
-      const want = [...(seed < 0.5 ? ['ufo'] : []), ...Array(dishes).fill('dish')];
+      const want = ['ufo', ...Array(dishes).fill('dish')];
       const far = ([x, z]) => [...special.keys()].every(k => { const [a, b] = k.split(',').map(Number); return Math.max(Math.abs(a - x), Math.abs(b - z)) > 1; });
       for (const c of pool) {
         if (!want.length) break;
