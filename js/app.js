@@ -488,15 +488,16 @@
   const heroParts = {};
   const skinOf = id => (HeroGear.SKINS.find(s => s.id === id) || HeroGear.SKINS[0]);
   function buildHeroParts(skinId) {
-    const sk = skinOf(skinId).id, box = sk === 'pixel', cat = sk === 'iskra', root = new THREE.Group();
+    const sk = skinOf(skinId).id, box = sk === 'pixel', cat = sk === 'iskra', atom = sk === 'atom', root = new THREE.Group();
     const violet = new THREE.MeshStandardMaterial({ color: 0x6b4bd8, flatShading: true, roughness: 0.55 });
     const violetLight = new THREE.MeshStandardMaterial({ color: 0x8f7cff, roughness: 0.45 });
     const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
     const black = new THREE.MeshStandardMaterial({ color: 0x3a2a4d, roughness: 0.3 });
     const gold = new THREE.MeshStandardMaterial({ color: 0xffc83d, emissive: 0x6b4500, emissiveIntensity: 0.4 });
     const pink = new THREE.MeshStandardMaterial({ color: 0xffc2b0, roughness: 0.6 });
-    const body = new THREE.Mesh(box ? new THREE.BoxGeometry(0.38, 0.34, 0.3) : new THREE.CylinderGeometry(cat ? 0.17 : 0.2, cat ? 0.22 : 0.25, 0.4, 10), violet);
+    const body = new THREE.Mesh(box ? new THREE.BoxGeometry(0.38, 0.34, 0.3) : atom ? new THREE.SphereGeometry(0.2, 16, 12) : new THREE.CylinderGeometry(cat ? 0.17 : 0.2, cat ? 0.22 : 0.25, 0.4, 10), violet);
     body.position.y = box ? 0.25 : 0.26; body.castShadow = true;
+    if (atom) body.scale.set(1, 1.05, 0.95);
     const head = new THREE.Mesh(box ? new THREE.BoxGeometry(0.4, 0.36, 0.34) : new THREE.SphereGeometry(0.21, 20, 16), violetLight);
     head.position.y = 0.62; head.castShadow = true;
     if (cat) head.scale.x = 1.08;
@@ -581,9 +582,52 @@
       tail.add(stem, tip);
       root.add(tail);
     }
+    let orbits = null;
+    if (atom) { // атом: голова — ядро в бугорках протонов и нейтронов, вокруг три наклонные орбиты с электронами и искорки
+      const proton = new THREE.MeshStandardMaterial({ color: 0xff8a5c, roughness: 0.4 });
+      const nucGeo = new THREE.SphereGeometry(0.06, 10, 8);
+      for (let i = 0; i < 30; i++) { // бугорки по сфере головы, кроме лица
+        const y = 1 - (i + 0.5) / 30 * 2, rr = Math.sqrt(1 - y * y), a = i * 2.39996;
+        const v = new THREE.Vector3(Math.cos(a) * rr, y, Math.sin(a) * rr);
+        if (v.z > 0.05 && v.y > -0.85 && v.y < 0.62) continue;
+        const b = new THREE.Mesh(nucGeo, i % 2 ? proton : violetLight);
+        b.position.copy(v).multiplyScalar(0.19).add(new THREE.Vector3(0, 0.62, 0));
+        b.castShadow = true;
+        root.add(b);
+      }
+      orbits = new THREE.Group(); orbits.name = 'orbits';
+      orbits.position.y = 0.62;
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xbfe9ff, transparent: true, opacity: 0.4, depthWrite: false });
+      const eMat = new THREE.MeshStandardMaterial({ color: 0x7ff6ff, emissive: 0x2fd8ff, emissiveIntensity: 1 });
+      const tailMat = [0.55, 0.32, 0.16].map(o => new THREE.MeshBasicMaterial({ color: 0x9ff4ff, transparent: true, opacity: o, depthWrite: false }));
+      const eGeo = new THREE.SphereGeometry(0.03, 10, 8), tGeo = new THREE.SphereGeometry(0.022, 8, 6);
+      const rings = [[0.36, 1.25, 0.2, 2.6], [0.34, -0.7, 1.0, -3.1], [0.38, 0.35, -0.9, 2.2]].map(([R, rx, rz, sp], i) => {
+        const ring = new THREE.Group();
+        ring.rotation.set(rx, 0, rz);
+        ring.add(new THREE.Mesh(new THREE.TorusGeometry(R, 0.005, 4, 48), ringMat));
+        const e = new THREE.Mesh(eGeo, eMat), trail = tailMat.map(m => new THREE.Mesh(tGeo, m));
+        ring.add(e, ...trail);
+        orbits.add(ring);
+        return { R, sp, ph: i * 2.1, e, trail };
+      });
+      // искорки: мелкие частицы кружат вокруг атома по своим кругам
+      const sparkMat = new THREE.MeshBasicMaterial({ color: 0xfff4c0, transparent: true, opacity: 0.85, depthWrite: false });
+      const sGeo = new THREE.OctahedronGeometry(0.014, 0);
+      const sparks = Array.from({ length: 7 }, (_, i) => { const m = new THREE.Mesh(sGeo, sparkMat); orbits.add(m); return { m, r: 0.26 + (i % 3) * 0.07, sp: 0.7 + i * 0.13, ph: i * 0.9, h: (i % 4 - 1.5) * 0.12 }; });
+      orbits.userData.spin = t => {
+        rings.forEach(r => { // электрон и три шажка шлейфа позади него
+          const a = t * r.sp + r.ph;
+          r.e.position.set(Math.cos(a) * r.R, Math.sin(a) * r.R, 0);
+          r.trail.forEach((m, k) => { const b = a - (k + 1) * 0.17 * Math.sign(r.sp); m.position.set(Math.cos(b) * r.R, Math.sin(b) * r.R, 0); });
+        });
+        sparks.forEach(s => { const a = t * s.sp + s.ph; s.m.position.set(Math.cos(a) * s.r, s.h + Math.sin(t * 1.7 + s.ph) * 0.05, Math.sin(a) * s.r); s.m.rotation.y = t * 3; });
+      };
+      orbits.userData.spin(0.8);
+      root.add(orbits);
+    }
     [head, antPivot, bulb, ...eyes, ...pupils, ...feet].forEach(o => rest(o));
     [...joy, ...squint, mouth].forEach(o => rest(o, false));
-    const parts = { skin: sk, body, head, violet, violetLight, ant, bulb, antPivot, eyes, pupils, joy, squint, mouth, feet, ears, tail };
+    const parts = { skin: sk, body, head, violet, violetLight, ant, bulb, antPivot, eyes, pupils, joy, squint, mouth, feet, ears, tail, orbits };
     headDecor(parts, false, false);
     return { root, parts };
   }
@@ -1564,11 +1608,12 @@
   // Копии Бита (остров на странице героя, портрет в «Итоге пролога») тоже моргают: у каждой свои часы
   function makeBlinker(root) {
     const lids = []; let at = 1 + Math.random() * 2, t0 = -1;
-    let tail = null;
-    root.traverse(o => { if (o.name === 'eye' || o.name === 'pupil') lids.push(o); else if (o.name === 'tail') tail = o; });
+    let tail = null, orbits = null;
+    root.traverse(o => { if (o.name === 'eye' || o.name === 'pupil') lids.push(o); else if (o.name === 'tail') tail = o; else if (o.name === 'orbits') orbits = o; });
     return time => {
       if (reduceMotion) return;
       if (tail) tail.rotation.y = Math.sin(time * 3) * 0.3;
+      if (orbits) orbits.userData.spin(time);
       let lid = 1;
       if (t0 < 0 && time > at) t0 = time;
       if (t0 >= 0) {
@@ -1666,6 +1711,7 @@
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     if (heroParts.tail && !reduceMotion) heroParts.tail.rotation.y = Math.sin(time * (running ? 7 : 3)) * 0.3;
     animateFace(time, dt);
+    if (heroParts.orbits && !reduceMotion) heroParts.orbits.userData.spin(time); // электроны атома летают
     if (BLOB.hero.visible) { // в прыжке пятно меньше и бледнее, в лаве пропадает
       const h = hero.position.y;
       heroBlob.scale.setScalar(heroBlob.userData.size / (1 + Math.max(0, h) * 0.8));

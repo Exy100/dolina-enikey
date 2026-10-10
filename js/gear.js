@@ -62,6 +62,7 @@ const HeroGear = (() => {
     { id: 'bit', name: 'Классика', note: 'круглая голова и антенна', colors: DEFAULT_COLORS, ant: true },
     { id: 'pixel', name: 'Кубик', note: 'робот из кубиков', colors: [0x1e9e7e, 0x5fd3b0], ant: true },
     { id: 'iskra', name: 'Ушки', note: 'ушки и хвост', colors: [0xe5774a, 0xffa877], ant: false },
+    { id: 'atom', name: 'Атом', note: 'ядро и электроны на орбитах', colors: [0x3f6fe0, 0x7ea6ff], ant: false },
   ];
 
   const SHOP = ITEMS.filter(it => it.price);
