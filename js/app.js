@@ -2566,7 +2566,30 @@
     $('#hbBar').style.width = next ? `${Math.round(((stars - cur.stars) / (next.stars - cur.stars)) * 100)}%` : '100%';
     $('#heroBtn').setAttribute('aria-label', `${STORY.hero}, уровень ${n}: ${cur.title}. Страница героя${save.awardsNew ? ', там есть новое' : ''}`);
     $('#heroBtn').classList.toggle('new', !!save.awardsNew);
+    $('#menuBtn').classList.toggle('new', !!save.awardsNew);
   }
+
+  // Меню: шапка (карта долины, Бит, вкладки заданий) спрятана, кнопка «Меню» в углу мира выдвигает её сверху
+  const menuOpen = () => document.body.classList.contains('menu-open');
+  function openMenu() {
+    document.body.classList.add('menu-open');
+    $('#menuBack').hidden = false;
+    $('#menuBtn').setAttribute('aria-expanded', 'true');
+    ($('#tabs .tab.active') || $('#mapBtn')).focus({ preventScroll: true });
+  }
+  function closeMenu(focus) {
+    if (!menuOpen()) return;
+    document.body.classList.remove('menu-open');
+    $('#menuBack').hidden = true;
+    $('#menuBtn').setAttribute('aria-expanded', 'false');
+    if (focus) $('#menuBtn').focus({ preventScroll: true });
+  }
+  // куда вернуть фокус после окна, открытого из меню: кнопка в меню видна, только пока оно открыто
+  const menuFocus = el => (menuOpen() ? el : $('#menuBtn')).focus({ preventScroll: true });
+  $('#menuBtn').addEventListener('click', () => menuOpen() ? closeMenu(true) : openMenu());
+  $('#menuClose').addEventListener('click', () => closeMenu(true));
+  $('#menuBack').addEventListener('click', () => closeMenu(true));
+  addEventListener('keydown', e => { if (e.key === 'Escape' && menuOpen()) closeMenu(true); });
 
   function renderTabs() {
     renderLessons();
@@ -2603,7 +2626,7 @@
         b.innerHTML = `<span class="num" aria-hidden="true">✎</span><span class="nm">${t.short}</span>`;
       } else b.innerHTML = `<span class="num">${i + 1}</span><span class="nm">${t.short}</span><span class="stars">${starsHtml(st)}</span>`;
       if (save.hw && save.hw.ids && save.hw.ids.includes(t.id)) { b.classList.add('hwmark'); b.title = (b.title ? b.title + '. ' : '') + 'Задано на дом'; }
-      b.addEventListener('click', () => { if (!running) selectTask(i); });
+      b.addEventListener('click', () => { if (!running) { selectTask(i); closeMenu(); } });
       nav.append(b);
     });
     renderHw();
@@ -2693,7 +2716,7 @@
       ? 'Нажми «Запуск»: код проверится на трёх разных картах. «Шаг» выполняет программу по одной строке.'
       : 'Нажми «Запуск», и герой выполнит программу. «Шаг» выполняет её по одной строке.', 'info');
     // в уроках без условий карта одна: переключатель карт и «Новые карты» не нужны
-    $('.hud.tl').hidden = maps.length === 1;
+    $('#mapsBox').hidden = maps.length === 1;
     $('#newMapsBtn').hidden = maps.length === 1;
     $('#againBtn').hidden = maps.length === 1;
     if (exam) $('#newMapsBtn').hidden = $('#againBtn').hidden = $('#guessBtn').hidden = true; // карты попытки не меняют, угадывать не нужно
@@ -3811,7 +3834,8 @@
   // (первый запуск: всё полученное раньше просто запоминается, кристаллы за него уже лежат в лавке)
   // Кристаллы вылетают из мира и летят к кнопке героя
   function flyGems(n) {
-    const to = $('#heroBtn') && $('#heroBtn').getBoundingClientRect(), from = $('#stage').getBoundingClientRect();
+    const target = menuOpen() ? $('#heroBtn') : $('#menuBtn');
+    const to = target.getBoundingClientRect(), from = $('#stage').getBoundingClientRect();
     if (reduceMotion || lite || !to || !to.width || !from.width || !document.body.animate) return;
     const sx = from.left + from.width / 2, sy = from.top + from.height / 2;
     const dx = to.left + to.width / 2 - sx, dy = to.top + to.height / 2 - sy;
@@ -3828,7 +3852,7 @@
         { transform: `translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px)) scale(.45)`, opacity: 0.9 },
       ], { duration: 1000, delay: i * 90, easing: 'cubic-bezier(.45,0,.75,.5)', fill: 'both' }).onfinish = () => {
         el.remove();
-        const b = $('#heroBtn'); b.classList.remove('gem-pulse'); void b.offsetWidth; b.classList.add('gem-pulse');
+        target.classList.remove('gem-pulse'); void target.offsetWidth; target.classList.add('gem-pulse');
       };
     }
   }
@@ -3960,7 +3984,7 @@
     stopIsland();
     hpShared = null;
     hpTry = null;
-    if (!shared) $('#heroBtn').focus({ preventScroll: true });
+    if (!shared) menuFocus($('#heroBtn'));
   }
   // Вкладки справа от острова: прогресс, лавка Ады, снаряжение. Остров всегда виден — на нём и примерка
   function showTab(name) {
@@ -4393,7 +4417,7 @@
     $('#hpMsg').value = `${D.n ? `${D.n} и робот Бит` : 'Робот Бит'} в Долине Эникей: уровень ${n} «${LEVELS[n - 1].title}», ★ ${S.stars}, `
       + `пройдено уроков: ${S.A.lessons} из ${total}, достижений: ${got} из ${S.awards.length}. Страница героя: ${url}`;
   }
-  $('#heroBtn').addEventListener('click', () => openHeroPage());
+  $('#heroBtn').addEventListener('click', () => { closeMenu(); openHeroPage(); });
   $('#hpClose').addEventListener('click', closeHeroPage);
   $('#hpOpenGame').addEventListener('click', closeHeroPage);
   $('#heroPage').addEventListener('click', e => { if (e.target.id === 'heroPage') closeHeroPage(); });
@@ -4526,9 +4550,9 @@
   function closeValley() {
     $('#valley').hidden = true;
     document.body.classList.remove('recap-open');
-    $('#mapBtn').focus({ preventScroll: true });
+    menuFocus($('#mapBtn'));
   }
-  $('#mapBtn').addEventListener('click', openValley);
+  $('#mapBtn').addEventListener('click', () => { closeMenu(); openValley(); });
   $('#valleyClose').addEventListener('click', closeValley);
   $('#valley').addEventListener('click', e => { if (e.target.id === 'valley') closeValley(); });
   addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#valley').hidden) closeValley(); });

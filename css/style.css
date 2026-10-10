@@ -51,11 +51,26 @@ button { font: inherit; color: inherit; cursor: pointer; }
 button:disabled { cursor: default; opacity: .45; }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
-.app { display: grid; grid-template-rows: auto 1fr; grid-template-columns: minmax(0, 1fr); height: 100%; }
+.app { display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); height: 100%; }
 .app > *, .tabs { min-width: 0; }
 
-/* Шапка */
-.top { display: flex; align-items: center; gap: 20px; padding: 12px 18px; flex-wrap: wrap; }
+/* Шапка — меню: спрятана, кнопка «Меню» в углу мира открывает её сверху поверх игры (body.menu-open) */
+.top { position: fixed; z-index: 30; top: calc(env(safe-area-inset-top, 0px) + var(--beta-h)); left: 0; right: 0; max-height: calc(100% - var(--beta-h));
+  overflow-y: auto; display: flex; align-items: center; gap: 14px 20px; padding: 14px 18px 16px; flex-wrap: wrap;
+  background: var(--panel); border-radius: 0 0 22px 22px; box-shadow: 0 18px 40px rgba(18,20,43,.22);
+  transform: translateY(-110%); visibility: hidden; transition: transform .25s cubic-bezier(.2,.8,.3,1), visibility 0s .25s; }
+body.menu-open .top { transform: none; visibility: visible; transition: transform .25s cubic-bezier(.2,.8,.3,1); }
+.menu-back { position: fixed; inset: 0; z-index: 29; background: rgba(18,20,43,.28); }
+.menu-x { position: absolute; top: 10px; right: 12px; border: 0; background: transparent; color: var(--muted); font-size: 28px; line-height: 1; padding: 2px 8px; }
+.menu-x:hover { color: var(--ink); }
+.top .brand { padding-right: 40px; } /* место под крестик */
+.top .tabs { width: 100%; }
+.menu-btn { position: relative; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--ink); }
+.menu-btn[aria-expanded="true"] { background: var(--accent); color: var(--accent-ink); }
+.mn-ico { display: grid; gap: 3px; width: 16px; }
+.mn-ico i { display: block; height: 2px; border-radius: 1px; background: currentColor; }
+.menu-btn.new::after { content: ""; position: absolute; top: -3px; right: -3px; width: 12px; height: 12px; border-radius: 50%; background: var(--danger); box-shadow: 0 0 0 2px var(--panel); } /* новое достижение */
+@media (prefers-reduced-motion: reduce) { .top, body.menu-open .top { transition: none; } }
 .brand { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin-right: auto; }
 .brand h1 { margin: 0; font: 700 21px/1.1 var(--display); letter-spacing: -.01em; }
 .brand p { margin: 0; color: var(--muted); font-size: 14px; }
@@ -107,7 +122,7 @@ button:disabled { cursor: default; opacity: .45; }
 .stars i.on { color: var(--gold-star); }
 
 /* Основная сетка */
-main { display: grid; grid-template-columns: minmax(360px, 470px) 1fr; gap: 14px; padding: 0 14px 14px; min-height: 0; }
+main { display: grid; grid-template-columns: minmax(360px, 470px) 1fr; gap: 14px; padding: 14px; min-height: 0; }
 main > * { min-width: 0; }
 .code-pane { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; padding-right: 2px; }
 
@@ -328,7 +343,7 @@ body.lite .sky * { animation: none !important; }
   .world { order: -1; height: 52vh; min-height: 300px; }
   .code-pane { overflow: visible; }
   .ed-code pre, .ed-code textarea, .gutter { font-size: 16px; }
-  .top { padding: 10px 14px; }
+  .top { padding: 12px 14px 14px; }
   .speed { margin-left: 0; }
   .tabs { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 2px; }
   .tab { flex-shrink: 0; }
@@ -345,7 +360,7 @@ body.lite .sky * { animation: none !important; }
 @media (min-width: 901px) and (max-width: 1100px) {
   .map-label { display: none; }
   .hud-btn { padding: 6px 10px; font-size: 13px; }
-  .hud.tr { max-width: calc(100% - 150px); flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; }
+  .hud.tr { max-width: calc(100% - 250px); flex-wrap: wrap; justify-content: flex-end; row-gap: 6px; }
 }
 /* Заставка */
 .splash { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px;
@@ -794,7 +809,9 @@ button.hp-a:hover { border-color: var(--accent); }
 }
 
 /* Мост к Python: консоль вместо мира, карточка «у Бита → в Python», пример ввода и вывода в задании */
-.world.py #stage, .world.py .hud, .world.py .bubble { display: none; }
+.world.py #stage, .world.py .hud:not(.tl), .world.py #mapsBox, .world.py .bubble { display: none; }
+.world.py .hud.tl { z-index: 5; } /* кнопка «Меню» остаётся над консолью */
+.world.py .pyw { padding-top: 62px; }
 .pyw { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; gap: 12px; padding: 16px; overflow-y: auto; }
 .pyw[hidden] { display: none; }
 .bridge { flex: none; background: var(--panel); border-radius: 18px; padding: 14px 16px; box-shadow: 0 8px 24px rgba(18,20,43,.08); }
@@ -1015,7 +1032,7 @@ body.shots-mode { overflow: hidden; }
 /* Кристаллы летят к кнопке героя */
 .gem-fly { position: fixed; z-index: 200; width: 28px; height: 28px; pointer-events: none; filter: drop-shadow(0 0 8px rgba(127,224,255,.85)); }
 .gem-fly svg { width: 100%; height: 100%; display: block; }
-.hero-badge.gem-pulse { animation: gemPulse .5s cubic-bezier(.3,1.6,.5,1); }
+.hero-badge.gem-pulse, .menu-btn.gem-pulse { animation: gemPulse .5s cubic-bezier(.3,1.6,.5,1); }
 @keyframes gemPulse { 40% { transform: scale(1.12); } }
 
 /* Плашка тестирования: полоска над всеми экранами. Страница начинается под ней, карточки во весь экран — тоже.

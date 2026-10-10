@@ -21,7 +21,9 @@
   </div>
 </div>
 <div class="app">
-  <header class="top">
+  <!-- Шапка спрятана под кнопкой «Меню» в углу мира: выезжает сверху поверх игры (js/app.js, openMenu) -->
+  <div class="menu-back" id="menuBack" hidden></div>
+  <header class="top" id="top" aria-label="Меню">
     <div class="brand">
       <h1>Долина Эникей</h1>
       <!-- Карта долины вместо списка уроков: кнопка открывает карту (js/app.js, renderValley) -->
@@ -37,6 +39,7 @@
         <span class="hb-bar" aria-hidden="true"><i id="hbBar"></i></span>
       </button>
     </div>
+    <button type="button" class="menu-x" id="menuClose" aria-label="Закрыть меню" title="Закрыть меню">×</button>
     <nav class="tabs" id="tabs" aria-label="Задания урока"></nav>
   </header>
 
@@ -126,7 +129,8 @@
         <div class="bubble" id="bubble" aria-hidden="true"></div>
       </div>
       <div class="hud tl">
-        <div class="hud-box">
+        <button type="button" class="hud-btn menu-btn" id="menuBtn" aria-expanded="false" aria-controls="top"><span class="mn-ico" aria-hidden="true"><i></i><i></i><i></i></span>Меню</button>
+        <div class="hud-box" id="mapsBox">
           <span class="map-label" id="mapLabel">Карта 1 из 3</span>
           <div class="dots">
             <button type="button" class="dot" aria-label="Показать карту 1">1</button>
