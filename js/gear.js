@@ -60,9 +60,9 @@ const HeroGear = (() => {
   // ant — есть ли антенна (у «Ушек» вместо неё ушки и хвост). Сами модели собирает buildHeroParts в app.js
   const SKINS = [
     { id: 'bit', name: 'Классика', note: 'круглая голова и антенна', colors: DEFAULT_COLORS, ant: true },
-    { id: 'qubit', name: 'Кубит', note: 'парит; сфера Блоха и квантовое мерцание', colors: [0x2fbfa8, 0x8ff0dc], ant: false },
+    { id: 'qubit', name: 'Кубит', note: 'парящий куб из нулей и единиц', colors: [0x2f6fe0, 0xffffff], ant: false },
     { id: 'iskra', name: 'Ушки', note: 'ушки и хвост', colors: [0xe5774a, 0xffa877], ant: false },
-    { id: 'atom', name: 'Атом', note: 'светящееся ядро и электроны с огненными хвостами', colors: [0xff7a2a, 0xffc86a], ant: false },
+    { id: 'atom', name: 'Атом', note: 'светящееся ядро и электроны с огненными хвостами', colors: [0xff7a1a, 0xffb030], ant: false },
   ];
 
   const SHOP = ITEMS.filter(it => it.price);

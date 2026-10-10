@@ -496,10 +496,9 @@
     const black = new THREE.MeshStandardMaterial({ color: 0x3a2a4d, roughness: 0.3 });
     const gold = new THREE.MeshStandardMaterial({ color: 0xffc83d, emissive: 0x6b4500, emissiveIntensity: 0.4 });
     const pink = new THREE.MeshStandardMaterial({ color: 0xffc2b0, roughness: 0.6 });
-    if (qubit) Object.assign(violet, { transparent: true, opacity: 0.38, roughness: 0.08, flatShading: false, depthWrite: false, emissive: new THREE.Color(0x0f5f6f), emissiveIntensity: 0.4 }); // стеклянная сфера
-    const body = new THREE.Mesh(atom || qubit ? new THREE.SphereGeometry(0.2, 24, 18) : new THREE.CylinderGeometry(cat ? 0.17 : 0.2, cat ? 0.22 : 0.25, 0.4, 10), violet);
-    body.position.y = qubit ? 0.3 : 0.26; body.castShadow = !qubit;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(atom ? 0.06 : 0.21, 20, 16), violetLight);
+    const body = new THREE.Mesh(atom || qubit ? new THREE.SphereGeometry(0.2, 12, 8) : new THREE.CylinderGeometry(cat ? 0.17 : 0.2, cat ? 0.22 : 0.25, 0.4, 10), violet);
+    body.position.y = 0.26; body.castShadow = true;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(atom ? 0.06 : qubit ? 0.05 : 0.21, 20, 16), violetLight);
     head.position.y = 0.62; head.castShadow = true;
     if (cat) head.scale.x = 1.08;
     body.name = 'body'; head.name = 'head';
@@ -537,12 +536,10 @@
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), gold);
     bulb.position.y = 0.22; bulb.name = 'bulb';
     antPivot.add(ant, bulb);
-    // ноги; у «Кубита» вместо ног — светящиеся сопла: он парит
-    const jet = qubit && new THREE.MeshStandardMaterial({ color: 0x9ff4ff, emissive: 0x2fd8ff, emissiveIntensity: 0.9, roughness: 0.3 });
-    const feetGeo = qubit ? new THREE.CylinderGeometry(0.05, 0.035, 0.03, 12) : new THREE.SphereGeometry(0.09, 10, 8);
+    const feetGeo = new THREE.SphereGeometry(0.09, 10, 8);
     [0.1, -0.1].forEach(x => {
-      const f = new THREE.Mesh(feetGeo, qubit ? jet : black); f.position.set(qubit ? x * 0.7 : x, qubit ? 0.06 : 0.05, qubit ? 0 : 0.03);
-      if (!qubit) f.scale.set(1, 0.6, 1.3);
+      const f = new THREE.Mesh(feetGeo, black); f.position.set(x, 0.05, 0.03);
+      f.scale.set(1, 0.6, 1.3);
       root.add(f); feet.push(f);
     });
     const tri = new THREE.Shape();
@@ -577,16 +574,20 @@
       root.add(tail);
     }
     let fx = null; // живая часть облика: орбиты атома, сфера Блоха кубита; анимация — fx.userData.spin(t)
-    if (atom) { // атом — не человечек: светящееся ядро, вытянутые орбиты, электроны с огненными хвостами (лицо, ноги и тело спрятаны)
+    if (atom || qubit) { // атом и кубит — не человечки: лицо, ноги и тело спрятаны, видна только «живая часть» fx
       const off = new THREE.Group(); off.visible = false;
       [body, ...eyes, ...pupils, ...joy, ...squint, mouth, ...feet].forEach(o => off.add(o));
       root.add(off);
-      [violet, violetLight].forEach(m => { m.emissive.setHex(m === violet ? 0xff5a10 : 0xffb040); m.emissiveIntensity = 0.9; });
+    }
+    if (atom) { // атом: светящееся ядро, вытянутые орбиты, электроны с огненными хвостами
+      // протоны и нейтроны — свои материалы: светятся сами, ярко-оранжевые без бурых боков (свечение корпуса героя игра гасит при смене карты)
+      const nuc = [[0xff7a1a, 0xff6a00], [0xffb030, 0xffa020]].map(([c, e]) => new THREE.MeshStandardMaterial({ color: c, emissive: e, emissiveIntensity: 1.5, roughness: 0.4 }));
+      violetLight.emissive.setHex(0xffa020); violetLight.emissiveIntensity = 1.5;
       // ядро: протоны и нейтроны вокруг сердцевины — дети головы, чтобы покачивались вместе с ней
       const nGeo = new THREE.SphereGeometry(0.045, 12, 10);
       for (let i = 0; i < 14; i++) {
         const y = 1 - (i + 0.5) / 14 * 2, rr = Math.sqrt(1 - y * y), a = i * 2.39996;
-        const n = new THREE.Mesh(nGeo, i % 2 ? violet : violetLight);
+        const n = new THREE.Mesh(nGeo, nuc[i % 2]);
         n.position.set(Math.cos(a) * rr * 0.065, y * 0.065, Math.sin(a) * rr * 0.065);
         n.castShadow = true;
         head.add(n);
@@ -637,65 +638,52 @@
       fx.userData.spin(0.8);
       root.add(fx);
     }
-    if (qubit) { // кубит: стеклянная сфера Блоха с ядром и стрелкой состояния, кольца с засечками, полюса |0⟩ и |1⟩, искорки
-      fx = new THREE.Group(); fx.name = 'fx';
-      fx.position.y = 0.3;
-      const glow = (c, i = 1) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: i, roughness: 0.3 });
-      const ringMat = new THREE.MeshStandardMaterial({ color: 0xe8fbff, emissive: 0x7fe8ff, emissiveIntensity: 0.7, roughness: 0.3 });
-      const core = new THREE.Mesh(new THREE.IcosahedronGeometry(0.055, 1), glow(0xfff4c0, 1.2));
-      const rings = new THREE.Group();
-      const ringGeo = new THREE.TorusGeometry(0.207, 0.011, 6, 56);
-      const equator = new THREE.Mesh(ringGeo, ringMat); equator.rotation.x = Math.PI / 2;
-      const meridian = new THREE.Mesh(ringGeo, ringMat), meridian2 = new THREE.Mesh(ringGeo, ringMat);
-      meridian2.rotation.y = Math.PI / 2;
-      rings.add(equator, meridian, meridian2);
-      const tickGeo = new THREE.BoxGeometry(0.012, 0.03, 0.012);
-      for (let i = 0; i < 12; i++) { // засечки по экватору
-        const a = i / 12 * Math.PI * 2, tk = new THREE.Mesh(tickGeo, ringMat);
-        tk.position.set(Math.cos(a) * 0.205, 0, Math.sin(a) * 0.205);
-        rings.add(tk);
+    if (qubit) { // кубит: парящий куб 5×5×5 из кубиков с цифрами; 1 — синий, 0 — белый, цифры меняются сами, кубики «дышат»
+      violetLight.emissive.setHex(0xbfe4ff); violetLight.emissiveIntensity = 1.2; violetLight.color.setHex(0xffffff); // голова — светящееся ядро в середине куба
+      const digit = (d, bg, ink, glow) => { // грань кубика: цифра в рамке
+        const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+        const c = cv.getContext('2d');
+        c.fillStyle = bg; c.fillRect(0, 0, 64, 64);
+        c.strokeStyle = glow; c.lineWidth = 3; c.strokeRect(3, 3, 58, 58);
+        c.fillStyle = ink; c.font = '800 54px "JetBrains Mono", Consolas, monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillText(d, 32, 36);
+        return new THREE.CanvasTexture(cv);
+      };
+      const tex1 = digit('1', '#2f6fe0', '#ffffff', '#8fc4ff'), tex0 = digit('0', '#f4f8ff', '#2f6fe0', '#bcd6ff');
+      const mat1 = new THREE.MeshStandardMaterial({ map: tex1, emissive: 0xffffff, emissiveMap: tex1, emissiveIntensity: 0.35, roughness: 0.35, metalness: 0.1 });
+      const mat0 = new THREE.MeshStandardMaterial({ map: tex0, emissive: 0xffffff, emissiveMap: tex0, emissiveIntensity: 0.2, roughness: 0.35, metalness: 0.1 });
+      const N = 5, S = 0.085, STEP = 0.1, cells = [];
+      for (let x = 0; x < N; x++) for (let y = 0; y < N; y++) for (let z = 0; z < N; z++) {
+        if (x > 0 && x < N - 1 && y > 0 && y < N - 1 && z > 0 && z < N - 1) continue; // внутренних не видно
+        const base = new THREE.Vector3(x - 2, y - 2, z - 2).multiplyScalar(STEP);
+        const r = hash(x * 7 + y * 3, z * 11 + y);
+        cells.push({ base, one: r > 0.5, next: r * 2, rate: 0.4 + hash(z * 5, x * 9 + y) * 2.6, sp: 0.6 + r * 1.4, ph: r * 6.28, amp: 0.1 + hash(y * 13, x + z) * 0.22 });
       }
-      const poleGeo = new THREE.SphereGeometry(0.022, 10, 8);
-      const up = new THREE.Mesh(poleGeo, glow(0x5be3c6)), down = new THREE.Mesh(poleGeo, glow(0xff6fd8));
-      up.position.y = 0.215; down.position.y = -0.215;
-      // стрелка состояния: из ядра к поверхности сферы, кружит вокруг оси и покачивается
-      const arrow = new THREE.Group(), arrowMat = glow(0xffc83d, 0.7);
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 0.17, 8), arrowMat); shaft.position.y = 0.085;
-      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.036, 0.065, 12), arrowMat); tip.position.y = 0.2;
-      arrow.add(shaft, tip);
-      fx.add(core, rings, up, down, arrow);
-      // квантовый нимб над головой: кольцо и три огонька на нём крутятся; шапка его прячет (как антенну)
-      const halo = new THREE.Group();
-      halo.position.y = 0.87; halo.rotation.x = 0.25;
-      halo.add(new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.012, 6, 40), ringMat));
-      [0, 2.09, 4.19].forEach(a => { const d = new THREE.Mesh(poleGeo, glow(0xffc83d, 1)); d.position.set(Math.cos(a) * 0.12, 0, Math.sin(a) * 0.12); d.scale.setScalar(0.8); halo.add(d); });
-      root.add(halo);
-      ears.push(halo);
-      // искорки: кружат вокруг кубита на разной высоте
-      const sparkMat = new THREE.MeshBasicMaterial({ color: 0xbffcff, transparent: true, opacity: 0.85, depthWrite: false });
-      const sGeo = new THREE.OctahedronGeometry(0.013, 0);
-      const sparks = Array.from({ length: 8 }, (_, i) => { const m = new THREE.Mesh(sGeo, sparkMat); fx.add(m); return { m, r: 0.27 + (i % 3) * 0.06, sp: 0.6 + i * 0.12, ph: i * 0.8, h: (i % 4) * 0.12 - 0.05 }; });
-      const Y = new THREE.Vector3(0, 1, 0), dir = new THREE.Vector3(), cA = new THREE.Color(0x2fd8ff), cB = new THREE.Color(0xff4fd8);
+      const ones = new THREE.InstancedMesh(new THREE.BoxGeometry(S, S, S), mat1, cells.length);
+      const zeros = new THREE.InstancedMesh(new THREE.BoxGeometry(S, S, S), mat0, cells.length);
+      ones.castShadow = zeros.castShadow = true;
+      fx = new THREE.Group(); fx.name = 'fx';
+      fx.position.y = 0.62;
+      const cube = new THREE.Group();
+      cube.add(ones, zeros);
+      fx.add(cube);
+      root.add(fx);
+      const o = new THREE.Object3D(), hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+      let last = 0;
       fx.userData.spin = t => {
-        // «измерение» раз в 5 секунд на 0.7 с: стрелка щёлкает к полюсу |0⟩ или |1⟩, кольца вспыхивают
-        const cyc = t % 5, meas = cyc > 4.3, pole = Math.sin(Math.floor(t / 5) * 12.9898) > 0;
-        const th = meas ? (pole ? 0.05 : Math.PI - 0.05) : 0.95 + Math.sin(t * 0.7) * 0.35, ph = t * 1.6;
-        dir.set(Math.sin(th) * Math.cos(ph), Math.cos(th), Math.sin(th) * Math.sin(ph));
-        arrow.quaternion.setFromUnitVectors(Y, dir);
-        ringMat.emissiveIntensity = meas ? 1.4 : 0.4;
-        up.material.emissiveIntensity = meas && pole ? 2 : 0.6; down.material.emissiveIntensity = meas && !pole ? 2 : 0.6;
-        rings.rotation.y = t * 0.4;
-        core.rotation.set(t * 0.8, t * 1.1, 0);
-        core.scale.setScalar(1 + Math.sin(t * 5) * 0.08);
-        // суперпозиция: голова мягко переливается бирюзовым и розовым
-        violetLight.emissive.copy(cA).lerp(cB, 0.5 + 0.5 * Math.sin(t * 1.8)); violetLight.emissiveIntensity = meas ? 0.6 : 0.3;
-        halo.rotation.y = t * 1.4; halo.position.y = 0.87 + Math.sin(t * 2 + 1) * 0.015;
-        fx.position.y = 0.3 + Math.sin(t * 2) * 0.025; body.position.y = fx.position.y; // парит
-        feet.forEach((f, i) => { f.material.emissiveIntensity = 0.7 + 0.4 * Math.sin(t * 9 + i); });
-        sparks.forEach(s => { const a = t * s.sp + s.ph; s.m.position.set(Math.cos(a) * s.r, s.h + Math.sin(t * 1.5 + s.ph) * 0.05, Math.sin(a) * s.r); s.m.rotation.y = t * 3; });
+        cells.forEach((c, i) => {
+          if (t > c.next || t < last) { c.one = Math.random() < 0.5; c.next = t + (0.3 + Math.random() * 2) / c.rate; } // своя скорость у каждого
+          o.position.copy(c.base).multiplyScalar(1 + c.amp * (0.5 + 0.5 * Math.sin(t * c.sp + c.ph))); // то ближе к центру, то дальше
+          o.updateMatrix();
+          (c.one ? ones : zeros).setMatrixAt(i, o.matrix);
+          (c.one ? zeros : ones).setMatrixAt(i, hidden);
+        });
+        last = t;
+        ones.instanceMatrix.needsUpdate = zeros.instanceMatrix.needsUpdate = true;
+        cube.rotation.set(Math.sin(t * 0.5) * 0.25, t * 0.45, Math.cos(t * 0.4) * 0.15); // медленно крутится
+        fx.position.y = 0.62 + Math.sin(t * 1.6) * 0.04; head.position.y = fx.position.y; // парит
       };
       fx.userData.spin(0.8);
-      root.add(fx);
     }
     [head, antPivot, bulb, ...eyes, ...pupils, ...feet].forEach(o => rest(o));
     [...joy, ...squint, mouth].forEach(o => rest(o, false));
