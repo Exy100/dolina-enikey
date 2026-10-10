@@ -917,7 +917,7 @@
         if (score < best) { best = score; fountain = { x, z }; }
       });
     });
-    // спутниковые тарелки (1–5, на больших картах больше) и иногда упавшая НЛО — на внешнем краю, не рядом друг с другом
+    // спутниковые тарелки (1–5, на больших картах больше) и упавшая НЛО (на каждой карте) — на внешнем краю, не рядом друг с другом
     const special = new Map();
     {
       const pool = [...ring].filter(k => k !== (fountain && K(fountain.x, fountain.z)))
@@ -926,7 +926,7 @@
         .sort((a, b) => hash(a[0] * 5 + 1, a[1] * 3 - 2) - hash(b[0] * 5 + 1, b[1] * 3 - 2));
       const seed = hash(level.start.x * 13 + ring.size, level.start.z * 7 + level.floor.size);
       const dishes = Math.max(1, Math.min(5, 1 + Math.floor(pool.length / 14) + (seed > 0.5 ? 1 : 0)));
-      const want = [...(seed < 0.5 ? ['ufo'] : []), ...Array(dishes).fill('dish')];
+      const want = ['ufo', ...Array(dishes).fill('dish')];
       const far = ([x, z]) => [...special.keys()].every(k => { const [a, b] = k.split(',').map(Number); return Math.max(Math.abs(a - x), Math.abs(b - z)) > 1; });
       for (const c of pool) {
         if (!want.length) break;
@@ -1273,6 +1273,136 @@
     floaters.forEach(m => { m.position.y = m.userData.y0 + Math.sin(t * 0.9 + m.userData.ph) * 0.12; m.rotation.y += dt * 0.15; });
   }
 
+  /* Пролёты: раз в 2–3 минуты мимо острова пролетает самолётик, раз в 4–5 минут — НЛО (на 20% быстрее).
+     Промежуток каждый раз новый. Путь — дуга поперёк взгляда камеры (слева направо или наоборот, с наклоном)
+     за серединой карты, чтобы не налететь на камеру; высота, наклон и изгиб каждый раз свои.
+     Самолёт летит выше, НЛО ниже и дальше и покачивается, а если оба в небе разом — летят навстречу друг другу.
+     Живут в сцене, а не в levelGroup: смена карты пролёт не обрывает. В показе (?show, ?shots) и без движения — нет */
+  const FLY = {
+    plane: { every: [120, 180], speed: 3.2, y: [2.4, 3.0], bend: 1.6, far: [0.4, 2.2] },
+    ufo: { every: [240, 300], speed: 3.84, y: [1.5, 1.9], bend: 2.2, far: [1.6, 3.4] },
+  };
+  const flight = { plane: null, ufo: null }, flyNext = {};
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const fmat = (color, extra) => new THREE.MeshStandardMaterial(Object.assign({ color, flatShading: true, roughness: 0.5, metalness: 0.1 }, extra));
+  const FM = {
+    white: fmat(0xfff7f0), coral: fmat(0xff8a5c), violet: fmat(0x6b4bd8), dark: fmat(0x3a2a4d),
+    glass: fmat(0x8fd0ff, { emissive: 0x2a8fc0, emissiveIntensity: 0.3, roughness: 0.15 }),
+    red: fmat(0xff4a3a, { emissive: 0xff2a1a, emissiveIntensity: 1 }), green: fmat(0x3ae08a, { emissive: 0x1abf6a, emissiveIntensity: 1 }),
+    blink: fmat(0xffffff, { emissive: 0xffffff, emissiveIntensity: 1 }),
+    beam: new THREE.MeshBasicMaterial({ color: 0x7ef0d6, transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+    trail: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false }),
+  };
+  function makePlane() { // смотрит в +z: нос с винтом, крылья, хвост; белый с коралловым и фиолетовой полосой
+    const g = new THREE.Group(), add = (geo, mat, x, y, z, shadow = true) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = shadow; g.add(m); return m; };
+    add(new THREE.CylinderGeometry(0.11, 0.06, 0.9, 10).rotateX(Math.PI / 2), FM.white, 0, 0, 0);
+    add(new THREE.SphereGeometry(0.11, 10, 8), FM.coral, 0, 0, 0.45).scale.set(1, 1, 0.8);
+    add(new THREE.CylinderGeometry(0.113, 0.111, 0.06, 10).rotateX(Math.PI / 2), FM.violet, 0, 0, 0.05, false);
+    add(new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), FM.glass, 0, 0.06, 0.16, false).scale.set(0.075, 0.07, 0.14);
+    add(new THREE.BoxGeometry(1.15, 0.025, 0.22), FM.white, 0, -0.03, 0.08);
+    [-1, 1].forEach(sd => {
+      add(new THREE.BoxGeometry(0.16, 0.03, 0.23), FM.coral, sd * 0.5, -0.03, 0.08, false);
+      add(new THREE.SphereGeometry(0.025, 6, 4), sd < 0 ? FM.red : FM.green, sd * 0.585, -0.03, 0.08, false);
+    });
+    add(new THREE.BoxGeometry(0.44, 0.02, 0.12), FM.white, 0, 0.01, -0.38);
+    add(new THREE.BoxGeometry(0.022, 0.19, 0.15), FM.coral, 0, 0.11, -0.39);
+    add(new THREE.SphereGeometry(0.02, 6, 4), FM.blink, 0, 0.21, -0.43, false);
+    add(new THREE.ConeGeometry(0.035, 0.07, 8).rotateX(Math.PI / 2), FM.dark, 0, 0, 0.56, false);
+    const prop = new THREE.Group();
+    prop.position.z = 0.55;
+    [0, Math.PI / 2].forEach(a => { const b = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.36, 0.01), FM.dark); b.rotation.z = a; prop.add(b); });
+    g.add(prop);
+    g.userData.prop = prop;
+    g.scale.setScalar(1.05);
+    return g;
+  }
+  function makeFlyingUfo() { // летающая тарелка: серебро, бирюзовый купол, кольцо огней крутится, снизу мягкий луч
+    const g = new THREE.Group(), ship = new THREE.Group();
+    const body = new THREE.Mesh(NATURE.saucer, M.ufo); body.castShadow = true;
+    ship.add(body);
+    const dome = new THREE.Mesh(NATURE.dome, M.ufoGlass); dome.position.y = 0.045; dome.scale.set(1, 0.9, 1);
+    ship.add(dome);
+    const ring = new THREE.Group();
+    for (let i = 0; i < 10; i++) {
+      const a = i / 10 * Math.PI * 2, b = new THREE.Mesh(NATURE.bulb, M.ufoLights[i % 2]);
+      b.position.set(Math.cos(a) * 0.31, 0.012, Math.sin(a) * 0.31);
+      ring.add(b);
+    }
+    ship.add(ring);
+    const beam = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1, 16, 1, true), FM.beam);
+    beam.position.y = -0.53;
+    ship.add(beam);
+    g.add(ship);
+    g.scale.setScalar(1.9);
+    Object.assign(g.userData, { ship, ring, beam });
+    return g;
+  }
+  const flyModels = { plane: null, ufo: null };
+  // след самолёта: лёгкие белые клубы, тают за полсекунды
+  const trail = Array.from({ length: 26 }, () => {
+    const m = new THREE.Mesh(NATURE.blob, FM.trail.clone());
+    m.visible = false; m.userData.life = 0;
+    scene.add(m);
+    return m;
+  });
+  let trailAt = 0;
+  function launch(kind, time) {
+    const F = FLY[kind], other = flight[kind === 'plane' ? 'ufo' : 'plane'];
+    const toCam = new THREE.Vector3(Math.sin(cam.goal.az), 0, Math.cos(cam.goal.az));
+    const flip = other ? !other.flip : Math.random() < 0.5; // вдвоём — навстречу друг другу
+    const ang = Math.atan2(toCam.z, toCam.x) + Math.PI / 2 + (flip ? Math.PI : 0) + rand(-0.55, 0.55);
+    const dir = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang)), side = new THREE.Vector3(-dir.z, 0, dir.x);
+    const half = frameDist * 0.95 + 4, y = rand(F.y[0], F.y[1]);
+    const c = cam.target.clone().addScaledVector(toCam, -rand(F.far[0], F.far[1])); // за серединой карты
+    const p0 = c.clone().addScaledVector(dir, -half), p1 = c.clone().addScaledVector(dir, half);
+    p0.y = y + rand(-0.3, 0.3); p1.y = y + rand(-0.3, 0.3);
+    const pc = c.clone().addScaledVector(side, (Math.random() < 0.5 ? 1 : -1) * F.bend * rand(0.4, 1)); pc.y = y + rand(0, 0.5);
+    if (!flyModels[kind]) { flyModels[kind] = kind === 'plane' ? makePlane() : makeFlyingUfo(); scene.add(flyModels[kind]); }
+    const obj = flyModels[kind];
+    obj.visible = true;
+    flight[kind] = { obj, p0, pc, p1, flip, t0: time, dur: p0.distanceTo(p1) * 1.04 / F.speed, ph: Math.random() * 6 };
+  }
+  const bez = (f, t, out) => out.set(0, 0, 0).addScaledVector(f.p0, (1 - t) * (1 - t)).addScaledVector(f.pc, 2 * (1 - t) * t).addScaledVector(f.p1, t * t);
+  const fp = new THREE.Vector3(), fq = new THREE.Vector3();
+  function animateFlyby(time, dt) {
+    if (SHOW || reduceMotion) return;
+    ['plane', 'ufo'].forEach(kind => {
+      if (flyNext[kind] === undefined) flyNext[kind] = time + rand(...FLY[kind].every);
+      if (!flight[kind] && time >= flyNext[kind]) { launch(kind, time); flyNext[kind] = time + rand(...FLY[kind].every); }
+      const f = flight[kind];
+      if (!f) return;
+      const t = (time - f.t0) / f.dur;
+      if (t >= 1) { f.obj.visible = false; flight[kind] = null; return; }
+      bez(f, t, fp); bez(f, Math.min(1, t + 0.01), fq);
+      f.obj.position.copy(fp);
+      const u = f.obj.userData;
+      if (kind === 'plane') {
+        f.obj.lookAt(fq);
+        f.obj.rotateZ(Math.sin(time * 0.8 + f.ph) * 0.18); // покачивает крыльями
+        u.prop.rotation.z += dt * 40;
+        FM.blink.emissiveIntensity = (time * 1.5) % 1 < 0.12 ? 1.6 : 0.15;
+        if (time - trailAt > 0.05) {
+          trailAt = time;
+          const m = trail.find(p => !p.visible);
+          if (m) { m.visible = true; m.userData.life = 1; m.position.copy(fp).addScaledVector(fq.sub(fp).normalize(), -0.75); m.scale.setScalar(0.03); }
+        }
+      } else {
+        f.obj.position.y += Math.sin(time * 2.2 + f.ph) * 0.12; // НЛО парит волнами
+        u.ship.rotation.set(Math.sin(time * 1.7 + f.ph) * 0.12, 0, Math.cos(time * 1.3 + f.ph) * 0.12);
+        u.ring.rotation.y += dt * 2.5;
+        u.beam.material.opacity = 0.1 + 0.08 * Math.sin(time * 4);
+      }
+    });
+    trail.forEach(m => {
+      if (!m.visible) return;
+      m.userData.life -= dt * 1.8;
+      if (m.userData.life <= 0) { m.visible = false; return; }
+      const k = m.userData.life;
+      m.scale.setScalar(0.03 + (1 - k) * 0.07);
+      m.material.opacity = 0.35 * k * k;
+    });
+  }
+
   // Табличка: справа от Бита и чуть позади (с обычной камеры Бит её не закрывает, а она — его), дощечка крупнее прежней
   const SIGN = { dx: 0.36, dz: -0.15, post: 0.42, size: 0.5 };
   function signTexture(v) {
@@ -1510,6 +1640,7 @@
     if (boss && boss.visible) animateSboy(boss, time, dt);
     if (cut) animateCut(time, dt);
     animateClouds(dt);
+    animateFlyby(time, dt);
     animateNature(time);
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     if (heroParts.tail && !reduceMotion) heroParts.tail.rotation.y = Math.sin(time * (running ? 7 : 3)) * 0.3;
