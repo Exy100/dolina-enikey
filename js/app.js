@@ -638,24 +638,25 @@
       fx.userData.spin(0.8);
       root.add(fx);
     }
-    if (qubit) { // кубит: парящий куб 5×5×5 из кубиков с цифрами; 1 — синий, 0 — белый, цифры меняются сами, кубики «дышат»
+    if (qubit) { // кубит: парящий куб 4×4×4 из чёрных и серых металлических кубиков с цифрами 1 и 0; цифры меняются сами, кубики «дышат»
       violetLight.emissive.setHex(0xbfe4ff); violetLight.emissiveIntensity = 1.2; violetLight.color.setHex(0xffffff); // голова — светящееся ядро в середине куба
-      const digit = (d, bg, ink, glow) => { // грань кубика: цифра в рамке
+      // грань кубика: светящаяся цифра в тонкой рамке. map — сама грань, emissiveMap — только цифра и рамка (они светятся)
+      const face = (d, bg, ink, dark) => {
         const cv = document.createElement('canvas'); cv.width = cv.height = 64;
         const c = cv.getContext('2d');
-        c.fillStyle = bg; c.fillRect(0, 0, 64, 64);
-        c.strokeStyle = glow; c.lineWidth = 3; c.strokeRect(3, 3, 58, 58);
-        c.fillStyle = ink; c.font = '800 54px "JetBrains Mono", Consolas, monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+        c.fillStyle = dark ? '#000' : bg; c.fillRect(0, 0, 64, 64);
+        c.strokeStyle = ink; c.globalAlpha = 0.55; c.lineWidth = 2; c.strokeRect(3, 3, 58, 58); c.globalAlpha = 1;
+        c.fillStyle = ink; c.font = '800 50px "JetBrains Mono", Consolas, monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
         c.fillText(d, 32, 36);
         return new THREE.CanvasTexture(cv);
       };
-      const tex1 = digit('1', '#2f6fe0', '#ffffff', '#8fc4ff'), tex0 = digit('0', '#f4f8ff', '#2f6fe0', '#bcd6ff');
-      const mat1 = new THREE.MeshStandardMaterial({ map: tex1, emissive: 0xffffff, emissiveMap: tex1, emissiveIntensity: 0.35, roughness: 0.35, metalness: 0.1 });
-      const mat0 = new THREE.MeshStandardMaterial({ map: tex0, emissive: 0xffffff, emissiveMap: tex0, emissiveIntensity: 0.2, roughness: 0.35, metalness: 0.1 });
-      const N = 5, S = 0.085, STEP = 0.1, cells = [];
+      // 1 — чёрный кубик с синей единицей, 0 — серый металлический с белым нулём; metalness не выше 0.2 — блеск даёт солнце
+      const mat1 = new THREE.MeshStandardMaterial({ map: face('1', '#1a1d24', '#4f9bff'), emissive: 0xffffff, emissiveMap: face('1', '', '#4f9bff', true), emissiveIntensity: 1, roughness: 0.22, metalness: 0.2 });
+      const mat0 = new THREE.MeshStandardMaterial({ map: face('0', '#8e96a4', '#ffffff'), emissive: 0xffffff, emissiveMap: face('0', '', '#ffffff', true), emissiveIntensity: 0.7, roughness: 0.28, metalness: 0.2 });
+      const N = 4, S = 0.105, STEP = 0.122, H = (N - 1) / 2, cells = [];
       for (let x = 0; x < N; x++) for (let y = 0; y < N; y++) for (let z = 0; z < N; z++) {
         if (x > 0 && x < N - 1 && y > 0 && y < N - 1 && z > 0 && z < N - 1) continue; // внутренних не видно
-        const base = new THREE.Vector3(x - 2, y - 2, z - 2).multiplyScalar(STEP);
+        const base = new THREE.Vector3(x - H, y - H, z - H).multiplyScalar(STEP);
         const r = hash(x * 7 + y * 3, z * 11 + y);
         cells.push({ base, one: r > 0.5, next: r * 2, rate: 0.4 + hash(z * 5, x * 9 + y) * 2.6, sp: 0.6 + r * 1.4, ph: r * 6.28, amp: 0.1 + hash(y * 13, x + z) * 0.22 });
       }
