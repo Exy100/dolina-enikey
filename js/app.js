@@ -227,6 +227,108 @@
     underBit: new THREE.MeshStandardMaterial({ color: 0x8a7aa0, flatShading: true, roughness: 1 }),
   });
   const UNDER = { top: 0xa47a62, deep: 0x7a6a98 };
+
+  /* Природа на кайме дороги: валуны вместо серых кубиков, кусты, грибы, цветы, пни и фонтан.
+     Валуны — набор форм, собранных один раз: икосаэдр, помятый шумом, со сколами-гранями и плоским низом;
+     цвет граней — в самой форме (серый камень, мох на верхушке, тень у земли). Ставятся InstancedMesh по форме */
+  Object.assign(M, {
+    boulder: new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, flatShading: true, roughness: 0.92 }),
+    moss: new THREE.MeshStandardMaterial({ color: 0x7c9c5a, flatShading: true, roughness: 1 }), // земля под камнями: темнее дороги
+    bush: new THREE.MeshStandardMaterial({ color: 0x3f9a5a, flatShading: true, roughness: 0.9 }),
+    berry: new THREE.MeshStandardMaterial({ color: 0xe2465a, emissive: 0x6a0f1a, emissiveIntensity: 0.3, roughness: 0.5 }),
+    cap: new THREE.MeshStandardMaterial({ color: 0xe0523a, flatShading: true, roughness: 0.7 }),
+    capBrown: new THREE.MeshStandardMaterial({ color: 0xb0703a, flatShading: true, roughness: 0.8 }),
+    stem: new THREE.MeshStandardMaterial({ color: 0xf3e6d0, flatShading: true, roughness: 0.9 }),
+    wood: new THREE.MeshStandardMaterial({ color: 0xd9b07a, flatShading: true, roughness: 0.9 }),
+    petals: [0xffd166, 0xff8fb8, 0xfff4f0, 0xb79cff].map(c => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.12, flatShading: true, roughness: 0.8 })),
+    pool: new THREE.MeshStandardMaterial({ color: 0x3aa6d8, emissive: 0x0f5f8f, emissiveIntensity: 0.3, roughness: 0.15 }),
+    fstone: new THREE.MeshStandardMaterial({ color: 0xe6dccf, flatShading: true, roughness: 0.85 }), // светлый камень фонтана
+    ripple: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }),
+  });
+  const keep = g => { g.userData.keep = true; return g; }; // общая геометрия: не выбрасывать вместе с картой
+  const ROCKS = (() => {
+    const wave = (x, y, z) => (Math.sin(x * 1.9 + 1.3 * Math.sin(z * 1.1)) + Math.sin(y * 2.3 + 1.7 * Math.sin(x * 1.4)) + Math.sin(z * 2.1 + 1.1 * Math.sin(y * 1.6))) / 3;
+    const C = { dark: new THREE.Color(0x6e7076), light: new THREE.Color(0xa9abb0), moss: new THREE.Color(0x7a9a52), warm: new THREE.Color(0x9c958c) };
+    function rock(seed, detail) {
+      let sd = seed * 9301 + 49297;
+      const rnd = () => { sd = (sd * 16807) % 2147483647; return sd / 2147483647; };
+      const g = new THREE.IcosahedronGeometry(1, detail);
+      const pos = g.attributes.position, v = new THREE.Vector3();
+      const ox = rnd() * 10, oy = rnd() * 10, oz = rnd() * 10;
+      // сколы: несколько плоскостей срезают камень — получаются ровные грани, как у настоящего валуна
+      const cuts = [];
+      for (let i = 0; i < 3 + Math.floor(rnd() * 3); i++) {
+        const n = new THREE.Vector3(rnd() * 2 - 1, rnd() * 1.4 - 0.2, rnd() * 2 - 1).normalize();
+        cuts.push([n, 0.7 + rnd() * 0.2]);
+      }
+      const bottom = -0.3 - rnd() * 0.15;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).normalize();
+        v.multiplyScalar(1 + 0.2 * wave(v.x * 1.7 + ox, v.y * 1.7 + oy, v.z * 1.7 + oz) + 0.07 * wave(v.x * 4.3 + oz, v.y * 4.3 + ox, v.z * 4.3 + oy));
+        cuts.forEach(([n, d]) => { const k = v.dot(n) - d; if (k > 0) v.addScaledVector(n, -k); });
+        if (v.y < bottom) v.y = bottom;
+        pos.setXYZ(i, v.x, v.y, v.z);
+      }
+      // в коробку: x и z от −1 до 1, y от 0 до 1 — масштаб экземпляра задаёт полуширину и высоту
+      g.computeBoundingBox();
+      const b = g.boundingBox;
+      g.translate(-(b.max.x + b.min.x) / 2, -b.min.y, -(b.max.z + b.min.z) / 2);
+      g.scale(2 / (b.max.x - b.min.x), 1 / (b.max.y - b.min.y), 2 / (b.max.z - b.min.z));
+      g.computeVertexNormals();
+      // цвет грани: камень с пятнами, мох сверху, у земли темнее
+      const nrm = g.attributes.normal, col = new Float32Array(pos.count * 3), c = new THREE.Color();
+      for (let i = 0; i < pos.count; i += 3) {
+        const cx = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3, cy = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3, cz = (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3;
+        const ny = nrm.getY(i), w = wave(cx * 3 + ox, cy * 3 + oy, cz * 3 + oz);
+        c.copy(C.dark).lerp(C.light, 0.5 + 0.5 * w);
+        if (w > 0.5) c.lerp(C.warm, 0.3);
+        if (ny > 0.6 && wave(cx * 1.6 + oz, cy * 1.6, cz * 1.6 + ox) > 0.15) c.lerp(C.moss, 0.45 + 0.25 * ny);
+        c.multiplyScalar(0.72 + 0.28 * Math.min(1, cy * 2.5));
+        for (let j = 0; j < 3; j++) c.toArray(col, (i + j) * 3);
+      }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      return keep(g);
+    }
+    return { big: [1, 2, 3, 4, 5, 6].map(i => rock(i, 2)), small: [7, 8, 9].map(i => rock(i, 1)) };
+  })();
+  const NATURE = {
+    blob: keep(new THREE.IcosahedronGeometry(1, 1)),
+    berry: keep(new THREE.SphereGeometry(0.035, 6, 5)),
+    cap: keep(new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2)),
+    stem: keep(new THREE.CylinderGeometry(0.7, 1, 1, 7)),
+    petal: keep(new THREE.IcosahedronGeometry(0.045, 0)),
+    flowerStem: keep(new THREE.CylinderGeometry(0.008, 0.008, 1, 4)),
+    stump: keep(new THREE.CylinderGeometry(0.15, 0.19, 0.2, 9)),
+    disc: keep(new THREE.CircleGeometry(1, 24)),
+    ripple: keep(new THREE.RingGeometry(0.9, 1, 24)),
+    // фонтан: восьмигранная чаша, колонна, верхняя чаша и навершие; профили вращаются вокруг оси
+    basin: keep(new THREE.LatheGeometry([[0, 0], [0.42, 0], [0.44, 0.05], [0.42, 0.16], [0.37, 0.17], [0.35, 0.09], [0, 0.09]].map(([x, y]) => new THREE.Vector2(x, y)), 8)),
+    column: keep(new THREE.CylinderGeometry(0.055, 0.08, 0.24, 8)),
+    bowl: keep(new THREE.LatheGeometry([[0, 0], [0.05, 0], [0.17, 0.06], [0.19, 0.095], [0.16, 0.095], [0, 0.05]].map(([x, y]) => new THREE.Vector2(x, y)), 8)),
+    knob: keep(new THREE.OctahedronGeometry(0.035, 0)),
+    // завеса воды с края верхней чаши: открытый конус; v развёрнут, чтобы 0 был сверху — полосы бегут вниз
+    curtain: (() => {
+      const g = new THREE.CylinderGeometry(0.18, 0.27, 0.27, 24, 1, true);
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+      return keep(g);
+    })(),
+  };
+  // Вода фонтана: полосы бегут вниз по завесе, у чаши вода светлеет и тает. Цвета ночью — из LOOK
+  const WATER = {
+    uniforms: { t: { value: 0 }, deep: { value: new THREE.Color(0x58c2ea) }, foam: { value: new THREE.Color(0xf2fbff) }, op: { value: 0.88 } },
+    vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform float t; uniform vec3 deep; uniform vec3 foam; uniform float op; varying vec2 vUv;
+      float h(float n) { return fract(sin(n * 91.7) * 43758.5); }
+      void main() {
+        float col = floor(vUv.x * 18.0);
+        float s = fract(vUv.y * 2.0 - t * (1.2 + h(col) * 0.6) + h(col + 3.0));
+        float streak = smoothstep(0.5, 1.0, s) * (0.5 + 0.5 * h(col + 7.0));
+        float fade = 1.0 - smoothstep(0.7, 1.0, vUv.y);
+        gl_FragColor = vec4(mix(deep, foam, streak + vUv.y * 0.3), op * (0.55 + 0.45 * streak) * fade);
+      }`,
+  };
+  M.water = new THREE.ShaderMaterial({ uniforms: WATER.uniforms, vertexShader: WATER.vertexShader, fragmentShader: WATER.fragmentShader, transparent: true, depthWrite: false, side: THREE.DoubleSide });
   // Пятно тени под Битом и монетами: в «Лёгкой графике» теней нет, и без пятна герой будто висит в воздухе.
   // Видно только в лёгкой графике (applyLite)
   const BLOB = (() => {
@@ -284,8 +386,10 @@
   let night = false;
   const LOOK = {
     day: { hemi: [0xffe6d4, 0x7a5f8a, 0.6], sun: [0xffd9b0, 0.82], grassA: 0x86c76a, grassB: 0x79bb5f, dirt: 0xb08258, rock: 0x7e7090, stoneA: 0x6c6690, stoneB: 0x5d5880, leaf: 0x4cb070, coinGlow: 0.35, flagGlow: 0, lava: 1,
+      boulder: 0xffffff, moss: 0x7c9c5a, water: [0x58c2ea, 0xf2fbff, 0.88], pool: [0x3aa6d8, 0x0f5f8f],
       under: 0xffffff, underBit: 0x8a7aa0, cloud: 0xffffff, cloudGlow: 0xffe4ea, cloudGlowK: 0.62, cloudOp: 1 },
     night: { hemi: [0xb4bff2, 0x3a2f60, 0.62], sun: [0xc9d0ff, 0.5], grassA: 0x5aaa6c, grassB: 0x4f9e61, dirt: 0x87624a, rock: 0x6a6088, stoneA: 0x58557f, stoneB: 0x4e4b72, leaf: 0x3a9461, coinGlow: 0.8, flagGlow: 0.3, lava: 1.3,
+      boulder: 0x9894bc, moss: 0x3f6a50, water: [0x2f7fb8, 0xbfe6ff, 0.8], pool: [0x2a5f96, 0x10365e],
       under: 0x8e86b4, underBit: 0x5c547e, cloud: 0x51487a, cloudGlow: 0x221a44, cloudGlowK: 0.5, cloudOp: 0.7 },
   };
   function applyNight() {
@@ -298,6 +402,8 @@
     M.coin.emissiveIntensity = L.coinGlow;
     M.flag.emissive.setHex(0x1fa88f); M.flag.emissiveIntensity = L.flagGlow;
     M.under.color.setHex(L.under); M.underBit.color.setHex(L.underBit);
+    M.boulder.color.setHex(L.boulder); M.moss.color.setHex(L.moss); M.pool.color.setHex(L.pool[0]); M.pool.emissive.setHex(L.pool[1]);
+    WATER.uniforms.deep.value.setHex(L.water[0]); WATER.uniforms.foam.value.setHex(L.water[1]); WATER.uniforms.op.value = L.water[2];
     cloudMats.forEach((m, i) => { m.color.setHex(L.cloud); m.emissive.setHex(L.cloudGlow); m.emissiveIntensity = L.cloudGlowK; m.opacity = CLOUD_LAYERS[i].op * L.cloudOp; });
   }
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyNight);
@@ -526,7 +632,7 @@
     clearTrail();
     scene.remove(levelGroup);
     levelGroup.traverse(o => {
-      if (o.geometry && o.geometry !== boxGeo && !o.isSprite) o.geometry.dispose(); // геометрия спрайтов общая на всех
+      if (o.geometry && o.geometry !== boxGeo && !o.isSprite && !o.geometry.userData.keep) o.geometry.dispose(); // геометрия спрайтов и природы общая
       if (o.isInstancedMesh) o.dispose();
       if (o.material && o.material.isMaterial && o.material.map) o.material.map.dispose(); // у блоков — массив материалов
     });
@@ -562,31 +668,8 @@
         addBlock(x, z, 0.9 + hash(x, z) * 0.25, 0, [M.dirt, M.dirt, g, M.dirt, M.dirt, M.dirt]);
       }
     });
-    // стены и деревья вокруг
-    for (let x = minX - 1; x <= maxX + 1; x++) {
-      for (let z = minZ - 1; z <= maxZ + 1; z++) {
-        if (level.floor.has(K(x, z))) continue;
-        let near = false;
-        for (let dx = -1; dx <= 1 && !near; dx++) for (let dz = -1; dz <= 1; dz++) if (level.floor.has(K(x + dx, z + dz))) { near = true; break; }
-        if (!near) continue;
-        const r = hash(x, z);
-        addBlock(x, z, 0.9 + r * 0.2, 0, [M.dirt, M.dirt, M.grassB, M.dirt, M.dirt, M.dirt]);
-        if (r < 0.22) {
-          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.35, 6), M.trunk);
-          trunk.position.set(x, 0.17, z); trunk.castShadow = true;
-          const crown = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.8, 7), M.leaf);
-          crown.position.set(x, 0.72, z); crown.castShadow = true;
-          levelGroup.add(trunk, crown);
-        } else {
-          const h = 0.12 + r * 0.16; // низкие камни по краям: видно, где кончается дорога, но карта не загорожена
-          const w = new THREE.Mesh(boxGeo, r > 0.6 ? M.stoneA : M.stoneB);
-          w.scale.set(0.94, h, 0.94);
-          w.position.set(x, h / 2, z);
-          w.castShadow = true; w.receiveShadow = true;
-          levelGroup.add(w);
-        }
-      }
-    }
+    // кайма вокруг дороги: земля темнее, на ней валуны, деревья, лесная мелочь и фонтан
+    buildBorder(level, minX, maxX, minZ, maxZ, addBlock);
     buildUnderside(level, minX, maxX, minZ, maxZ);
     // монеты
     const coinGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.06, 20);
@@ -746,6 +829,141 @@
     sun.position.set(cam.target.x + 5, 12, cam.target.z + 6);
     sun.target.position.copy(cam.target);
     placeClouds(span);
+  }
+
+  /* Кайма дороги — всё, что не дорога, но рядом с ней (стены лабиринта тоже). Земля на ней темнее дороги (M.moss),
+     на ней валуны (один крупный или два поменьше, рядом камешки), деревья, а по внешнему краю острова — кусты с ягодами,
+     грибы, цветы и пни. Фонтан — на дальнем от камеры краю острова, чтобы ничего не заслонять.
+     Всё ниже 0.4, кроме деревьев и фонтана (0.45), — карту не загораживает */
+  const fountains = [];
+  function buildBorder(level, minX, maxX, minZ, maxZ, addBlock) {
+    fountains.length = 0;
+    const ring = new Set();
+    for (let x = minX - 1; x <= maxX + 1; x++) {
+      for (let z = minZ - 1; z <= maxZ + 1; z++) {
+        if (level.floor.has(K(x, z))) continue;
+        let near = false;
+        for (let dx = -1; dx <= 1 && !near; dx++) for (let dz = -1; dz <= 1; dz++) if (level.floor.has(K(x + dx, z + dz))) { near = true; break; }
+        if (near) ring.add(K(x, z));
+      }
+    }
+    const land = k => level.floor.has(k) || ring.has(k);
+    // фонтан: клетка каймы на краю острова, лучше всего на дальнем от камеры (камера смотрит с +z и чуть слева)
+    let fountain = null, best = Infinity;
+    ring.forEach(k => {
+      const [x, z] = k.split(',').map(Number);
+      [[0, -1], [1, 0], [-1, 0], [0, 1]].forEach(([dx, dz], pref) => {
+        if (land(K(x + dx, z + dz))) return;
+        const score = pref + hash(x * 3 + 11, z * 7 - 5);
+        if (score < best) { best = score; fountain = { x, z }; }
+      });
+    });
+    const big = ROCKS.big.map(() => []), small = ROCKS.small.map(() => []);
+    ring.forEach(k => {
+      const [x, z] = k.split(',').map(Number);
+      const r = hash(x, z), r2 = hash(z * 3 + 1, x * 5 + 2), r3 = hash(x + 17, z - 9);
+      addBlock(x, z, 0.9 + r * 0.2, 0, [M.dirt, M.dirt, M.moss, M.dirt, M.dirt, M.dirt]);
+      const outer = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !land(K(x + dx, z + dz)));
+      const pebble = (px, pz, w) => small[Math.floor(r2 * 3)].push([x + px, z + pz, w, w * 0.65, r * 6.28]);
+      if (fountain && fountain.x === x && fountain.z === z) { addFountain(fountain); return; }
+      if (r < 0.2) {
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.35, 6), M.trunk);
+        trunk.position.set(x, 0.17, z); trunk.castShadow = true;
+        const crown = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.8, 7), M.leaf);
+        crown.position.set(x, 0.72, z); crown.castShadow = true;
+        levelGroup.add(trunk, crown);
+        if (r3 > 0.5) pebble(r3 > 0.75 ? 0.3 : -0.3, 0.28, 0.1);
+        return;
+      }
+      if (outer && r < 0.48) {
+        const g = new THREE.Group();
+        g.position.set(x, 0, z); g.rotation.y = r2 * 6.28;
+        (r < 0.29 ? makeBush : r < 0.36 ? makeMushrooms : r < 0.43 ? makeFlowers : makeStump)(g, r3);
+        levelGroup.add(g);
+        pebble(r3 > 0.5 ? 0.32 : -0.32, r2 > 0.5 ? 0.3 : -0.3, 0.09 + r3 * 0.05);
+        return;
+      }
+      // валуны: один крупный или два поменьше; рядом бывает камешек
+      const ry = r2 * 6.28;
+      if (r2 < 0.35) {
+        big[Math.floor(r3 * 6)].push([x - 0.19, z - 0.17, 0.27, 0.2 + r * 0.1, ry]);
+        big[Math.floor(r * 60) % 6].push([x + 0.2, z + 0.19, 0.25, 0.18 + r3 * 0.1, ry + 2]);
+      } else {
+        big[Math.floor(r3 * 6)].push([x + (r - 0.5) * 0.08, z + (r2 - 0.5) * 0.08, 0.37 + r3 * 0.06, 0.22 + r * 0.13, ry]);
+      }
+      if (r3 > 0.45) pebble(r3 > 0.72 ? 0.36 : -0.36, r > 0.6 ? 0.34 : -0.33, 0.1 + r * 0.06);
+    });
+    const o = new THREE.Object3D(), tint = new THREE.Color();
+    [[ROCKS.big, big], [ROCKS.small, small]].forEach(([geos, lists], set) => lists.forEach((list, i) => {
+      if (!list.length) return;
+      const m = new THREE.InstancedMesh(geos[i], M.boulder, list.length);
+      list.forEach(([x, z, w, h, ry], j) => {
+        o.position.set(x, 0, z); o.rotation.set(0, ry, 0); o.scale.set(w, h, w * 0.9); o.updateMatrix();
+        m.setMatrixAt(j, o.matrix);
+        m.setColorAt(j, tint.setScalar(0.88 + hash(j + set * 50, i * 31) * 0.2));
+      });
+      m.castShadow = true; m.receiveShadow = true;
+      levelGroup.add(m);
+    }));
+  }
+  const part = (g, geo, mat, x, y, z, sx, sy = sx, sz = sx, shadow = true) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z); m.scale.set(sx, sy, sz); m.castShadow = shadow;
+    g.add(m);
+    return m;
+  };
+  function makeBush(g, r) { // куст из трёх комков и красные ягоды
+    [[0, 0.17, 0, 0.21], [0.16, 0.12, 0.07, 0.15], [-0.15, 0.12, -0.05, 0.16], [0.02, 0.1, -0.17, 0.12]].forEach(([x, y, z, s]) => part(g, NATURE.blob, M.bush, x, y, z, s, s * 0.85, s));
+    [[0.1, 0.3, 0.12], [-0.14, 0.24, 0.1], [0.2, 0.2, -0.05], [-0.05, 0.22, -0.2], [0.04, 0.36, -0.02]].slice(0, 3 + Math.floor(r * 3))
+      .forEach(([x, y, z]) => part(g, NATURE.berry, M.berry, x, y, z, 1, 1, 1, false));
+  }
+  function makeMushrooms(g, r) { // грибы: красные в белый горошек и один бурый
+    [[0, 0, 0.16, 0.11, M.cap], [0.17, 0.08, 0.11, 0.08, M.cap], [-0.13, 0.12, 0.09, 0.07, M.capBrown]].slice(0, 2 + (r > 0.4 ? 1 : 0)).forEach(([x, z, h, c, cap]) => {
+      part(g, NATURE.stem, M.stem, x, h / 2, z, c * 0.32, h, c * 0.32);
+      part(g, NATURE.cap, cap, x, h - 0.01, z, c, c * 0.75, c);
+      if (cap === M.cap) [[0.4, 0.55, 0.2], [-0.45, 0.5, 0.15], [0.05, 0.62, -0.5], [0, 0.78, 0]].forEach(([dx, dy, dz]) => part(g, NATURE.petal, M.stem, x + dx * c, h - 0.01 + dy * c * 0.75, z + dz * c, c * 3, c * 1.5, c * 3, false));
+    });
+  }
+  function makeFlowers(g, r) { // полянка цветов разных цветов
+    for (let i = 0; i < 6; i++) {
+      const a = i * 2.4 + r * 5, d = 0.08 + ((i * 0.37 + r) % 1) * 0.24, h = 0.1 + ((i * 0.53 + r) % 1) * 0.1;
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      part(g, NATURE.flowerStem, M.bush, x, h / 2, z, 1, h, 1, false);
+      part(g, NATURE.petal, M.petals[(i + Math.floor(r * 4)) % 4], x, h, z, 1.1, 0.7, 1.1);
+    }
+    [[0.18, -0.15], [-0.2, 0.12]].forEach(([x, z]) => part(g, NATURE.blob, M.bush, x, 0.03, z, 0.09, 0.06, 0.09, false)); // травка
+  }
+  function makeStump(g, r) { // пень со спилом и грибок у корня
+    const m = new THREE.Mesh(NATURE.stump, [M.trunk, M.wood, M.wood]);
+    m.position.y = 0.1; m.castShadow = true;
+    g.add(m);
+    part(g, NATURE.stem, M.stem, 0.17, 0.035, 0.08, 0.018, 0.07, 0.018, false);
+    part(g, NATURE.cap, r > 0.5 ? M.capBrown : M.cap, 0.17, 0.065, 0.08, 0.05, 0.035, 0.05, false);
+  }
+  function addFountain({ x, z }) {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+    g.rotation.y = Math.PI / 8; // грань чаши смотрит на камеру
+    part(g, NATURE.basin, M.fstone, 0, 0, 0, 1);
+    part(g, NATURE.disc, M.pool, 0, 0.13, 0, 0.36, 0.36, 0.36, false).rotation.x = -Math.PI / 2;
+    part(g, NATURE.column, M.fstone, 0, 0.21, 0, 1);
+    part(g, NATURE.bowl, M.fstone, 0, 0.32, 0, 1);
+    part(g, NATURE.disc, M.pool, 0, 0.405, 0, 0.165, 0.165, 0.165, false).rotation.x = -Math.PI / 2;
+    part(g, NATURE.knob, M.fstone, 0, 0.44, 0, 1, 1.3, 1);
+    const curtain = part(g, NATURE.curtain, M.water, 0, 0.27, 0, 1, 1, 1, false);
+    curtain.renderOrder = 2;
+    const ripple = part(g, NATURE.ripple, M.ripple, 0, 0.135, 0, 0.3, 0.3, 0.3, false);
+    ripple.rotation.x = -Math.PI / 2;
+    g.children.forEach(m => { m.receiveShadow = true; });
+    levelGroup.add(g);
+    fountains.push({ ripple });
+  }
+  function animateNature(time) {
+    if (!fountains.length || reduceMotion) return;
+    WATER.uniforms.t.value = time;
+    const k = (time * 0.7) % 1;
+    fountains.forEach(f => f.ripple.scale.setScalar(0.27 + k * 0.08));
+    M.ripple.opacity = 0.7 * (1 - k);
   }
 
   /* Летучий остров: под картой — каменное днище из перевёрнутых конусов (чем дальше от края, тем ниже),
@@ -1059,6 +1277,7 @@
     if (boss && boss.visible) animateSboy(boss, time, dt);
     if (cut) animateCut(time, dt);
     animateClouds(dt);
+    animateNature(time);
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     if (heroParts.tail && !reduceMotion) heroParts.tail.rotation.y = Math.sin(time * (running ? 7 : 3)) * 0.3;
     animateFace(time, dt);
