@@ -228,7 +228,7 @@
   });
   const UNDER = { top: 0xa47a62, deep: 0x7a6a98 };
 
-  /* Природа на кайме дороги: валуны вместо серых кубиков, кусты, грибы, цветы, пни и родник с водопадом.
+  /* Природа на кайме дороги: валуны вместо серых кубиков, кусты, грибы, цветы, пни и фонтан.
      Валуны — набор форм, собранных один раз: икосаэдр, помятый шумом, со сколами-гранями и плоским низом;
      цвет граней — в самой форме (серый камень, мох на верхушке, тень у земли). Ставятся InstancedMesh по форме */
   Object.assign(M, {
@@ -241,7 +241,8 @@
     stem: new THREE.MeshStandardMaterial({ color: 0xf3e6d0, flatShading: true, roughness: 0.9 }),
     wood: new THREE.MeshStandardMaterial({ color: 0xd9b07a, flatShading: true, roughness: 0.9 }),
     petals: [0xffd166, 0xff8fb8, 0xfff4f0, 0xb79cff].map(c => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.12, flatShading: true, roughness: 0.8 })),
-    spring: new THREE.MeshStandardMaterial({ color: 0x3aa6d8, emissive: 0x0f5f8f, emissiveIntensity: 0.3, roughness: 0.15 }),
+    pool: new THREE.MeshStandardMaterial({ color: 0x3aa6d8, emissive: 0x0f5f8f, emissiveIntensity: 0.3, roughness: 0.15 }),
+    fstone: new THREE.MeshStandardMaterial({ color: 0xe6dccf, flatShading: true, roughness: 0.85 }), // светлый камень фонтана
     ripple: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }),
   });
   const keep = g => { g.userData.keep = true; return g; }; // общая геометрия: не выбрасывать вместе с картой
@@ -298,22 +299,33 @@
     petal: keep(new THREE.IcosahedronGeometry(0.045, 0)),
     flowerStem: keep(new THREE.CylinderGeometry(0.008, 0.008, 1, 4)),
     stump: keep(new THREE.CylinderGeometry(0.15, 0.19, 0.2, 9)),
-    disc: keep(new THREE.CircleGeometry(0.27, 24)),
+    disc: keep(new THREE.CircleGeometry(1, 24)),
     ripple: keep(new THREE.RingGeometry(0.9, 1, 24)),
+    // фонтан: восьмигранная чаша, колонна, верхняя чаша и навершие; профили вращаются вокруг оси
+    basin: keep(new THREE.LatheGeometry([[0, 0], [0.42, 0], [0.44, 0.05], [0.42, 0.16], [0.37, 0.17], [0.35, 0.09], [0, 0.09]].map(([x, y]) => new THREE.Vector2(x, y)), 8)),
+    column: keep(new THREE.CylinderGeometry(0.055, 0.08, 0.24, 8)),
+    bowl: keep(new THREE.LatheGeometry([[0, 0], [0.05, 0], [0.17, 0.06], [0.19, 0.095], [0.16, 0.095], [0, 0.05]].map(([x, y]) => new THREE.Vector2(x, y)), 8)),
+    knob: keep(new THREE.OctahedronGeometry(0.035, 0)),
+    // завеса воды с края верхней чаши: открытый конус; v развёрнут, чтобы 0 был сверху — полосы бегут вниз
+    curtain: (() => {
+      const g = new THREE.CylinderGeometry(0.18, 0.27, 0.27, 24, 1, true);
+      const uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+      return keep(g);
+    })(),
   };
-  // Вода водопада: полосы бегут вниз, к краям и внизу — прозрачнее. Цвета ночью — из LOOK
+  // Вода фонтана: полосы бегут вниз по завесе, у чаши вода светлеет и тает. Цвета ночью — из LOOK
   const WATER = {
     uniforms: { t: { value: 0 }, deep: { value: new THREE.Color(0x58c2ea) }, foam: { value: new THREE.Color(0xf2fbff) }, op: { value: 0.88 } },
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `uniform float t; uniform vec3 deep; uniform vec3 foam; uniform float op; varying vec2 vUv;
       float h(float n) { return fract(sin(n * 91.7) * 43758.5); }
       void main() {
-        float col = floor(vUv.x * 7.0);
-        float s = fract(vUv.y * 5.0 - t * (1.1 + h(col) * 0.6) + h(col + 3.0));
-        float streak = smoothstep(0.55, 1.0, s) * (0.5 + 0.5 * h(col + 7.0));
-        float edge = smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.8, vUv.x);
-        float fade = 1.0 - smoothstep(0.55, 1.0, vUv.y);
-        gl_FragColor = vec4(mix(deep, foam, streak + (1.0 - edge) * 0.35), op * mix(0.55, 1.0, edge) * fade);
+        float col = floor(vUv.x * 18.0);
+        float s = fract(vUv.y * 2.0 - t * (1.2 + h(col) * 0.6) + h(col + 3.0));
+        float streak = smoothstep(0.5, 1.0, s) * (0.5 + 0.5 * h(col + 7.0));
+        float fade = 1.0 - smoothstep(0.7, 1.0, vUv.y);
+        gl_FragColor = vec4(mix(deep, foam, streak + vUv.y * 0.3), op * (0.55 + 0.45 * streak) * fade);
       }`,
   };
   M.water = new THREE.ShaderMaterial({ uniforms: WATER.uniforms, vertexShader: WATER.vertexShader, fragmentShader: WATER.fragmentShader, transparent: true, depthWrite: false, side: THREE.DoubleSide });
@@ -390,7 +402,7 @@
     M.coin.emissiveIntensity = L.coinGlow;
     M.flag.emissive.setHex(0x1fa88f); M.flag.emissiveIntensity = L.flagGlow;
     M.under.color.setHex(L.under); M.underBit.color.setHex(L.underBit);
-    M.boulder.color.setHex(L.boulder); M.moss.color.setHex(L.moss); M.spring.color.setHex(L.pool[0]); M.spring.emissive.setHex(L.pool[1]);
+    M.boulder.color.setHex(L.boulder); M.moss.color.setHex(L.moss); M.pool.color.setHex(L.pool[0]); M.pool.emissive.setHex(L.pool[1]);
     WATER.uniforms.deep.value.setHex(L.water[0]); WATER.uniforms.foam.value.setHex(L.water[1]); WATER.uniforms.op.value = L.water[2];
     cloudMats.forEach((m, i) => { m.color.setHex(L.cloud); m.emissive.setHex(L.cloudGlow); m.emissiveIntensity = L.cloudGlowK; m.opacity = CLOUD_LAYERS[i].op * L.cloudOp; });
   }
@@ -656,7 +668,7 @@
         addBlock(x, z, 0.9 + hash(x, z) * 0.25, 0, [M.dirt, M.dirt, g, M.dirt, M.dirt, M.dirt]);
       }
     });
-    // кайма вокруг дороги: земля темнее, на ней валуны, деревья и лесная мелочь, а с края острова бьёт родник
+    // кайма вокруг дороги: земля темнее, на ней валуны, деревья, лесная мелочь и фонтан
     buildBorder(level, minX, maxX, minZ, maxZ, addBlock);
     buildUnderside(level, minX, maxX, minZ, maxZ);
     // монеты
@@ -821,11 +833,11 @@
 
   /* Кайма дороги — всё, что не дорога, но рядом с ней (стены лабиринта тоже). Земля на ней темнее дороги (M.moss),
      на ней валуны (один крупный или два поменьше, рядом камешки), деревья, а по внешнему краю острова — кусты с ягодами,
-     грибы, цветы и пни. Родник: на краю острова, обращённом к камере, — каменное кольцо с водой и ручей,
-     который срывается с края водопадом в облака. Всё ниже 0.4, кроме деревьев, — карту не загораживает */
-  const springs = [];
+     грибы, цветы и пни. Фонтан — на дальнем от камеры краю острова, чтобы ничего не заслонять.
+     Всё ниже 0.4, кроме деревьев и фонтана (0.45), — карту не загораживает */
+  const fountains = [];
   function buildBorder(level, minX, maxX, minZ, maxZ, addBlock) {
-    springs.length = 0;
+    fountains.length = 0;
     const ring = new Set();
     for (let x = minX - 1; x <= maxX + 1; x++) {
       for (let z = minZ - 1; z <= maxZ + 1; z++) {
@@ -836,16 +848,14 @@
       }
     }
     const land = k => level.floor.has(k) || ring.has(k);
-    // родник: клетка каймы на краю острова, вода падает к зрителю (камера смотрит с +z и чуть слева)
-    let spring = null, best = Infinity;
+    // фонтан: клетка каймы на краю острова, лучше всего на дальнем от камеры (камера смотрит с +z и чуть слева)
+    let fountain = null, best = Infinity;
     ring.forEach(k => {
       const [x, z] = k.split(',').map(Number);
-      [[0, 1], [-1, 0], [1, 0]].forEach(([dx, dz], pref) => {
+      [[0, -1], [1, 0], [-1, 0], [0, 1]].forEach(([dx, dz], pref) => {
         if (land(K(x + dx, z + dz))) return;
-        const px = dz ? 1 : 0, pz = dx ? 1 : 0; // по бокам тоже кайма — иначе вода польётся с угла
-        if (!ring.has(K(x + px, z + pz)) || !ring.has(K(x - px, z - pz))) return;
         const score = pref + hash(x * 3 + 11, z * 7 - 5);
-        if (score < best) { best = score; spring = { x, z, dx, dz }; }
+        if (score < best) { best = score; fountain = { x, z }; }
       });
     });
     const big = ROCKS.big.map(() => []), small = ROCKS.small.map(() => []);
@@ -855,7 +865,7 @@
       addBlock(x, z, 0.9 + r * 0.2, 0, [M.dirt, M.dirt, M.moss, M.dirt, M.dirt, M.dirt]);
       const outer = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => !land(K(x + dx, z + dz)));
       const pebble = (px, pz, w) => small[Math.floor(r2 * 3)].push([x + px, z + pz, w, w * 0.65, r * 6.28]);
-      if (spring && spring.x === x && spring.z === z) { addSpring(spring, small); return; }
+      if (fountain && fountain.x === x && fountain.z === z) { addFountain(fountain); return; }
       if (r < 0.2) {
         const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.35, 6), M.trunk);
         trunk.position.set(x, 0.17, z); trunk.castShadow = true;
@@ -930,46 +940,30 @@
     part(g, NATURE.stem, M.stem, 0.17, 0.035, 0.08, 0.018, 0.07, 0.018, false);
     part(g, NATURE.cap, r > 0.5 ? M.capBrown : M.cap, 0.17, 0.065, 0.08, 0.05, 0.035, 0.05, false);
   }
-  function addSpring(sp, small) {
-    const { x, z, dx, dz } = sp, px = -dz, pz = dx; // (px, pz) — поперёк струи
-    // кольцо камешков, со стороны края — проход для ручья
-    for (let i = 0; i < 11; i++) {
-      const a = i / 11 * Math.PI * 2, cx = Math.cos(a), cz = Math.sin(a);
-      if (cx * dx + cz * dz > 0.8) continue;
-      small[i % 3].push([x + cx * 0.34, z + cz * 0.34, 0.075 + hash(i, x) * 0.03, 0.07 + hash(z, i) * 0.04, a * 3]);
-    }
-    const pool = new THREE.Mesh(NATURE.disc, M.spring);
-    pool.rotation.x = -Math.PI / 2; pool.position.set(x, 0.05, z);
-    const ripple = new THREE.Mesh(NATURE.ripple, M.ripple);
-    ripple.rotation.x = -Math.PI / 2; ripple.position.set(x - dx * 0.05, 0.056, z - dz * 0.05);
-    levelGroup.add(pool, ripple);
-    // ручей и водопад — одна лента: по земле до края, потом дугой вниз (вылетает вперёд, чтобы не задеть днище)
-    const pts = [[0.18, 0.05, 0.14], [0.5, 0.045, 0.18], [0.62, 0.04, 0.2]];
-    for (let i = 1; i <= 16; i++) { const t = i / 16 * 1.05; pts.push([0.62 + 1.4 * t, 0.04 - 4.9 * t * t, 0.2 + t * 0.3]); }
-    let len = 0;
-    const lens = pts.map((p, i) => (len += i ? Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0));
-    const pos = [], uv = [], idx = [];
-    pts.forEach(([s, y, w], i) => {
-      const cx = x + dx * s, cz = z + dz * s;
-      pos.push(cx - px * w / 2, y, cz - pz * w / 2, cx + px * w / 2, y, cz + pz * w / 2);
-      uv.push(0, lens[i] / len, 1, lens[i] / len);
-      if (i) idx.push(i * 2 - 2, i * 2 - 1, i * 2, i * 2 - 1, i * 2 + 1, i * 2);
-    });
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-    geo.setIndex(idx);
-    const fall = new THREE.Mesh(geo, M.water);
-    fall.renderOrder = 2;
-    levelGroup.add(fall);
-    springs.push({ ripple });
+  function addFountain({ x, z }) {
+    const g = new THREE.Group();
+    g.position.set(x, 0, z);
+    g.rotation.y = Math.PI / 8; // грань чаши смотрит на камеру
+    part(g, NATURE.basin, M.fstone, 0, 0, 0, 1);
+    part(g, NATURE.disc, M.pool, 0, 0.13, 0, 0.36, 0.36, 0.36, false).rotation.x = -Math.PI / 2;
+    part(g, NATURE.column, M.fstone, 0, 0.21, 0, 1);
+    part(g, NATURE.bowl, M.fstone, 0, 0.32, 0, 1);
+    part(g, NATURE.disc, M.pool, 0, 0.405, 0, 0.165, 0.165, 0.165, false).rotation.x = -Math.PI / 2;
+    part(g, NATURE.knob, M.fstone, 0, 0.44, 0, 1, 1.3, 1);
+    const curtain = part(g, NATURE.curtain, M.water, 0, 0.27, 0, 1, 1, 1, false);
+    curtain.renderOrder = 2;
+    const ripple = part(g, NATURE.ripple, M.ripple, 0, 0.135, 0, 0.3, 0.3, 0.3, false);
+    ripple.rotation.x = -Math.PI / 2;
+    g.children.forEach(m => { m.receiveShadow = true; });
+    levelGroup.add(g);
+    fountains.push({ ripple });
   }
   function animateNature(time) {
-    if (!springs.length || reduceMotion) return;
+    if (!fountains.length || reduceMotion) return;
     WATER.uniforms.t.value = time;
-    const k = (time * 0.6) % 1;
-    springs.forEach(sp => sp.ripple.scale.setScalar(0.06 + k * 0.2));
-    M.ripple.opacity = 0.6 * (1 - k);
+    const k = (time * 0.7) % 1;
+    fountains.forEach(f => f.ripple.scale.setScalar(0.27 + k * 0.08));
+    M.ripple.opacity = 0.7 * (1 - k);
   }
 
   /* Летучий остров: под картой — каменное днище из перевёрнутых конусов (чем дальше от края, тем ниже),
