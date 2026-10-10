@@ -659,7 +659,7 @@
         if (x > 0 && x < N - 1 && y > 0 && y < N - 1 && z > 0 && z < N - 1) continue; // внутренних не видно
         const base = new THREE.Vector3(x - H, y - H, z - H).multiplyScalar(STEP);
         const r = hash(x * 7 + y * 3, z * 11 + y);
-        cells.push({ base, one: r > 0.5, next: r * 2, rate: 0.4 + hash(z * 5, x * 9 + y) * 2.6, sp: 0.6 + r * 1.4, ph: r * 6.28, amp: 0.1 + hash(y * 13, x + z) * 0.22 });
+        cells.push({ base, one: r > 0.5, next: r * 2, rate: 0.4 + hash(z * 5, x * 9 + y) * 2.6, sp: 0.6 + r * 1.4, ph: r * 6.28, amp: 0.3 + hash(y * 13, x + z) * 0.5 }); // amp — насколько дальше от центра отходит кубик: от 30 до 80%
       }
       const ones = new THREE.InstancedMesh(new THREE.BoxGeometry(S, S, S), mat1, cells.length);
       const zeros = new THREE.InstancedMesh(new THREE.BoxGeometry(S, S, S), mat0, cells.length);
