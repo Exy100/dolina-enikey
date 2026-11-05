@@ -1,0 +1,47 @@
+const assert = require('assert/strict');
+const J = require('../js/journeys.js');
+const ids = ['bit', 'qubit', 'iskra', 'atom', 'inventor'];
+const blank = () => ({ gear: {}, stars: {}, code: {}, hints: {}, seen: { intro: {}, outro: {} }, pos: {}, predict: { tries: 0, hits: 0 } });
+const makeStorage = value => ({ value: value === undefined ? null : JSON.stringify(value), getItem() { return this.value; }, setItem(k, v) { this.value = v; } });
+const old = { ...blank(), stars: { 'k-steps': [1, 1, 1] }, code: { 'k-steps': 'вперёд(3)' }, gear: { color: 'mint' }, shop: { bird: 1 }, trial: { hist: [1] }, awards: ['first'], mute: true, lite: true };
+const storage = makeStorage(old), a = J.open(storage, 'game', ids, blank);
+assert.deepEqual(a.load(), old, 'старый прогресс читается без потерь');
+const first = a.select('inventor', a.load());
+assert(first.fresh);
+assert.deepEqual(first.save.stars, {});
+assert.deepEqual(first.save.code, {});
+assert.deepEqual(first.save.gear, { skin: 'inventor' });
+for (const key of ['shop', 'trial', 'awards']) assert.equal(first.save[key], undefined);
+assert.equal(first.save.mute, true);
+const inventor = { ...first.save, stars: { 'k-turn': [1, 0, 0] } };
+a.persist(inventor);
+const back = a.select('bit', inventor);
+assert(!back.fresh);
+assert.deepEqual(back.save.stars, old.stars);
+assert.deepEqual(back.save.trial, old.trial);
+assert.equal(back.save.gear.color, 'mint');
+assert.equal(a.select('inventor', back.save).save.stars['k-turn'][0], 1);
+const data = JSON.parse(storage.value);
+assert(!data.journeyState.paths.bit.journeyState, 'архив не вкладывает архивы');
+
+// Старая вкладка продолжает свой путь, не перезаписывая другого активного героя.
+const tab = J.open(storage, 'game', ids, blank), tabSave = tab.load();
+a.select('atom', inventor);
+tabSave.code['k-turn'] = 'налево()'; tab.persist(tabSave);
+const concurrent = JSON.parse(storage.value);
+assert.equal(concurrent.journeyState.active, 'atom');
+assert.deepEqual(concurrent.stars, {});
+assert.equal(concurrent.journeyState.paths.inventor.code['k-turn'], 'налево()');
+
+const before = storage.value;
+storage.setItem = () => { throw new Error('QuotaExceededError'); };
+assert.throws(() => a.select('qubit', blank()), /Quota/);
+assert.equal(storage.value, before, 'неудачная запись не стирает прежний путь');
+assert.equal(a.active, 'atom');
+assert.throws(() => a.select('__proto__', blank()), /Unknown/);
+const broken = makeStorage(); broken.value = '{bad json';
+assert.throws(() => J.open(broken, 'game', ids, blank));
+assert.equal(broken.value, '{bad json');
+const legacy = J.open(makeStorage({ ...blank(), gear: { skin: 'pixel' } }), 'game', ids, blank);
+assert.equal(legacy.active, 'qubit');
+console.log('Пути героев: миграция, начало с нуля, возврат, изоляция прогресса, две вкладки и отказ записи проверены.');

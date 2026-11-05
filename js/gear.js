@@ -63,7 +63,12 @@ const HeroGear = (() => {
     { id: 'qubit', name: 'Кубит', note: 'парящий куб из нулей и единиц', colors: [0x20232b, 0x9aa0aa], ant: false },
     { id: 'iskra', name: 'Ушки', note: 'ушки и хвост', colors: [0xe5774a, 0xffa877], ant: false },
     { id: 'atom', name: 'Атом', note: 'светящееся ядро и электроны с огненными хвостами', colors: [0xff7a1a, 0xffb030], ant: false },
+    { id: 'inventor', name: 'Изобретательница', note: 'школьная форма и спутник «Фотон»', colors: [0x70442e, 0xffc49a], ant: false },
   ];
+
+  // У школьного образа свои очки, галстук, цвет и постоянный спутник.
+  // Сохранённые вещи для этих слотов вернутся при выборе другого облика.
+  const fitsSkin = (skin, item) => skin !== 'inventor' || ['head', 'back'].includes(item.slot);
 
   const SHOP = ITEMS.filter(it => it.price);
 
@@ -227,6 +232,6 @@ const HeroGear = (() => {
     return g;
   }
 
-  return { LEVELS, SLOTS, ITEMS, SHOP, SKINS, DEFAULT_COLORS, levelFor, build };
+  return { LEVELS, SLOTS, ITEMS, SHOP, SKINS, DEFAULT_COLORS, levelFor, build, fitsSkin };
 })();
 if (typeof module !== 'undefined') module.exports = HeroGear;

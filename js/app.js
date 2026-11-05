@@ -7,9 +7,15 @@
 
   /* ---------- Сохранение ---------- */
   const STORE = 'mir-geroya-usloviya-v1';
+  const ENTRY_HASH = location.hash;
+  const ENTER_KEY = 'mir-geroya-enter-journey';
   const blankSave = () => ({ lesson: null, pos: {}, code: {}, stars: {}, hints: {}, seeds: {}, fails: {}, gear: {}, seen: { intro: {}, outro: {} }, predict: { tries: 0, hits: 0 }, warm: {}, first: {} });
+  let journeys = null;
   let save = blankSave();
-  try { const raw = localStorage.getItem(STORE); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* без сохранения */ }
+  try {
+    journeys = HeroJourneys.open(localStorage, STORE, HeroGear.SKINS.map(s => s.id), blankSave);
+    save = Object.assign(save, journeys.load());
+  } catch (e) { /* недоступное/повреждённое хранилище не перезаписываем */ }
   if (save.gear && save.gear.skin === 'pixel') save.gear.skin = 'qubit'; // «Кубик» стал «Кубитом»
   // Режим показа для видео (?show): свой Бит — в шляпе, шарфе и с рюкзаком; прогресс ученика не читаем и не пишем
   // Кадры для объявления (?shots) — тоже показ: свой Бит, прогресс ученика не читаем и не пишем
@@ -38,7 +44,7 @@
     if (save.lesson === 'komandy') save.lesson = to.id;
     if (save.seen.intro.komandy) save.seen.intro.prolog = true; // Аду они уже слышали
   }
-  const persist = () => { if (SHOW) return; try { localStorage.setItem(STORE, JSON.stringify(save)); } catch (e) { /* ок */ } };
+  const persist = () => { if (SHOW || !journeys) return; try { journeys.persist(save); } catch (e) { /* игра работает без записи */ } };
   // Пролог идёт без номера, уроки после него — «Урок 1», «Урок 2»…
   const lessonNo = i => i + (LESSONS[0].prologue ? 0 : 1);
   const lessonName = i => (LESSONS[i].prologue ? LESSONS[i].title : `Урок ${lessonNo(i)}. ${LESSONS[i].title}`);
@@ -487,8 +493,12 @@
      (buildHeroParts возвращает свою группу и свои материалы) */
   const hero = new THREE.Group();
   const heroParts = {};
+  const inventorAction = { event: '', at: -Infinity };
+  let inventorWelcome = false;
   const skinOf = id => (HeroGear.SKINS.find(s => s.id === id) || HeroGear.SKINS[0]);
+  const heroName = id => skinOf(id).id === 'bit' ? 'Бит' : skinOf(id).name;
   function buildHeroParts(skinId) {
+    if (skinId === 'inventor') return HeroInventor.build(THREE);
     const sk = skinOf(skinId).id, cat = sk === 'iskra', atom = sk === 'atom', qubit = sk === 'qubit', root = new THREE.Group();
     const violet = new THREE.MeshStandardMaterial({ color: 0x6b4bd8, flatShading: true, roughness: 0.55 });
     const violetLight = new THREE.MeshStandardMaterial({ color: 0x8f7cff, roughness: 0.45 });
@@ -701,10 +711,18 @@
   }
   function setHeroSkin(id) {
     const b = buildHeroParts(id);
+    HeroInventor.reset(hero);
+    inventorAction.event = ''; inventorAction.at = -Infinity;
     hero.clear();
     Object.keys(heroParts).forEach(k => delete heroParts[k]);
     Object.assign(heroParts, b.parts);
     b.root.children.slice().forEach(c => hero.add(c));
+  }
+  function inventorEvent(event) {
+    if (heroParts.skin !== 'inventor') return;
+    inventorAction.event = event; inventorAction.at = performance.now() / 1000;
+    const sound = HeroInventor.soundFor(event);
+    if (sound) Sound.play(sound);
   }
   setHeroSkin(save.gear.skin);
   // Копия героя для другой сцены — со спокойным лицом и ногами на месте
@@ -737,6 +755,7 @@
     let colors = skinOf(heroParts.skin).colors;
     ITEMS.forEach(it => {
       if (save.gear[it.slot] !== it.id || !isOpen(it)) return;
+      if (!HeroGear.fitsSkin(heroParts.skin, it)) return;
       if (it.colors) colors = it.colors;
       else {
         hero.add(gearOn[it.slot] = HeroGear.build(it.id, THREE));
@@ -1583,7 +1602,10 @@
      Взгляд — [вбок, вверх] от −1 до 1 в координатах Бита: +1 вбок — налево ---------- */
   const face = { mood: '', look: [0, 0], aim: null, aimUntil: 0, blinkAt: 2, blinkT: -1, idle: 'goal', idleUntil: 0, wiggle: 0, ouch: 0, goal: null };
   // Настроение: '' — спокойный; 'happy' — дошёл: глаза «^ ^», улыбка, антенна качается; 'sad' — программа сломалась
-  function setMood(m) { face.mood = m; if (m === 'happy') face.wiggle = 1; }
+  function setMood(m) {
+    if (m && m !== face.mood) inventorEvent(m === 'happy' ? 'win' : 'fail');
+    face.mood = m; if (m === 'happy') face.wiggle = 1;
+  }
   // Посмотреть на миг: [вбок, вверх] или 'cam' — на того, кто за экраном
   function glance(look, ms = 500) { face.aim = look; face.aimUntil = performance.now() / 1000 + ms / 1000 / Math.min(tempo(), 3); }
   const LOOK_AT = { ahead: [0, -0.35], left: [1, -0.2], right: [-1, -0.2], down: [0, -1], up: [0.35, 0.9] };
@@ -1673,6 +1695,7 @@
     let tail = null, fx = null;
     root.traverse(o => { if (o.name === 'eye' || o.name === 'pupil') lids.push(o); else if (o.name === 'tail') tail = o; else if (o.name === 'fx') fx = o; });
     return time => {
+      HeroInventor.update(root, time, { reduceMotion });
       if (reduceMotion) return;
       if (tail) tail.rotation.y = Math.sin(time * 3) * 0.3;
       if (fx) fx.userData.spin(time);
@@ -1773,6 +1796,10 @@
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     if (heroParts.tail && !reduceMotion) heroParts.tail.rotation.y = Math.sin(time * (running ? 7 : 3)) * 0.3;
     animateFace(time, dt);
+    if (heroParts.skin === 'inventor') HeroInventor.update(hero, time, {
+      moving: running && ['move', 'jump', 'turn'].includes(inventorAction.event),
+      mood: face.mood, event: inventorAction.event, age: (time - inventorAction.at) * Math.min(tempo(), 3), reduceMotion: reduceMotion || SHOTS,
+    });
     if (heroParts.fx && !reduceMotion) heroParts.fx.userData.spin(time); // электроны атома, сфера Блоха кубита
     if (BLOB.hero.visible) { // в прыжке пятно меньше и бледнее, в лаве пропадает
       const h = hero.position.y;
@@ -2228,6 +2255,7 @@
 
   /* Анимация одного события мира */
   async function animate(ev, st) {
+    if (['move', 'jump', 'turn', 'check', 'take', 'open', 'pull', 'wait'].includes(ev.type)) inventorEvent(ev.type);
     switch (ev.type) {
       case 'line':
         markLine(ev.line, 'run');
@@ -2562,9 +2590,10 @@
   function renderBadge() {
     const stars = totalStars(), n = HeroGear.levelFor(stars), cur = LEVELS[n - 1], next = LEVELS[n];
     $('#hbLvl').textContent = n;
+    $('#hbName').textContent = heroName(save.gear.skin);
     $('#hbTitle').textContent = cur.title;
     $('#hbBar').style.width = next ? `${Math.round(((stars - cur.stars) / (next.stars - cur.stars)) * 100)}%` : '100%';
-    $('#heroBtn').setAttribute('aria-label', `${STORY.hero}, уровень ${n}: ${cur.title}. Страница героя${save.awardsNew ? ', там есть новое' : ''}`);
+    $('#heroBtn').setAttribute('aria-label', `${heroName(save.gear.skin)}, уровень ${n}: ${cur.title}. Страница героя${save.awardsNew ? ', там есть новое' : ''}`);
     $('#heroBtn').classList.toggle('new', !!save.awardsNew);
   }
 
@@ -3287,7 +3316,10 @@
   }
   renderSoundBtn();
   $('#soundBtn').addEventListener('click', () => { save.mute = !save.mute; persist(); renderSoundBtn(); Sound.play('tick'); });
-  ['pointerdown', 'keydown'].forEach(ev => addEventListener(ev, () => Sound.unlock(), true));
+  ['pointerdown', 'keydown'].forEach(ev => addEventListener(ev, () => {
+    Sound.unlock();
+    if (inventorWelcome) { inventorWelcome = false; inventorEvent('select'); }
+  }, true));
 
   /* ---------- Режим показа для видео на Авито (?show): титульная карточка, затем Бит сам проходит уровни —
      код печатается буква за буквой, — и финальная карточка. Запись экрана становится роликом.
@@ -3866,7 +3898,7 @@
     const date = new Date(D.at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
     const L = LESSONS[D.r], place = (STORY.lessons[L.id] || {}).place || L.title;
     $('#hpKicker').textContent = `Долина Эникей · страница героя · ${date}`;
-    $('#hpTitle').textContent = `${STORY.hero} · уровень ${n}`;
+    $('#hpTitle').textContent = `${heroName(D.g && D.g.skin)} · уровень ${n}`;
     $('#hpLvl').textContent = n;
     $('#hpGems').innerHTML = `${GEM_SVG}<b>${S.gems.left}</b>`;
     $('#hpGems').title = `Кристаллы: ${S.gems.left}. Всего заработано: ${S.gems.earned}`;
@@ -4007,11 +4039,12 @@
     $('#hpShopTip').textContent = `Ада мастерит для Бита обновки. Кристаллы дают за задание со звёздочкой (${R.bonus}), сделанную домашку (${R.hw}), `
       + `достижения (от 10 до 50) и верную догадку в «Угадай» в новом задании (${R.guess}). Нажми на вещь — Бит её примерит.`;
     $('#hpShop').innerHTML = HeroGear.SHOP.map(it => {
-      const own = isOpen(it), on = own && save.gear[it.slot] === it.id, tr = hpTry === it.id;
+      const fits = HeroGear.fitsSkin(save.gear.skin, it);
+      const own = isOpen(it), on = fits && own && save.gear[it.slot] === it.id, tr = hpTry === it.id;
       const ico = it.colors ? `<span class="si-sw" style="background:linear-gradient(135deg, ${hexColor(it.colors[0])} 50%, ${hexColor(it.colors[1])} 50%)"></span>`
         : `<svg viewBox="0 0 24 24">${SLOT_ICON[it.slot] || ''}</svg>`;
       const cls = ['hp-si', own && 'own', on && 'on', tr && 'try', !own && it.price > left && 'dear'].filter(Boolean).join(' ');
-      return `<li><button type="button" class="${cls}" data-id="${it.id}" aria-pressed="${own ? on : tr}" title="${esc(it.name)}${own ? '' : `: ${it.price} ${plural(it.price, 'кристалл', 'кристалла', 'кристаллов')}`}">
+      return `<li><button type="button" class="${cls}" data-id="${it.id}" ${fits ? '' : 'disabled'} aria-pressed="${own ? on : tr}" title="${esc(it.name)}${fits ? '' : ' — для других обликов'}${own ? '' : `: ${it.price} ${plural(it.price, 'кристалл', 'кристалла', 'кристаллов')}`}">
         <span class="si-ico" aria-hidden="true">${ico}</span><span class="si-text"><b>${esc(it.name)}</b><span>${SLOTS[it.slot]}</span></span>
         <span class="si-state">${on ? 'надето' : own ? 'куплено' : `${GEM_SVG}${it.price}`}</span></button></li>`;
     }).join('');
@@ -4056,11 +4089,12 @@
 
   // Снаряжение на странице героя: вещи за уровни и купленные в лавке, нажатие — надеть или снять
   function renderGear() {
-    $('#gearSub').textContent = 'Выбери облик героя. Вещи открываются за уровни, а в лавке Ады их покупают за кристаллы: нажми на вещь, чтобы надеть её или снять.';
+    $('#gearSub').textContent = 'У каждого персонажа свой путь. Выбор другого героя откроет экран путей. Вещи для текущего героя открываются за уровни и кристаллы.';
+    if (save.gear.skin === 'inventor') $('#gearSub').textContent += ' У изобретательницы свои очки, галстук, форма и «Фотон»; можно добавить головной убор и вещь на спину.';
     const list = $('#gearList');
     list.innerHTML = '';
     const sec = text => { const li = document.createElement('li'); li.className = 'gear-head'; li.textContent = text; list.append(li); };
-    sec('Облик');
+    sec('Персонажи и пути');
     HeroGear.SKINS.forEach(s => {
       const on = skinOf(save.gear.skin).id === s.id;
       const b = document.createElement('button');
@@ -4075,11 +4109,8 @@
       state.textContent = on ? 'выбран' : s.note;
       b.append(name, state);
       b.addEventListener('click', () => {
-        save.gear.skin = s.id;
-        persist(); setHeroSkin(s.id); applyGear(); tryOn(null);
-        renderHeroPage();
-        const again = $(`#gearList .gear-item[data-skin="${s.id}"]`);
-        if (again) again.focus({ preventScroll: true });
+        closeHeroPage();
+        openJourney(s.id, false);
       });
       const li = document.createElement('li');
       li.append(b);
@@ -4087,17 +4118,18 @@
     });
     sec('Вещи');
     ITEMS.filter(it => !it.price || isOpen(it)).forEach(it => {
-      const on = save.gear[it.slot] === it.id, open = isOpen(it);
+      const fits = HeroGear.fitsSkin(save.gear.skin, it);
+      const on = fits && save.gear[it.slot] === it.id, open = isOpen(it);
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'gear-item';
-      b.disabled = !open;
+      b.disabled = !open || !fits;
       b.setAttribute('aria-pressed', String(on && open));
       const name = document.createElement('span');
       name.textContent = it.name;
       const state = document.createElement('span');
       state.className = 'gi-state';
-      state.textContent = !open ? `уровень ${it.level}` : on ? 'надето' : SLOTS[it.slot];
+      state.textContent = !fits ? 'для других обликов' : !open ? `уровень ${it.level}` : on ? 'надето' : SLOTS[it.slot];
       b.append(name, state);
       b.addEventListener('click', () => {
         save.gear[it.slot] = on ? null : it.id;
@@ -4121,6 +4153,7 @@
     let colors = skinOf(P.skin).colors, onHead = false, onBack = false;
     ITEMS.forEach(it => {
       if (gear[it.slot] !== it.id) return;
+      if (!HeroGear.fitsSkin(P.skin, it)) return;
       if (it.colors) { colors = it.colors; return; }
       const g = HeroGear.build(it.id, THREE);
       g.userData.gear = it.slot;
@@ -4309,7 +4342,7 @@
     r.domElement.setAttribute('role', 'img');
     box.prepend(r.domElement);
     const D = hpShared || heroData(), S = heroSummary(D);
-    r.domElement.setAttribute('aria-label', `Бит на острове: ${$('#hpPlace').textContent}`);
+    r.domElement.setAttribute('aria-label', `${heroName(D.g && D.g.skin)} на острове: ${$('#hpPlace').textContent}`);
     const sc = new THREE.Scene();
     sc.add(new THREE.HemisphereLight(0xffe6d4, 0x7a5f8a, 0.72));
     const sunL = new THREE.DirectionalLight(0xffd9b0, 0.8);
@@ -5188,7 +5221,7 @@
     const key = new THREE.DirectionalLight(0xffffff, 0.75);
     key.position.set(2, 4, 3);
     sc.add(key);
-    const bot = faceRest(hero.clone(true));
+    const bot = faceRest(makeHeroModel(heroData().g));
     bot.position.set(0, 0, 0);
     bot.rotation.set(0, 0, 0);
     bot.scale.set(1, 1, 1);
@@ -5256,12 +5289,11 @@
   }
   // 3D-портрет Бита в его снаряжении — на плитке травы; рисуется один раз, пока снаряжение то же
   let certPortrait = null;
-  function heroPortrait(gear) {
-    const id = JSON.stringify(gear);
+  function heroPortrait(gear, size = 760, previewRenderer = null) {
+    const id = JSON.stringify(gear) + ':' + size;
     if (certPortrait && certPortrait.id === id) return certPortrait.img;
     let r;
-    try { r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); } catch (e) { return null; }
-    const size = 760;
+    try { r = previewRenderer || new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); } catch (e) { return null; }
     r.setPixelRatio(1);
     r.setSize(size, size, false);
     const sc = new THREE.Scene();
@@ -5282,8 +5314,13 @@
     const img = document.createElement('canvas');
     img.width = img.height = size;
     img.getContext('2d').drawImage(r.domElement, 0, 0);
-    r.dispose();
-    r.forceContextLoss();
+    const geometry = new Set(), materials = new Set(), textures = new Set();
+    sc.traverse(o => {
+      if (o.geometry && !o.isSprite) geometry.add(o.geometry);
+      if (o.material) [].concat(o.material).forEach(m => { materials.add(m); if (m.map) textures.add(m.map); });
+    });
+    geometry.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
+    if (!previewRenderer) { r.dispose(); r.forceContextLoss(); }
     certPortrait = { id, img };
     return img;
   }
@@ -5439,18 +5476,139 @@
     talk(lines);
   }
 
+  /* ---------- Выбор героя и отдельного пути ---------- */
+  const journeyPortraits = new Map();
+  let journeySelected = 'bit', journeyFromStart = true, journeyPaths = {}, journeyInert = [];
+  const journeyNames = { bit: 'Бит', qubit: 'Кубит', iskra: 'Ушки', atom: 'Атом', inventor: 'Изобретательница' };
+  const journeyDescriptions = {
+    bit: 'Любопытный робот с добрым сердцем', qubit: 'Мир из нулей, единиц и возможностей',
+    iskra: 'Острые ушки и любопытство к открытиям', atom: 'Маленькое ядро большой энергии',
+    inventor: 'Юная исследовательница и спутник «Фотон»',
+  };
+  function journeyProgress(path) {
+    const stars = Object.values(path && path.stars || {});
+    const total = stars.reduce((n, s) => n + (Array.isArray(s) ? s.filter(Boolean).length : 0), 0);
+    return { stars: total, solved: stars.filter(s => Array.isArray(s) && s[0]).length,
+      started: !!(path && (path.journeyStarted || path.seen && path.seen.prologue || total)) };
+  }
+  function chooseJourney(id, focus = false) {
+    journeySelected = id;
+    $$('#journeyCards [role="radio"]').forEach(b => {
+      const on = b.dataset.character === id;
+      b.setAttribute('aria-checked', String(on)); b.tabIndex = on ? 0 : -1;
+      if (on && focus) b.focus({ preventScroll: true });
+    });
+    const progress = journeyProgress(journeyPaths[id]);
+    $('#journeyName').textContent = journeyNames[id];
+    $('#journeyNote').textContent = progress.started
+      ? `Продолжим с места остановки. Уже собрано звёзд: ${progress.stars}.`
+      : 'Первое задание, 0 звёзд и целая Долина впереди. Другие пути сохранятся.';
+    $('#journeyGo').textContent = progress.started ? 'Продолжить путь →' : 'Начать новый путь →';
+  }
+  function openJourney(id = skinOf(save.gear.skin).id, fromStart = true) {
+    stopRun();
+    journeyFromStart = fromStart;
+    $('#journeyError').hidden = true;
+    $('#journeyCancel').hidden = fromStart;
+    try { journeyPaths = journeys ? journeys.entries(save) : { [id]: save }; }
+    catch (e) { journeyPaths = { [skinOf(save.gear.skin).id]: save }; }
+    const grid = $('#journeyCards'); grid.replaceChildren();
+    // Один временный WebGL-контекст на все карточки, затем остаются только canvas.
+    let previews = null;
+    if (journeyPortraits.size < HeroGear.SKINS.length) {
+      try { previews = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); } catch (e) { /* текстовые карточки */ }
+    }
+    HeroGear.SKINS.forEach(sk => {
+      const progress = journeyProgress(journeyPaths[sk.id]);
+      const card = document.createElement('button');
+      card.type = 'button'; card.className = 'journey-card'; card.dataset.character = sk.id;
+      card.setAttribute('role', 'radio');
+      const badge = document.createElement('span'); badge.className = 'journey-badge';
+      badge.textContent = progress.started ? 'Продолжить' : 'Новый путь';
+      const portrait = document.createElement('span'); portrait.className = 'journey-portrait'; portrait.setAttribute('aria-hidden', 'true');
+      if (!journeyPortraits.has(sk.id)) journeyPortraits.set(sk.id, previews ? heroPortrait({ skin: sk.id }, 320, previews) : null);
+      const canvas = journeyPortraits.get(sk.id);
+      if (canvas) portrait.append(canvas); else portrait.textContent = sk.id === 'inventor' ? '✦' : '◉';
+      const name = document.createElement('b'); name.textContent = journeyNames[sk.id];
+      const desc = document.createElement('span'); desc.className = 'journey-desc'; desc.textContent = journeyDescriptions[sk.id];
+      const stats = document.createElement('span'); stats.className = 'journey-stats';
+      stats.textContent = progress.started ? `★ ${progress.stars} · ${progress.solved} ${plural(progress.solved, 'задание', 'задания', 'заданий')}` : 'С первого шага';
+      card.append(badge, portrait, name, desc, stats);
+      card.addEventListener('click', () => { chooseJourney(sk.id); Sound.play('tick'); });
+      grid.append(card);
+    });
+    if (previews) { previews.dispose(); previews.forceContextLoss(); }
+    $('#journey').hidden = false; document.body.classList.add('choosing');
+    journeyInert = [...document.body.children].filter(el => el.id !== 'journey' && !el.classList.contains('beta') && el.tagName !== 'SCRIPT')
+      .map(el => { const previous = el.inert; el.inert = true; return { el, previous }; });
+    chooseJourney(skinOf(id).id, true);
+  }
+  function closeJourney() {
+    $('#journey').hidden = true; document.body.classList.remove('choosing');
+    journeyInert.forEach(({ el, previous }) => { el.inert = previous; }); journeyInert = [];
+  }
+  $('#journeyCancel').addEventListener('click', () => { closeJourney(); openHeroPage(); });
+  $('#journeyGo').addEventListener('click', () => {
+    if (!journeys) {
+      $('#journeyError').textContent = 'Не удалось открыть сохранения. Разреши хранение данных для этой страницы и перезагрузи её — прежние данные не изменены.';
+      $('#journeyError').hidden = false; return;
+    }
+    const id = journeySelected;
+    try {
+      if (id === journeys.active) {
+        save.journeyStarted = true;
+        journeys.persist(save);
+        closeJourney();
+        inventorEvent('select');
+        if (journeyFromStart) greet(); else ta.focus({ preventScroll: true });
+        return;
+      }
+      // Архив и новый активный путь записываются атомарно одной строкой JSON.
+      journeys.select(id, save);
+      try { sessionStorage.setItem(ENTER_KEY, id); } catch (e) { /* снова покажем заставку */ }
+      // Домашка/свой уровень по ссылке относятся и к выбранному герою.
+      if (journeyFromStart && /^#(?:hw|task|level)=/.test(ENTRY_HASH)) history.replaceState(null, '', location.href.split('#')[0] + ENTRY_HASH);
+      location.reload();
+    } catch (e) {
+      $('#journeyError').textContent = 'Не удалось сохранить путь. Освободи место в хранилище браузера и попробуй ещё раз. Текущий путь сохранён без переключения.';
+      $('#journeyError').hidden = false;
+    }
+  });
+  addEventListener('keydown', e => {
+    if ($('#journey').hidden) return;
+    e.stopImmediatePropagation();
+    const cards = $$('#journeyCards [role="radio"]');
+    if (e.key === 'Escape') { e.preventDefault(); if (!journeyFromStart) $('#journeyCancel').click(); }
+    else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key) && e.target.closest('#journeyCards')) {
+      e.preventDefault();
+      const i = cards.findIndex(b => b.dataset.character === journeySelected);
+      const next = e.key === 'Home' ? 0 : e.key === 'End' ? cards.length - 1 : (i + (['ArrowLeft', 'ArrowUp'].includes(e.key) ? -1 : 1) + cards.length) % cards.length;
+      chooseJourney(cards[next].dataset.character, true);
+    } else if (e.key === 'Tab') {
+      const buttons = [...$('#journey').querySelectorAll('button')].filter(b => !b.hidden && !b.disabled && b.tabIndex >= 0);
+      const first = buttons[0], last = buttons[buttons.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  }, true);
+
   /* ---------- Заставка «Нажми любую клавишу» ---------- */
   (function splashScreen() {
     const sp = $('#splash');
     if (SHOW) { sp.remove(); return; } // в режиме показа вместо заставки — титульная карточка ролика
+    let enter = null;
+    try { enter = sessionStorage.getItem(ENTER_KEY); sessionStorage.removeItem(ENTER_KEY); } catch (e) { /* без sessionStorage */ }
+    if (enter && enter === skinOf(save.gear.skin).id && !/^#(?:hero|trial)=/.test(location.hash)) {
+      inventorWelcome = enter === 'inventor';
+      sp.remove(); save.journeyStarted = true; persist(); setTimeout(greet); return;
+    }
     if (!sp) { setTimeout(greet); return; }
     const go = () => {
       Sound.unlock();
       removeEventListener('keydown', onKey, true);
       sp.classList.add('hide');
       setTimeout(() => sp.remove(), 400);
-      ta.focus({ preventScroll: true });
-      greet();
+      openJourney(skinOf(save.gear.skin).id, true);
     };
     const onKey = e => {
       if (['Tab', 'Shift', 'Alt', 'Control', 'Meta'].includes(e.key)) return;

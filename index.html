@@ -16,10 +16,27 @@
   <div class="splash-inner">
     <p class="splash-kicker">python с нуля</p>
     <h2>Долина Эникей</h2>
-    <p class="lead">Робот Бит слушается только твоего кода.</p>
+    <p class="lead">Выбери героя и оживи Долину своим кодом.</p>
     <button type="button" class="splash-btn" id="splashBtn"><span class="p">&gt;</span><span class="desk">Нажми любую клавишу</span><span class="touch">Коснись, чтобы начать</span><span class="cur" aria-hidden="true"></span></button>
   </div>
 </div>
+<section class="journey" id="journey" role="dialog" aria-modal="true" aria-labelledby="journeyTitle" aria-describedby="journeyIntro" hidden>
+  <div class="journey-inner">
+    <div class="journey-heading">
+      <p class="splash-kicker">Долина Эникей · твоё приключение</p>
+      <h2 id="journeyTitle">Кто отправится в Долину?</h2>
+      <p id="journeyIntro">У каждого героя — свой путь. Нового героя ждут первые команды, открытия и звёзды.</p>
+    </div>
+    <div class="journey-grid" id="journeyCards" role="radiogroup" aria-label="Персонаж"></div>
+    <div class="journey-footer">
+      <div class="journey-summary" aria-live="polite"><b id="journeyName"></b><p id="journeyNote"></p></div>
+      <button type="button" class="btn ghost" id="journeyCancel" hidden>Вернуться в игру</button>
+      <button type="button" class="btn primary" id="journeyGo">Начать путь</button>
+    </div>
+    <p class="journey-save-note">Все герои проходят один курс. Пути сохраняются отдельно в этом браузере.</p>
+    <p id="journeyError" class="journey-error" role="alert" hidden></p>
+  </div>
+</section>
 <div class="app">
   <header class="top">
     <div class="brand">
@@ -33,7 +50,7 @@
       <select id="lessonSel" hidden aria-hidden="true" tabindex="-1"></select>
       <button type="button" class="hero-badge" id="heroBtn" aria-haspopup="dialog" aria-controls="heroPage">
         <span class="hb-lvl" id="hbLvl">1</span>
-        <span class="hb-text"><b>Бит</b> <span id="hbTitle">Новичок</span></span>
+        <span class="hb-text"><b id="hbName">Бит</b> <span id="hbTitle">Новичок</span></span>
         <span class="hb-bar" aria-hidden="true"><i id="hbBar"></i></span>
       </button>
     </div>
@@ -543,6 +560,8 @@
 <!-- Звуки: синтез в браузере, без файлов -->
 <script src="js/sound.js"></script>
 <!-- Интерфейс, 3D-сцена и анимации -->
+<script src="js/inventor.js"></script>
+<script src="js/journeys.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

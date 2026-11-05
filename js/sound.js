@@ -52,6 +52,10 @@ const Sound = (() => {
   const notes = (fs, o) => fs.forEach((f, i) => tone({ f, ...o, at: (o.at || 0) + i * (o.step || 0.09), dur: i === fs.length - 1 ? (o.last || o.dur) : o.dur }));
 
   const SFX = {
+    photonHello() { notes([523, 784, 1047], { type: 'sine', dur: 0.09, last: 0.18, step: 0.09, vol: 0.08 }); },
+    photonScan() { tone({ f: 720, f2: 960, dur: 0.075, vol: 0.045 }); tone({ f: 1080, dur: 0.06, vol: 0.035, at: 0.09 }); },
+    photonWin() { notes([659, 831, 988, 1319], { type: 'triangle', dur: 0.09, last: 0.22, step: 0.08, vol: 0.06 }); },
+    photonFail() { notes([440, 349], { type: 'sine', dur: 0.12, last: 0.18, step: 0.12, vol: 0.055 }); },
     step() { alt = !alt; tone({ f: alt ? 190 : 165, f2: 90, type: 'triangle', dur: 0.08, vol: 0.2 }); noise({ dur: 0.03, vol: 0.04, type: 'highpass', f: 3000 }); },
     turn() { noise({ dur: 0.12, vol: 0.06, f: 900, f2: 2200, q: 2 }); },
     jump() { tone({ f: 260, f2: 820, dur: 0.22, vol: 0.18 }); tone({ f: 520, f2: 1640, type: 'triangle', dur: 0.18, vol: 0.04 }); },
@@ -97,7 +101,7 @@ const Sound = (() => {
     },
   };
   // Минимальный промежуток между одинаковыми звуками, с
-  const GAP = { tick: 0.08, step: 0.05, type: 0.02, turn: 0.05 };
+  const GAP = { tick: 0.08, step: 0.05, type: 0.02, turn: 0.05, photonScan: 0.35, photonHello: 0.5, photonWin: 0.6, photonFail: 0.6 };
 
   function play(name, opt = {}) {
     if (muted || !ctx || ctx.state !== 'running' || !SFX[name]) return;
