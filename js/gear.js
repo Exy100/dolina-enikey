@@ -63,12 +63,13 @@ const HeroGear = (() => {
     { id: 'qubit', name: 'Кубит', note: 'парящий куб из нулей и единиц', colors: [0x20232b, 0x9aa0aa], ant: false },
     { id: 'iskra', name: 'Ушки', note: 'ушки и хвост', colors: [0xe5774a, 0xffa877], ant: false },
     { id: 'atom', name: 'Атом', note: 'светящееся ядро и электроны с огненными хвостами', colors: [0xff7a1a, 0xffb030], ant: false },
+    { id: 'finist', name: 'Финист', note: 'Ясный Сокол с крыльями и компасом', colors: [0x285c83, 0xffc49a], ant: false },
     { id: 'inventor', name: 'Изобретательница', note: 'школьная форма и спутник «Фотон»', colors: [0x70442e, 0xffc49a], ant: false },
   ];
 
-  // У школьного образа свои очки, галстук, цвет и постоянный спутник.
-  // Сохранённые вещи для этих слотов вернутся при выборе другого облика.
-  const fitsSkin = (skin, item) => skin !== 'inventor' || ['head', 'back'].includes(item.slot);
+  // Фиксированные части образа не заменяются вещами; покупки каждого пути сохраняются.
+  const fitsSkin = (skin, item) => skin === 'inventor' ? ['head', 'back'].includes(item.slot)
+    : skin === 'finist' ? ['head', 'face', 'pet'].includes(item.slot) : true;
 
   const SHOP = ITEMS.filter(it => it.price);
 

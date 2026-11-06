@@ -1,6 +1,6 @@
 const assert = require('assert/strict');
 const J = require('../js/journeys.js');
-const ids = ['bit', 'qubit', 'iskra', 'atom', 'inventor'];
+const ids = require('../js/gear.js').SKINS.map(s => s.id);
 const blank = () => ({ gear: {}, stars: {}, code: {}, hints: {}, seen: { intro: {}, outro: {} }, pos: {}, predict: { tries: 0, hits: 0 } });
 const makeStorage = value => ({ value: value === undefined ? null : JSON.stringify(value), getItem() { return this.value; }, setItem(k, v) { this.value = v; } });
 const old = { ...blank(), stars: { 'k-steps': [1, 1, 1] }, code: { 'k-steps': 'вперёд(3)' }, gear: { color: 'mint' }, shop: { bird: 1 }, trial: { hist: [1] }, awards: ['first'], mute: true, lite: true };
@@ -44,4 +44,14 @@ assert.throws(() => J.open(broken, 'game', ids, blank));
 assert.equal(broken.value, '{bad json');
 const legacy = J.open(makeStorage({ ...blank(), gear: { skin: 'pixel' } }), 'game', ids, blank);
 assert.equal(legacy.active, 'qubit');
+// Добавление шестого героя к уже сохранённым пяти путям не теряет их архивы.
+const expanded = J.open(makeStorage({ ...old, journeyState: { version: 1, active: 'bit', paths: { inventor } } }), 'game', ids, blank);
+const finist = expanded.select('finist', expanded.load());
+assert(finist.fresh); assert.deepEqual(finist.save.stars, {});
+finist.save.stars['k-lava'] = [1, 1, 1]; expanded.persist(finist.save);
+const restoredInventor = expanded.select('inventor', finist.save);
+assert.deepEqual(restoredInventor.save.stars, inventor.stars);
+const restoredBit = expanded.select('bit', restoredInventor.save);
+assert.deepEqual(restoredBit.save.stars, old.stars);
+assert.deepEqual(expanded.select('finist', restoredBit.save).save.stars['k-lava'], [1, 1, 1]);
 console.log('Пути героев: миграция, начало с нуля, возврат, изоляция прогресса, две вкладки и отказ записи проверены.');

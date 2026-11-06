@@ -359,7 +359,7 @@ body.lite .sky * { animation: none !important; }
 .journey-heading { text-align: center; margin: 12px auto 28px; }
 .journey-heading h2 { font: 700 clamp(25px, 3.8vw, 44px)/1.2 var(--display); letter-spacing: -.035em; margin: 10px 0 14px; }
 .journey-heading > p:last-child { max-width: 660px; margin: auto; color: var(--muted); font-size: 17px; }
-.journey-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+.journey-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
 .journey-card { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; padding: 18px 12px;
   border: 2px solid var(--line); border-radius: 24px; background: var(--panel); box-shadow: var(--shadow); text-align: center;
   transition: transform .18s, border-color .18s, box-shadow .18s; }
@@ -384,7 +384,7 @@ body.lite .sky * { animation: none !important; }
 .journey-save-note { text-align: center; color: var(--muted); font-size: 12px; margin: 18px 0 0; }
 .journey-error { padding: 12px; color: var(--danger); background: var(--panel); border-radius: 12px; }
 body.choosing { overflow: hidden; }
-@media (max-width: 1000px) { .journey-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .journey-card b { font-size: 17px; } }
+@media (max-width: 1100px) { .journey-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } .journey-card b { font-size: 17px; } }
 @media (max-width: 600px) {
   .journey { padding: 22px 14px; }
   .journey-heading { margin: 0 auto 24px; }

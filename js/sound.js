@@ -52,6 +52,12 @@ const Sound = (() => {
   const notes = (fs, o) => fs.forEach((f, i) => tone({ f, ...o, at: (o.at || 0) + i * (o.step || 0.09), dur: i === fs.length - 1 ? (o.last || o.dur) : o.dur }));
 
   const SFX = {
+    // Финист: мягкий свист сокола, шелест крыльев и короткий отклик компаса.
+    finistHello() { tone({ f: 880, f2: 1320, dur: 0.16, vol: 0.065, attack: 0.025 }); tone({ f: 1175, f2: 1568, dur: 0.2, vol: 0.05, at: 0.17, attack: 0.02 }); },
+    finistFlight() { noise({ dur: 0.24, vol: 0.07, f: 850, f2: 2400, q: 0.7, attack: 0.035 }); tone({ f: 660, f2: 1100, dur: 0.19, vol: 0.035, attack: 0.03 }); },
+    finistCompass() { tone({ f: 1320, dur: 0.055, vol: 0.035 }); tone({ f: 1760, dur: 0.09, vol: 0.025, at: 0.08 }); },
+    finistWin() { notes([784, 988, 1175, 1568], { type: 'sine', dur: 0.12, last: 0.25, step: 0.09, vol: 0.055, attack: 0.02 }); },
+    finistFail() { tone({ f: 660, f2: 440, dur: 0.24, vol: 0.05, attack: 0.02 }); tone({ f: 392, dur: 0.16, vol: 0.035, at: 0.2 }); },
     photonHello() { notes([523, 784, 1047], { type: 'sine', dur: 0.09, last: 0.18, step: 0.09, vol: 0.08 }); },
     photonScan() { tone({ f: 720, f2: 960, dur: 0.075, vol: 0.045 }); tone({ f: 1080, dur: 0.06, vol: 0.035, at: 0.09 }); },
     photonWin() { notes([659, 831, 988, 1319], { type: 'triangle', dur: 0.09, last: 0.22, step: 0.08, vol: 0.06 }); },
@@ -101,7 +107,7 @@ const Sound = (() => {
     },
   };
   // Минимальный промежуток между одинаковыми звуками, с
-  const GAP = { tick: 0.08, step: 0.05, type: 0.02, turn: 0.05, photonScan: 0.35, photonHello: 0.5, photonWin: 0.6, photonFail: 0.6 };
+  const GAP = { finistHello: 0.5, finistFlight: 0.25, finistCompass: 0.35, finistWin: 0.6, finistFail: 0.6, tick: 0.08, step: 0.05, type: 0.02, turn: 0.05, photonScan: 0.35, photonHello: 0.5, photonWin: 0.6, photonFail: 0.6 };
 
   function play(name, opt = {}) {
     if (muted || !ctx || ctx.state !== 'running' || !SFX[name]) return;

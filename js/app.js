@@ -493,12 +493,13 @@
      (buildHeroParts возвращает свою группу и свои материалы) */
   const hero = new THREE.Group();
   const heroParts = {};
-  const inventorAction = { event: '', at: -Infinity };
-  let inventorWelcome = false;
+  const characterAction = { event: '', at: -Infinity };
+  let characterWelcome = false;
   const skinOf = id => (HeroGear.SKINS.find(s => s.id === id) || HeroGear.SKINS[0]);
+  const characterRig = id => id === 'inventor' ? HeroInventor : id === 'finist' ? HeroFinist : null;
   const heroName = id => skinOf(id).id === 'bit' ? 'Бит' : skinOf(id).name;
   function buildHeroParts(skinId) {
-    if (skinId === 'inventor') return HeroInventor.build(THREE);
+    if (characterRig(skinId)) return characterRig(skinId).build(THREE);
     const sk = skinOf(skinId).id, cat = sk === 'iskra', atom = sk === 'atom', qubit = sk === 'qubit', root = new THREE.Group();
     const violet = new THREE.MeshStandardMaterial({ color: 0x6b4bd8, flatShading: true, roughness: 0.55 });
     const violetLight = new THREE.MeshStandardMaterial({ color: 0x8f7cff, roughness: 0.45 });
@@ -711,17 +712,18 @@
   }
   function setHeroSkin(id) {
     const b = buildHeroParts(id);
-    HeroInventor.reset(hero);
-    inventorAction.event = ''; inventorAction.at = -Infinity;
+    HeroInventor.reset(hero); HeroFinist.reset(hero);
+    characterAction.event = ''; characterAction.at = -Infinity;
     hero.clear();
     Object.keys(heroParts).forEach(k => delete heroParts[k]);
     Object.assign(heroParts, b.parts);
     b.root.children.slice().forEach(c => hero.add(c));
   }
-  function inventorEvent(event) {
-    if (heroParts.skin !== 'inventor') return;
-    inventorAction.event = event; inventorAction.at = performance.now() / 1000;
-    const sound = HeroInventor.soundFor(event);
+  function characterEvent(event) {
+    const rig = characterRig(heroParts.skin);
+    if (!rig) return;
+    characterAction.event = event; characterAction.at = performance.now() / 1000;
+    const sound = rig.soundFor(event);
     if (sound) Sound.play(sound);
   }
   setHeroSkin(save.gear.skin);
@@ -1603,7 +1605,7 @@
   const face = { mood: '', look: [0, 0], aim: null, aimUntil: 0, blinkAt: 2, blinkT: -1, idle: 'goal', idleUntil: 0, wiggle: 0, ouch: 0, goal: null };
   // Настроение: '' — спокойный; 'happy' — дошёл: глаза «^ ^», улыбка, антенна качается; 'sad' — программа сломалась
   function setMood(m) {
-    if (m && m !== face.mood) inventorEvent(m === 'happy' ? 'win' : 'fail');
+    if (m && m !== face.mood) characterEvent(m === 'happy' ? 'win' : 'fail');
     face.mood = m; if (m === 'happy') face.wiggle = 1;
   }
   // Посмотреть на миг: [вбок, вверх] или 'cam' — на того, кто за экраном
@@ -1696,6 +1698,7 @@
     root.traverse(o => { if (o.name === 'eye' || o.name === 'pupil') lids.push(o); else if (o.name === 'tail') tail = o; else if (o.name === 'fx') fx = o; });
     return time => {
       HeroInventor.update(root, time, { reduceMotion });
+      HeroFinist.update(root, time, { reduceMotion });
       if (reduceMotion) return;
       if (tail) tail.rotation.y = Math.sin(time * 3) * 0.3;
       if (fx) fx.userData.spin(time);
@@ -1796,9 +1799,10 @@
     if (!running && !reduceMotion) heroParts.head.position.y = 0.62 + Math.sin(time * 2) * 0.012;
     if (heroParts.tail && !reduceMotion) heroParts.tail.rotation.y = Math.sin(time * (running ? 7 : 3)) * 0.3;
     animateFace(time, dt);
-    if (heroParts.skin === 'inventor') HeroInventor.update(hero, time, {
-      moving: running && ['move', 'jump', 'turn'].includes(inventorAction.event),
-      mood: face.mood, event: inventorAction.event, age: (time - inventorAction.at) * Math.min(tempo(), 3), reduceMotion: reduceMotion || SHOTS,
+    if (characterRig(heroParts.skin)) characterRig(heroParts.skin).update(hero, time, {
+      moving: running && ['move', 'jump', 'turn'].includes(characterAction.event),
+      flying: running && characterAction.event === 'jump' && hero.position.y > 0.02, heading: hero.rotation.y,
+      mood: face.mood, event: characterAction.event, age: (time - characterAction.at) * Math.min(tempo(), 3), reduceMotion: reduceMotion || SHOTS,
     });
     if (heroParts.fx && !reduceMotion) heroParts.fx.userData.spin(time); // электроны атома, сфера Блоха кубита
     if (BLOB.hero.visible) { // в прыжке пятно меньше и бледнее, в лаве пропадает
@@ -2255,7 +2259,7 @@
 
   /* Анимация одного события мира */
   async function animate(ev, st) {
-    if (['move', 'jump', 'turn', 'check', 'take', 'open', 'pull', 'wait'].includes(ev.type)) inventorEvent(ev.type);
+    if (['move', 'jump', 'turn', 'check', 'take', 'open', 'pull', 'wait'].includes(ev.type)) characterEvent(ev.type);
     switch (ev.type) {
       case 'line':
         markLine(ev.line, 'run');
@@ -3318,7 +3322,7 @@
   $('#soundBtn').addEventListener('click', () => { save.mute = !save.mute; persist(); renderSoundBtn(); Sound.play('tick'); });
   ['pointerdown', 'keydown'].forEach(ev => addEventListener(ev, () => {
     Sound.unlock();
-    if (inventorWelcome) { inventorWelcome = false; inventorEvent('select'); }
+    if (characterWelcome) { characterWelcome = false; characterEvent('select'); }
   }, true));
 
   /* ---------- Режим показа для видео на Авито (?show): титульная карточка, затем Бит сам проходит уровни —
@@ -4091,6 +4095,7 @@
   function renderGear() {
     $('#gearSub').textContent = 'У каждого персонажа свой путь. Выбор другого героя откроет экран путей. Вещи для текущего героя открываются за уровни и кристаллы.';
     if (save.gear.skin === 'inventor') $('#gearSub').textContent += ' У изобретательницы свои очки, галстук, форма и «Фотон»; можно добавить головной убор и вещь на спину.';
+    if (save.gear.skin === 'finist') $('#gearSub').textContent += ' У Финиста свои крылья, туника и компас. Можно добавить головной убор, очки и питомца.';
     const list = $('#gearList');
     list.innerHTML = '';
     const sec = text => { const li = document.createElement('li'); li.className = 'gear-head'; li.textContent = text; list.append(li); };
@@ -5479,11 +5484,12 @@
   /* ---------- Выбор героя и отдельного пути ---------- */
   const journeyPortraits = new Map();
   let journeySelected = 'bit', journeyFromStart = true, journeyPaths = {}, journeyInert = [];
-  const journeyNames = { bit: 'Бит', qubit: 'Кубит', iskra: 'Ушки', atom: 'Атом', inventor: 'Изобретательница' };
+  const journeyNames = { bit: 'Бит', qubit: 'Кубит', iskra: 'Ушки', atom: 'Атом', inventor: 'Изобретательница', finist: 'Финист' };
   const journeyDescriptions = {
     bit: 'Любопытный робот с добрым сердцем', qubit: 'Мир из нулей, единиц и возможностей',
     iskra: 'Острые ушки и любопытство к открытиям', atom: 'Маленькое ядро большой энергии',
     inventor: 'Юная исследовательница и спутник «Фотон»',
+    finist: 'Ясный Сокол: крылья и верный компас',
   };
   function journeyProgress(path) {
     const stars = Object.values(path && path.stars || {});
@@ -5559,7 +5565,7 @@
         save.journeyStarted = true;
         journeys.persist(save);
         closeJourney();
-        inventorEvent('select');
+        characterEvent('select');
         if (journeyFromStart) greet(); else ta.focus({ preventScroll: true });
         return;
       }
@@ -5599,7 +5605,7 @@
     let enter = null;
     try { enter = sessionStorage.getItem(ENTER_KEY); sessionStorage.removeItem(ENTER_KEY); } catch (e) { /* без sessionStorage */ }
     if (enter && enter === skinOf(save.gear.skin).id && !/^#(?:hero|trial)=/.test(location.hash)) {
-      inventorWelcome = enter === 'inventor';
+      characterWelcome = !!characterRig(enter);
       sp.remove(); save.journeyStarted = true; persist(); setTimeout(greet); return;
     }
     if (!sp) { setTimeout(greet); return; }
