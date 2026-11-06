@@ -55,11 +55,11 @@ const HeroGear = (() => {
     { id: 'minisboy', name: 'Мини-Сбой', slot: 'pet', price: 130 },
     { id: 'jetpack', name: 'Ракетный ранец', slot: 'back', price: 140 },
   ];
-  const DEFAULT_COLORS = [0x6a55ea, 0x8f7cff]; // корпус и голова
-  // Облики героя: другая форма тела и головы, лицо и ноги те же. colors — цвета корпуса и головы, пока не надет цвет из вещей;
-  // ant — есть ли антенна (у «Ушек» вместо неё ушки и хвост). Сами модели собирает buildHeroParts в app.js
+  const DEFAULT_COLORS = [0x7840b5, 0xa361d4]; // корпус и голова
+  // Облики героя: собственные модели с общим интерфейсом лица. colors — цвета корпуса и головы, пока не надет цвет из вещей;
+  // ant — есть ли антенна (у «Ушек» вместо неё ушки и хвост). Общая фабрика — buildHeroParts в app.js.
   const SKINS = [
-    { id: 'bit', name: 'Классика', note: 'круглая голова и антенна', colors: DEFAULT_COLORS, ant: true },
+    { id: 'bit', name: 'Бит', note: 'гусеницы, прибор и руки-захваты', colors: DEFAULT_COLORS, ant: true },
     { id: 'qubit', name: 'Кубит', note: 'парящий куб из нулей и единиц', colors: [0x20232b, 0x9aa0aa], ant: false },
     { id: 'iskra', name: 'Ушки', note: 'ушки и хвост', colors: [0xe5774a, 0xffa877], ant: false },
     { id: 'atom', name: 'Атом', note: 'светящееся ядро и электроны с огненными хвостами', colors: [0xff7a1a, 0xffb030], ant: false },

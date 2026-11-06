@@ -496,11 +496,12 @@
   const characterAction = { event: '', at: -Infinity };
   let characterWelcome = false;
   const skinOf = id => (HeroGear.SKINS.find(s => s.id === id) || HeroGear.SKINS[0]);
-  const characterRig = id => id === 'inventor' ? HeroInventor : id === 'finist' ? HeroFinist : null;
+  const characterRig = id => id === 'bit' ? HeroBit : id === 'inventor' ? HeroInventor : id === 'finist' ? HeroFinist : null;
   const heroName = id => skinOf(id).id === 'bit' ? 'Бит' : skinOf(id).name;
   function buildHeroParts(skinId) {
-    if (characterRig(skinId)) return characterRig(skinId).build(THREE);
-    const sk = skinOf(skinId).id, cat = sk === 'iskra', atom = sk === 'atom', qubit = sk === 'qubit', root = new THREE.Group();
+    const sk = skinOf(skinId).id;
+    if (characterRig(sk)) return characterRig(sk).build(THREE);
+    const cat = sk === 'iskra', atom = sk === 'atom', qubit = sk === 'qubit', root = new THREE.Group();
     const violet = new THREE.MeshStandardMaterial({ color: 0x6b4bd8, flatShading: true, roughness: 0.55 });
     const violetLight = new THREE.MeshStandardMaterial({ color: 0x8f7cff, roughness: 0.45 });
     const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
@@ -712,7 +713,7 @@
   }
   function setHeroSkin(id) {
     const b = buildHeroParts(id);
-    HeroInventor.reset(hero); HeroFinist.reset(hero);
+    HeroBit.reset(hero); HeroInventor.reset(hero); HeroFinist.reset(hero);
     characterAction.event = ''; characterAction.at = -Infinity;
     hero.clear();
     Object.keys(heroParts).forEach(k => delete heroParts[k]);
@@ -1598,7 +1599,7 @@
   const ease = t => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
   const easeBack = t => 1 + 2.70158 * Math.pow(t - 1, 3) + 1.70158 * Math.pow(t - 1, 2); // с лёгким перелётом
   // Пружина героя: вытягивается в движении, сплющивается при касании земли
-  function squash(k) { if (!reduceMotion) hero.scale.set(1 - k * 0.5, 1 + k, 1 - k * 0.5); }
+  function squash(k) { if (heroParts.skin === 'bit') k *= 0.25; if (!reduceMotion) hero.scale.set(1 - k * 0.5, 1 + k, 1 - k * 0.5); }
 
   /* ---------- Живой Бит: моргает, переступает ногами, смотрит, куда пойдёт, радуется и грустит.
      Взгляд — [вбок, вверх] от −1 до 1 в координатах Бита: +1 вбок — налево ---------- */
@@ -1697,6 +1698,7 @@
     let tail = null, fx = null;
     root.traverse(o => { if (o.name === 'eye' || o.name === 'pupil') lids.push(o); else if (o.name === 'tail') tail = o; else if (o.name === 'fx') fx = o; });
     return time => {
+      HeroBit.update(root, time, { reduceMotion });
       HeroInventor.update(root, time, { reduceMotion });
       HeroFinist.update(root, time, { reduceMotion });
       if (reduceMotion) return;
@@ -2284,11 +2286,13 @@
           return;
         }
         Sound.play('step');
+        const trackDistance = Math.hypot(tx - fx, tz - fz); let driven = 0;
         dust(fx, fz, 4);
         await tween(360, t => {
           const e = ease(t);
           heroRig.position.set(fx + (tx - fx) * e, 0, fz + (tz - fz) * e);
-          hero.position.y = Math.sin(t * Math.PI) * 0.14;
+          if (heroParts.skin === 'bit') { const d = (e - driven) * trackDistance; HeroBit.advance(hero, d, d); driven = e; }
+          hero.position.y = heroParts.skin === 'bit' ? 0 : Math.sin(t * Math.PI) * 0.14;
           // вытягивается в полёте, в конце шага сплющивается; ноги шагают по очереди
           squash(t < 0.7 ? 0.07 * Math.sin(t / 0.7 * Math.PI) : -0.09 * Math.sin((t - 0.7) / 0.3 * Math.PI));
           stepFeet(t);
@@ -2319,7 +2323,12 @@
         const a0 = heroAngle, a1 = heroAngle + ev.side * Math.PI / 2;
         heroAngle = a1;
         glance([ev.side, -0.1], 220); // сначала глаза, потом весь Бит
-        await tween(260, t => { hero.rotation.y = a0 + (a1 - a0) * easeBack(t); stepFeet(t, 0.5); });
+        let driven = 0;
+        await tween(260, t => {
+          const e = easeBack(t);
+          if (heroParts.skin === 'bit') { const d = (e - driven) * (a1 - a0) * 0.172; HeroBit.advance(hero, d, -d); driven = e; }
+          hero.rotation.y = a0 + (a1 - a0) * e; stepFeet(t, 0.5);
+        });
         feetRest();
         return;
       }
